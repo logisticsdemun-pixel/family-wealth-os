@@ -1,14 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
 
-const LIABILITY_TYPES = [
-  'Home Loan',
-  'Car Loan',
-  'Personal Loan',
-  'Credit Card',
-  'Education Loan',
-  'Other Debt'
-]
 const ASSET_TYPES = [
   'Cash & Savings',
   'Fixed Deposits',
@@ -21,28 +13,69 @@ const ASSET_TYPES = [
   'Other'
 ]
 
+const LIABILITY_TYPES = [
+  'Home Loan',
+  'Car Loan',
+  'Personal Loan',
+  'Credit Card',
+  'Education Loan',
+  'Other Debt'
+]
+
 export default function Dashboard() {
   const [assets, setAssets] = useState([])
-  const [showForm, setShowForm] = useState(false)
   const [liabilities, setLiabilities] = useState([])
+  const [showAssetForm, setShowAssetForm] = useState(false)
   const [showLiabilityForm, setShowLiabilityForm] = useState(false)
+
+  const [assetName, setAssetName] = useState('')
+  const [assetType, setAssetType] = useState(ASSET_TYPES[0])
+  const [assetValue, setAssetValue] = useState('')
+
   const [liabilityName, setLiabilityName] = useState('')
   const [liabilityType, setLiabilityType] = useState(LIABILITY_TYPES[0])
   const [liabilityValue, setLiabilityValue] = useState('')
-  const [name, setName] = useState('')
-  const [type, setType] = useState(ASSET_TYPES[0])
-  const [value, setValue] = useState('')
 
   useEffect(() => {
-    const saved = localStorage.getItem('fwos-assets')
-    if (saved) setAssets(JSON.parse(saved))
-    const savedL = localStorage.getItem('fwos-liabilities')
-    if (savedL) setLiabilities(JSON.parse(savedL))
+    const savedAssets = localStorage.getItem('fwos-assets')
+    if (savedAssets) setAssets(JSON.parse(savedAssets))
+    const savedLiabilities = localStorage.getItem('fwos-liabilities')
+    if (savedLiabilities) setLiabilities(JSON.parse(savedLiabilities))
   }, [])
+
+  function saveAssets(updated) {
+    setAssets(updated)
+    localStorage.setItem('fwos-assets', JSON.stringify(updated))
+  }
 
   function saveLiabilities(updated) {
     setLiabilities(updated)
     localStorage.setItem('fwos-liabilities', JSON.stringify(updated))
+  }
+
+  function handleAddAsset(e) {
+    e.preventDefault()
+    const newAsset = {
+      id: Date.now(),
+      name: assetName,
+      type: assetType,
+      value: parseFloat(assetValue)
+    }
+    saveAssets([...assets, newAsset])
+    setAssetName('')
+    setAssetType(ASSET_TYPES[0])
+    setAssetValue('')
+    setShowAssetForm(false)
+  }
+
+  function handleDeleteAsset(id) {
+    saveAssets(assets.filter(a => a.id !== id))
+  }
+
+  function handleEditAsset(id, newValue) {
+    saveAssets(assets.map(a =>
+      a.id === id ? { ...a, value: parseFloat(newValue) } : a
+    ))
   }
 
   function handleAddLiability(e) {
@@ -67,31 +100,6 @@ export default function Dashboard() {
   function handleEditLiability(id, newValue) {
     saveLiabilities(liabilities.map(l =>
       l.id === id ? { ...l, value: parseFloat(newValue) } : l
-    ))
-  }
-
-  function handleAdd(e) {
-    e.preventDefault()
-    const newAsset = {
-      id: Date.now(),
-      name,
-      type,
-      value: parseFloat(value)
-    }
-    saveAssets([...assets, newAsset])
-    setName('')
-    setType(ASSET_TYPES[0])
-    setValue('')
-    setShowForm(false)
-  }
-
-  function handleDelete(id) {
-    saveAssets(assets.filter(a => a.id !== id))
-  }
-
-  function handleEdit(id, newValue) {
-    saveAssets(assets.map(a => 
-      a.id === id ? { ...a, value: parseFloat(newValue) } : a
     ))
   }
 
@@ -205,7 +213,7 @@ export default function Dashboard() {
                 }}>
                   <div style={{
                     height: '100%',
-                    width: `${(t.total / totalNetWorth) * 100}%`,
+                    width: `${(t.total / totalAssets) * 100}%`,
                     backgroundColor: '#6366f1',
                     borderRadius: '4px'
                   }} />
@@ -215,7 +223,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Asset List */}
+        {/* Assets List */}
         {assets.length > 0 && (
           <div style={{
             backgroundColor: '#1e293b',
@@ -224,7 +232,7 @@ export default function Dashboard() {
             marginBottom: '24px'
           }}>
             <h3 style={{ margin: '0 0 20px', fontSize: '1rem', color: '#94a3b8' }}>
-              ALL ASSETS
+              ASSETS
             </h3>
             {assets.map(asset => (
               <div key={asset.id} style={{
@@ -241,24 +249,23 @@ export default function Dashboard() {
                   </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <span style={{ color: '#6366f1' }}>{formatINR(asset.value)}</span>
                   <input
                     type="number"
                     defaultValue={asset.value}
-                    onBlur={e => handleEdit(asset.id, e.target.value)}
+                    onBlur={e => handleEditAsset(asset.id, e.target.value)}
                     style={{
                       width: '120px',
                       padding: '6px 10px',
                       borderRadius: '6px',
                       border: '1px solid #334155',
                       backgroundColor: '#0f172a',
-                      color: '#6366f1',
+                      color: '#22c55e',
                       fontSize: '0.9rem',
                       textAlign: 'right'
                     }}
                   />
                   <button
-                    onClick={() => handleDelete(asset.id)}
+                    onClick={() => handleDeleteAsset(asset.id)}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -275,119 +282,32 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Add Asset Form */}
-        {showForm ? (
+        {/* Liabilities List */}
+        {liabilities.length > 0 && (
           <div style={{
             backgroundColor: '#1e293b',
             borderRadius: '16px',
-            padding: '24px'
+            padding: '24px',
+            marginBottom: '24px'
           }}>
             <h3 style={{ margin: '0 0 20px', fontSize: '1rem', color: '#94a3b8' }}>
-              ADD ASSET
+              LIABILITIES
             </h3>
-            <form onSubmit={handleAdd}>
-              <input
-                style={inputStyle}
-                placeholder="Asset name (e.g. SBI Savings Account)"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                required
-              />
-              <select
-                style={inputStyle}
-                value={type}
-                onChange={e => setType(e.target.value)}
-              >
-                {ASSET_TYPES.map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-              <input
-                style={inputStyle}
-                placeholder="Current value in ₹ (e.g. 150000)"
-                type="number"
-                value={value}
-                onChange={e => setValue(e.target.value)}
-                required
-              />
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button
-                  type="submit"
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    borderRadius: '8px',
-                    backgroundColor: '#6366f1',
-                    color: 'white',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '1rem'
-                  }}
-                >
-                  Add Asset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    borderRadius: '8px',
-                    backgroundColor: '#334155',
-                    color: 'white',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '1rem'
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        ) : (
-          <>
-            <button
-              onClick={() => setShowForm(true)}
-              style={{
-                width: '100%',
-                padding: '16px',
-                borderRadius: '16px',
-                backgroundColor: '#1e293b',
-                color: '#6366f1',
-                border: '2px dashed #334155',
-                cursor: 'pointer',
-                fontSize: '1rem'
-              }}
-            >
-              Add Liability
-            </button>
-            {/* Liabilities List */}
-            {liabilities.length > 0 && (
-              <div style={{
-                backgroundColor: '#1e293b',
-                borderRadius: '16px',
-                padding: '24px',
-                marginBottom: '24px'
+            {liabilities.map(liability => (
+              <div key={liability.id} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 0',
+                borderBottom: '1px solid #334155'
               }}>
-                <h3 style={{ margin: '0 0 20px', fontSize: '1rem', color: '#94a3b8' }}>
-                  LIABILITIES
-                </h3>
-                {liabilities.map(liability => (
-                  <div key={liability.id} style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '12px 0',
-                    borderBottom: '1px solid #334155'
-                  }}>
-                    <div>
-                      <p style={{ margin: 0, fontSize: '0.95rem' }}>{liability.name}</p>
-                      <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#64748b' }}>
-                        {liability.type}
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: '0.95rem' }}>{liability.name}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#64748b' }}>
+                    {liability.type}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                   <input
                     type="number"
                     defaultValue={liability.value}
@@ -420,16 +340,79 @@ export default function Dashboard() {
             ))}
           </div>
         )}
-          </>
+
+        {/* Add Asset Button / Form */}
+        {showAssetForm ? (
+          <div style={{
+            backgroundColor: '#1e293b',
+            borderRadius: '16px',
+            padding: '24px',
+            marginBottom: '16px'
+          }}>
+            <h3 style={{ margin: '0 0 20px', fontSize: '1rem', color: '#94a3b8' }}>
+              ADD ASSET
+            </h3>
+            <form onSubmit={handleAddAsset}>
+              <input
+                style={inputStyle}
+                placeholder="Asset name (e.g. SBI Savings Account)"
+                value={assetName}
+                onChange={e => setAssetName(e.target.value)}
+                required
+              />
+              <select
+                style={inputStyle}
+                value={assetType}
+                onChange={e => setAssetType(e.target.value)}
+              >
+                {ASSET_TYPES.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <input
+                style={inputStyle}
+                placeholder="Current value in ₹"
+                type="number"
+                value={assetValue}
+                onChange={e => setAssetValue(e.target.value)}
+                required
+              />
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="submit" style={{
+                  flex: 1, padding: '12px', borderRadius: '8px',
+                  backgroundColor: '#6366f1', color: 'white',
+                  border: 'none', cursor: 'pointer', fontSize: '1rem'
+                }}>
+                  Add Asset
+                </button>
+                <button type="button" onClick={() => setShowAssetForm(false)} style={{
+                  flex: 1, padding: '12px', borderRadius: '8px',
+                  backgroundColor: '#334155', color: 'white',
+                  border: 'none', cursor: 'pointer', fontSize: '1rem'
+                }}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          <button onClick={() => setShowAssetForm(true)} style={{
+            width: '100%', padding: '16px', borderRadius: '16px',
+            backgroundColor: '#1e293b', color: '#6366f1',
+            border: '2px dashed #334155', cursor: 'pointer',
+            fontSize: '1rem', marginBottom: '16px'
+          }}>
+            + Add Asset
+          </button>
         )}
 
-        {/* Add Liability Form */}
+        {/* Add Liability Button / Form */}
         {showLiabilityForm ? (
           <div style={{
             backgroundColor: '#1e293b',
             borderRadius: '16px',
             padding: '24px',
-            marginBottom: '24px'
+            marginBottom: '16px'
           }}>
             <h3 style={{ margin: '0 0 20px', fontSize: '1rem', color: '#94a3b8' }}>
               ADD LIABILITY
@@ -460,58 +443,34 @@ export default function Dashboard() {
                 required
               />
               <div style={{ display: 'flex', gap: '12px' }}>
-                <button
-                  type="submit"
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    borderRadius: '8px',
-                    backgroundColor: '#ef4444',
-                    color: 'white',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '1rem'
-                  }}
-                >
+                <button type="submit" style={{
+                  flex: 1, padding: '12px', borderRadius: '8px',
+                  backgroundColor: '#ef4444', color: 'white',
+                  border: 'none', cursor: 'pointer', fontSize: '1rem'
+                }}>
                   Add Liability
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setShowLiabilityForm(false)}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    borderRadius: '8px',
-                    backgroundColor: '#334155',
-                    color: 'white',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '1rem'
-                  }}
-                >
+                <button type="button" onClick={() => setShowLiabilityForm(false)} style={{
+                  flex: 1, padding: '12px', borderRadius: '8px',
+                  backgroundColor: '#334155', color: 'white',
+                  border: 'none', cursor: 'pointer', fontSize: '1rem'
+                }}>
                   Cancel
                 </button>
               </div>
             </form>
           </div>
         ) : (
-          <button
-            onClick={() => setShowLiabilityForm(true)}
-            style={{
-              width: '100%',
-              padding: '16px',
-              borderRadius: '16px',
-              backgroundColor: '#1e293b',
-              color: '#ef4444',
-              border: '2px dashed #334155',
-              cursor: 'pointer',
-              fontSize: '1rem',
-              marginBottom: '16px'
-            }}
-          >
+          <button onClick={() => setShowLiabilityForm(true)} style={{
+            width: '100%', padding: '16px', borderRadius: '16px',
+            backgroundColor: '#1e293b', color: '#ef4444',
+            border: '2px dashed #334155', cursor: 'pointer',
+            fontSize: '1rem', marginBottom: '16px'
+          }}>
             + Add Liability
           </button>
         )}
+
       </div>
     </div>
   )
