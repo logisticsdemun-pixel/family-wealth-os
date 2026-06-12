@@ -682,7 +682,7 @@ export default function Investments({ activeMember }) {
         </>
       )}
 
-      {showUpdateHoldings && <UpdateHoldingsModal onClose={() => setShowUpdateHoldings(false)} />}
+      {showUpdateHoldings && <UpdateHoldingsModal activeMember={activeMember} onClose={() => setShowUpdateHoldings(false)} />}
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
