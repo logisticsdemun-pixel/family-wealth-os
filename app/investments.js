@@ -77,10 +77,12 @@ function SummaryCards({ items }) {
 }
 
 // ── Investment table row ───────────────────────────────────
-function InvRow({ inv, loading, onUpdate, onDelete }) {
+function InvRow({ inv, fetching, onUpdate, onDelete }) {
   const [editMode, setEditMode] = useState(false)
   const [units, setUnits] = useState(String(inv.units))
   const [buyPrice, setBuyPrice] = useState(String(inv.buyPrice))
+  const [manualMode, setManualMode] = useState(false)
+  const [manualPrice, setManualPrice] = useState('')
 
   const invested = inv.units * inv.buyPrice
   const current = inv.currentPrice != null ? inv.units * inv.currentPrice : null
@@ -92,6 +94,13 @@ function InvRow({ inv, loading, onUpdate, onDelete }) {
   function saveEdit() {
     onUpdate({ ...inv, units: parseFloat(units) || inv.units, buyPrice: parseFloat(buyPrice) || inv.buyPrice })
     setEditMode(false)
+  }
+
+  function saveManual() {
+    const p = parseFloat(manualPrice)
+    if (p > 0) onUpdate({ ...inv, currentPrice: p, flags: [...(inv.flags || []).filter(f => f !== 'manual'), 'manual'] })
+    setManualMode(false)
+    setManualPrice('')
   }
 
   const td = (content, align = 'left', style = {}) => (
@@ -139,11 +148,35 @@ function InvRow({ inv, loading, onUpdate, onDelete }) {
       {td(formatINR(invested), 'right')}
       {td(
         current != null ? (
-          <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{formatINR(current)}</span>
-        ) : loading ? (
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>…</span>
+          <div>
+            <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{formatINR(current)}</span>
+            {(inv.flags || []).includes('manual') && (
+              <span style={{ fontSize: '0.65rem', marginLeft: 4, color: 'var(--text-muted)' }}>manual</span>
+            )}
+          </div>
+        ) : fetching ? (
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', animation: 'spin 1s linear infinite', display: 'inline-block' }}>↻</span>
+        ) : manualMode ? (
+          <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+            <input
+              type="number"
+              step="any"
+              value={manualPrice}
+              onChange={e => setManualPrice(e.target.value)}
+              placeholder="Price"
+              autoFocus
+              style={{ ...inp, marginBottom: 0, width: 80, textAlign: 'right' }}
+            />
+            <button onClick={saveManual} style={{ ...btnPrimary, padding: '4px 8px', fontSize: '0.72rem' }}>✓</button>
+            <button onClick={() => setManualMode(false)} style={{ ...btnGhost, padding: '4px 8px', fontSize: '0.72rem' }}>✕</button>
+          </div>
         ) : (
-          <span style={{ color: 'var(--text-muted)' }}>—</span>
+          <button
+            onClick={() => setManualMode(true)}
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.72rem', padding: 0 }}
+          >
+            + set price
+          </button>
         ),
         'right'
       )}
@@ -258,7 +291,7 @@ function AddInvForm({ onAdd, onCancel }) {
 
 // ── Fixed Income section ───────────────────────────────────
 function AddFDForm({ onAdd, onCancel }) {
-  const [form, setForm] = useState({ member: MEMBERS[0], name: '', principal: '', rate: '', maturityValue: '', maturityDate: '' })
+  const [form, setForm] = useState({ member: MEMBERS[0], name: '', principal: '', rate: '', startDate: '', maturityValue: '', maturityDate: '' })
 
   function handleSubmit(e) {
     e.preventDefault()
@@ -288,6 +321,10 @@ function AddFDForm({ onAdd, onCancel }) {
           <input required type="number" step="0.01" style={inp} value={form.rate} onChange={e => setForm({ ...form, rate: e.target.value })} />
         </div>
         <div>
+          <span style={label}>Start Date</span>
+          <input type="date" style={inp} value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
+        </div>
+        <div>
           <span style={label}>Maturity Value (₹)</span>
           <input type="number" style={inp} value={form.maturityValue} onChange={e => setForm({ ...form, maturityValue: e.target.value })} />
         </div>
@@ -308,7 +345,7 @@ function AddFDForm({ onAdd, onCancel }) {
 export default function Investments({ activeMember }) {
   const [investments, setInvestments] = useState([])
   const [fixedIncome, setFixedIncome] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [fetchingIds, setFetchingIds] = useState(new Set())
   const [lastUpdated, setLastUpdated] = useState(() => load(KEYS.PRICE_UPDATED, null))
   const [subTab, setSubTab] = useState('all')
   const [showAddInv, setShowAddInv] = useState(false)
@@ -323,21 +360,38 @@ export default function Investments({ activeMember }) {
   function saveFD(updated) { setFixedIncome(updated); save(KEYS.FIXED_INCOME, updated) }
 
   const refreshPrices = useCallback(async () => {
-    setLoading(true)
-    const current = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
-    const updated = await Promise.all(
-      current.map(async inv => {
+    const snapshot = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
+    const map = new Map(snapshot.map(inv => [inv.id, { ...inv }]))
+    const BATCH_SIZE = 5
+
+    for (let i = 0; i < snapshot.length; i += BATCH_SIZE) {
+      const batch = snapshot.slice(i, i + BATCH_SIZE)
+      setFetchingIds(new Set(batch.map(b => b.id)))
+
+      await Promise.all(batch.map(async inv => {
         const price = inv.isMF
           ? await fetchMFPrice(inv.mfCode)
           : await fetchStockPrice(inv.ticker)
-        return { ...inv, currentPrice: price ?? inv.currentPrice }
-      })
-    )
-    saveInv(updated)
+        if (price != null) {
+          const entry = map.get(inv.id)
+          entry.currentPrice = price
+          entry.flags = (entry.flags || []).filter(f => f !== 'manual')
+        }
+      }))
+
+      const partial = snapshot.map(inv => map.get(inv.id))
+      setInvestments(partial)
+      save(KEYS.INVESTMENTS, partial)
+
+      if (i + BATCH_SIZE < snapshot.length) {
+        await new Promise(r => setTimeout(r, 500))
+      }
+    }
+
+    setFetchingIds(new Set())
     const ts = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     setLastUpdated(ts)
     save(KEYS.PRICE_UPDATED, ts)
-    setLoading(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const allFiltered = filterByMember(investments, activeMember)
@@ -351,6 +405,7 @@ export default function Investments({ activeMember }) {
     ? allFiltered.filter(i => i.type === 'Mutual Fund' || i.type === 'Short Term Fund' || i.type === 'ETF')
     : []
 
+  const loading = fetchingIds.size > 0
   const unpricedCount = allFiltered.filter(i => i.currentPrice == null).length
 
   function upsertInv(item) {
@@ -463,7 +518,7 @@ export default function Investments({ activeMember }) {
                     <InvRow
                       key={inv.id}
                       inv={inv}
-                      loading={loading}
+                      fetching={fetchingIds.has(inv.id)}
                       onUpdate={updated => saveInv(investments.map(i => i.id === updated.id ? updated : i))}
                       onDelete={() => saveInv(investments.filter(i => i.id !== inv.id))}
                     />
@@ -562,6 +617,14 @@ export default function Investments({ activeMember }) {
   )
 }
 
+function fdAccruedValue(fd) {
+  if (fd.maturityValue) return fd.maturityValue // user-provided takes precedence
+  if (!fd.startDate || !fd.rate || !fd.principal) return fd.principal
+  const years = (new Date() - new Date(fd.startDate)) / (1000 * 60 * 60 * 24 * 365.25)
+  if (years <= 0) return fd.principal
+  return Math.round(fd.principal * Math.pow(1 + fd.rate / 100, years))
+}
+
 // ── FD table row ───────────────────────────────────────────
 function FDRow({ fd, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false)
@@ -572,6 +635,9 @@ function FDRow({ fd, onUpdate, onDelete }) {
     setEditing(false)
   }
 
+  const accrued = fdAccruedValue(fd)
+  const isAccrued = !fd.maturityValue && fd.startDate
+
   if (editing) {
     return (
       <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: 'var(--surface-2)' }}>
@@ -580,6 +646,7 @@ function FDRow({ fd, onUpdate, onDelete }) {
             <div><span style={label}>Name</span><input style={inp} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
             <div><span style={label}>Principal (₹)</span><input type="number" style={inp} value={form.principal} onChange={e => setForm({ ...form, principal: e.target.value })} /></div>
             <div><span style={label}>Rate (%)</span><input type="number" step="0.01" style={inp} value={form.rate} onChange={e => setForm({ ...form, rate: e.target.value })} /></div>
+            <div><span style={label}>Start Date</span><input type="date" style={inp} value={form.startDate ?? ''} onChange={e => setForm({ ...form, startDate: e.target.value })} /></div>
             <div><span style={label}>Maturity Value (₹)</span><input type="number" style={inp} value={form.maturityValue ?? ''} onChange={e => setForm({ ...form, maturityValue: e.target.value })} /></div>
             <div><span style={label}>Maturity Date</span><input type="date" style={inp} value={form.maturityDate ?? ''} onChange={e => setForm({ ...form, maturityDate: e.target.value })} /></div>
           </div>
@@ -598,7 +665,10 @@ function FDRow({ fd, onUpdate, onDelete }) {
       <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>{firstName(fd.member)}</td>
       <td style={{ padding: '12px 14px', textAlign: 'right' }}>{formatINR(fd.principal)}</td>
       <td style={{ padding: '12px 14px', textAlign: 'right', color: 'var(--gain)' }}>{fd.rate}%</td>
-      <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 600, color: 'var(--accent)' }}>{fd.maturityValue ? formatINR(fd.maturityValue) : '—'}</td>
+      <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 600, color: 'var(--accent)' }}>
+        {formatINR(accrued)}
+        {isAccrued && <span style={{ fontSize: '0.65rem', marginLeft: 4, color: 'var(--text-muted)' }}>est.</span>}
+      </td>
       <td style={{ padding: '12px 14px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{fd.maturityDate || '—'}</td>
       <td style={{ padding: '12px 14px', textAlign: 'right' }}>
         <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.78rem', marginRight: 8 }}>Edit</button>
