@@ -3,13 +3,20 @@ import { load, save, KEYS } from './storage'
 import { computeOutstanding } from './format'
 
 const MAX_SNAPSHOTS = 365
+// Skip updating today's entry if net worth moved less than ₹1,000 (avoids noisy
+// writes from partial price refreshes that haven't fetched all holdings yet)
+const SNAPSHOT_MIN_DELTA = 1000
 
 export function takeSnapshot(netWorth) {
   if (typeof window === 'undefined' || netWorth == null || isNaN(netWorth) || netWorth === 0) return
   const snapshots = load(KEYS.SNAPSHOTS, []) || []
   const today = new Date().toISOString().slice(0, 10)
-  const entry = { date: today, netWorth: Math.round(netWorth) }
+  const rounded = Math.round(netWorth)
   const idx = snapshots.findIndex(s => s.date === today)
+
+  if (idx >= 0 && Math.abs(rounded - snapshots[idx].netWorth) < SNAPSHOT_MIN_DELTA) return
+
+  const entry = { date: today, netWorth: rounded }
   const updated = idx >= 0
     ? snapshots.map((s, i) => i === idx ? entry : s)
     : [...snapshots, entry]

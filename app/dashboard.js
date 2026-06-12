@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { load, save, KEYS } from './lib/storage'
 import { formatINR, memberColor, memberInitials, firstName, MEMBERS, computeOutstanding } from './lib/format'
@@ -296,36 +296,44 @@ export default function Dashboard({ activeMember }) {
     setSnapshots(getSnapshots())
   }, [])
 
-  // ── Computed values ──────────────────────────────────────
-  const unpricedHoldings = filterByMember(investments, activeMember).filter(i => i.currentPrice == null).length
-  const invVal = investmentValue(investments, activeMember)
-  const goldVal = goldValue(gold, goldPrices, activeMember)
-  const jewVal = jewelleryValue(gold, goldPrices, activeMember)
-  const cashVal = cashValue(cashAssets, activeMember)
-  const fdVal = fdValue(fixedIncome, activeMember)
-  const loanLiab = loanLiabilities(loans, activeMember)
-  const manualLiab = manualLiabilityValue(liabilities, activeMember)
-  const totalAssets = invVal + goldVal + jewVal + cashVal + fdVal
-  const totalLiab = loanLiab + manualLiab
-  const netWorth = totalAssets - totalLiab
-
-  const sharedLoans = activeMember !== 'All' ? sharedLoanTotal(loans) : 0
+  // ── Memoised metrics ─────────────────────────────────────
+  const {
+    unpricedHoldings, invVal, goldVal, jewVal, cashVal, fdVal,
+    loanLiab, manualLiab, totalAssets, totalLiab, netWorth, sharedLoans,
+  } = useMemo(() => {
+    const invVal = investmentValue(investments, activeMember)
+    const goldVal = goldValue(gold, goldPrices, activeMember)
+    const jewVal = jewelleryValue(gold, goldPrices, activeMember)
+    const cashVal = cashValue(cashAssets, activeMember)
+    const fdVal = fdValue(fixedIncome, activeMember)
+    const loanLiab = loanLiabilities(loans, activeMember)
+    const manualLiab = manualLiabilityValue(liabilities, activeMember)
+    const totalAssets = invVal + goldVal + jewVal + cashVal + fdVal
+    const totalLiab = loanLiab + manualLiab
+    return {
+      unpricedHoldings: filterByMember(investments, activeMember).filter(i => i.currentPrice == null).length,
+      invVal, goldVal, jewVal, cashVal, fdVal,
+      loanLiab, manualLiab, totalAssets, totalLiab,
+      netWorth: totalAssets - totalLiab,
+      sharedLoans: activeMember !== 'All' ? sharedLoanTotal(loans) : 0,
+    }
+  }, [investments, gold, goldPrices, cashAssets, fixedIncome, loans, liabilities, activeMember])
 
   // ── Member breakdown (shown when All) ────────────────────
-  const memberRows = MEMBERS.map(m => {
+  const memberRows = useMemo(() => MEMBERS.map(m => {
     const inv = investmentValue(investments, m)
     const gld = goldValue(gold, goldPrices, m) + jewelleryValue(gold, goldPrices, m)
     const csh = cashValue(cashAssets, m) + fdValue(fixedIncome, m)
     const liab = manualLiabilityValue(liabilities, m) + loanLiabilities(loans, m)
     return { member: m, inv, gld, csh, liab, net: inv + gld + csh - liab }
-  })
+  }), [investments, gold, goldPrices, cashAssets, fixedIncome, loans, liabilities])
 
   // ── Allocation segments ──────────────────────────────────
-  const allocSegments = [
+  const allocSegments = useMemo(() => [
     { label: 'Equity', value: invVal, color: 'var(--accent)' },
     { label: 'Gold', value: goldVal + jewVal, color: 'var(--gold-color)' },
     { label: 'Cash & FD', value: cashVal + fdVal, color: 'var(--gain)' },
-  ].filter(s => s.value > 0)
+  ].filter(s => s.value > 0), [invVal, goldVal, jewVal, cashVal, fdVal])
 
   // ── CRUD helpers ─────────────────────────────────────────
   function saveCash(updated) { setCashAssets(updated); save(KEYS.CASH_ASSETS, updated) }
