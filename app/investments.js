@@ -4,6 +4,7 @@ import { load, save, KEYS } from './lib/storage'
 import { formatINR, formatPct, gainColor, firstName, MEMBERS, calculateCAGR, yearsElapsed } from './lib/format'
 import { SEED_INVESTMENTS, SEED_FIXED_INCOME } from './lib/seedData'
 import { takeSnapshotFromStorage } from './lib/snapshot'
+import UpdateHoldingsModal from './components/UpdateHoldings'
 
 const INV_TYPES = ['Stock', 'Mutual Fund', 'Short Term Fund', 'ETF', 'Fixed Income']
 
@@ -372,6 +373,7 @@ export default function Investments({ activeMember }) {
     typeof window !== 'undefined' && sessionStorage.getItem(UNPRICED_BANNER_KEY) === '1'
   )
   const [priceCache, setPriceCache] = useState(() => load(KEYS.PRICE_CACHE, {}))
+  const [showUpdateHoldings, setShowUpdateHoldings] = useState(false)
 
   function dismissBanner() {
     setBannerDismissed(true)
@@ -482,7 +484,13 @@ export default function Investments({ activeMember }) {
             </p>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            onClick={() => setShowUpdateHoldings(true)}
+            style={{ ...btnPrimary, fontSize: '0.85rem' }}
+          >
+            ↑ Update Holdings
+          </button>
           <button
             onClick={() => refreshPrices()}
             disabled={loading}
@@ -673,6 +681,8 @@ export default function Investments({ activeMember }) {
           )}
         </>
       )}
+
+      {showUpdateHoldings && <UpdateHoldingsModal onClose={() => setShowUpdateHoldings(false)} />}
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
