@@ -18,8 +18,8 @@ function slugify(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
 }
 
-function deterministicId(member, ticker) {
-  return `${slugify(member)}|${slugify(ticker)}|na`
+function deterministicId(member, key) {
+  return `${slugify(member)}|${slugify(key)}|na`
 }
 
 // ── Option A: Family Finance Tracker ──────────────────────
@@ -97,51 +97,169 @@ function trackerDiff(incoming, existing) {
   }
 }
 
-// ── Option B: Zerodha Holdings ─────────────────────────────
+// ── Option B: Zerodha Holdings Statement ──────────────────
 
-function parseZerodhaHoldings(wb) {
-  const ws = wb.Sheets[wb.SheetNames[0]]
-  const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+// ISIN → AMFI scheme code for known MFs
+const AMFI_BY_ISIN = {
+  'INF209K01UR9': '119533',
+  'INF754K01NB3': '147946',
+  'INF179K01WA6': '118989',
+  'INF247L01445': '120503',
+  'INF879O01027': '122639',
+  'INF966L01689': '120828',
+}
 
-  const headerIdx = data.findIndex(row =>
-    row.some(c => String(c).toLowerCase().includes('instrument') || String(c).toLowerCase().includes('tradingsymbol'))
-  )
-  if (headerIdx === -1) throw new Error('Column "Instrument" not found. Use the Holdings export from Zerodha Kite.')
+// Symbols that trade on BSE only (override default .NS suffix)
+const BSE_EXCEPTIONS = {
+  'CPPLUS': 'CPPLUS.BO',
+}
 
-  const headers = data[headerIdx].map(h => String(h).toLowerCase().trim())
-  if (headers.some(h => h.includes('trade type'))) {
-    throw new Error('This is a P&L report, not a Holdings export. Go to Zerodha Kite → Portfolio → Holdings → Download.')
+function mapInstrType(raw) {
+  const t = String(raw || '').trim()
+  if (!t || t === '-') return { isMF: false, type: 'Stock' }
+  if (t === 'Others - Index Funds/ETFs') return { isMF: true, type: 'ETF' }
+  if (t.startsWith('Debt -')) return { isMF: true, type: 'Short Term Fund' }
+  if (t.startsWith('Hybrid -')) return { isMF: true, type: 'Mutual Fund' }
+  if (t.startsWith('Equity -')) return { isMF: true, type: 'Mutual Fund' }
+  return { isMF: false, type: 'Stock' }
+}
+
+function parseZerodhaStatement(wb) {
+  // Require the Combined sheet
+  const sheetKeys = Object.keys(wb.Sheets)
+  const combinedKey = sheetKeys.find(k => k.trim().toLowerCase() === 'combined')
+  if (!combinedKey) {
+    throw new Error(
+      'No "Combined" sheet found in this file.\n' +
+      'Please upload the Zerodha Holdings Statement from console.zerodha.com → Portfolio → Holdings → Download'
+    )
   }
 
-  const col = name => headers.findIndex(h => h.includes(name))
-  const iInst = col('instrument'), iQty = col('qty'), iAvg = col('avg cost'), iLTP = col('ltp')
-  if (iQty === -1) throw new Error('Column "Qty" not found.')
-  if (iAvg === -1) throw new Error('Column "Avg cost" not found.')
+  const ws = wb.Sheets[combinedKey]
+  // raw: true preserves numeric values so parseNum handles them correctly
+  const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true })
+
+  // Extract statement date
+  let statementDate = null
+  for (const row of data) {
+    const text = row.map(c => String(c)).join(' ')
+    if (text.toLowerCase().includes('combined holdings statement')) {
+      const m = text.match(/(\d{4}-\d{2}-\d{2}|\d{2}[-\/]\d{2}[-\/]\d{4})/)
+      if (m) statementDate = m[1]
+      break
+    }
+  }
+
+  // Extract summary invested/present value for validation
+  let summaryInvested = null
+  for (const row of data) {
+    const lower = row.map(c => String(c).toLowerCase())
+    if (lower.some(c => c.includes('invested value'))) {
+      const nums = row.map(c => parseNum(c)).filter(n => n !== null && n > 100)
+      if (nums.length) summaryInvested = nums[nums.length - 1]
+    }
+  }
+
+  // Find header row: first row whose first non-empty cell is exactly "Symbol"
+  const headerIdx = data.findIndex(row => {
+    const first = String(row.find(c => c !== '' && c != null) ?? '').trim()
+    return first === 'Symbol'
+  })
+  if (headerIdx === -1) {
+    throw new Error('Could not find the data table in the Combined sheet — "Symbol" header row not found.')
+  }
+
+  const headers = data[headerIdx].map(h => String(h || '').trim())
+  const col = name => headers.indexOf(name)
+
+  const iSymbol   = col('Symbol')
+  const iISIN     = col('ISIN')
+  const iSector   = col('Sector')
+  const iInstrT   = col('Instrument Type')
+  const iQty      = col('Quantity Available')
+  const iAvgPrice = col('Average Price')
+  const iPrev     = col('Previous Closing Price')
+
+  if (iSymbol === -1) throw new Error('"Symbol" column not found in Combined sheet.')
+  if (iQty === -1)    throw new Error('"Quantity Available" column not found.')
+  if (iAvgPrice === -1) throw new Error('"Average Price" column not found.')
 
   const rows = []
   for (let i = headerIdx + 1; i < data.length; i++) {
     const r = data[i]
-    const instrument = String(r[iInst] ?? '').trim()
-    if (!instrument || instrument.toLowerCase() === 'total' || /^-+$/.test(instrument)) continue
-    const qty = parseNum(r[iQty]), avgCost = parseNum(r[iAvg])
-    if (!qty || !avgCost || qty <= 0 || avgCost <= 0) continue
-    const ltp = iLTP !== -1 ? parseNum(r[iLTP]) : null
-    rows.push({ instrument: instrument.toUpperCase(), qty, avgCost, ltp: ltp && ltp > 0 ? ltp : null })
+    const symbol = String(r[iSymbol] ?? '').trim()
+    if (!symbol || symbol === '-' || /^-+$/.test(symbol) || symbol.toLowerCase() === 'total') continue
+
+    const qty      = parseNum(r[iQty])
+    const avgPrice = parseNum(r[iAvgPrice])
+    if (!qty || !avgPrice || qty <= 0 || avgPrice <= 0) continue
+
+    const isin       = String(r[iISIN]   ?? '').trim()
+    const sector     = String(r[iSector] ?? '').trim()
+    const instrType  = String(r[iInstrT] ?? '').trim()
+    const prevClose  = iPrev !== -1 ? parseNum(r[iPrev]) : null
+
+    // Stocks have a real Sector value; MFs have a real Instrument Type value
+    const hasSector   = sector   && sector   !== '-'
+    const hasInstrType = instrType && instrType !== '-'
+    const isStock = hasSector && !hasInstrType
+
+    rows.push({ symbol, isin, sector, instrType, units: qty, avgPrice, prevClose: prevClose && prevClose > 0 ? prevClose : null, isStock })
   }
-  if (rows.length === 0) throw new Error('No valid holdings found in the file.')
-  return rows
+
+  if (rows.length === 0) throw new Error('No valid holdings found in the Combined sheet.')
+
+  // Validate against summary total (warn, do not block)
+  let warning = null
+  if (summaryInvested !== null && summaryInvested > 0) {
+    const parsedTotal = rows.reduce((s, r) => s + r.units * r.avgPrice, 0)
+    if (Math.abs(parsedTotal - summaryInvested) / summaryInvested > 0.01) {
+      const fmt = n => Math.round(n).toLocaleString('en-IN')
+      warning = `File totals don't match parsed data (parsed ₹${fmt(parsedTotal)} vs reported ₹${fmt(summaryInvested)}). Some rows may have been skipped.`
+    }
+  }
+
+  return { rows, warning, date: statementDate }
 }
 
-function buildZerodhaDiff(rows, member, existing) {
+function buildZerodhaStatementDiff(rows, member, existing) {
   return rows.map(row => {
-    const detId = deterministicId(member, row.instrument)
+    const { isMF, type } = mapInstrType(row.instrType)
+    const isStock = row.isStock
+
+    let ticker = null, detId, amfiCode = null, name
+
+    if (isStock) {
+      ticker = BSE_EXCEPTIONS[row.symbol] || `${row.symbol}.NS`
+      detId  = deterministicId(member, ticker)
+      name   = row.symbol
+    } else {
+      detId    = deterministicId(member, row.isin)
+      amfiCode = AMFI_BY_ISIN[row.isin] || null
+      name     = row.symbol   // full scheme name in the Symbol column
+    }
+
+    // Find existing investment
     const match = existing.find(inv => {
-      if (inv.isMF || inv.member !== member) return false
+      if (inv.member !== member) return false
       if (inv.id === detId) return true
-      const t = (inv.ticker || '').toUpperCase()
-      return t === `${row.instrument}.NS` || t === `${row.instrument}.BO` || t === row.instrument
+      if (isStock) {
+        return !inv.isMF && (inv.ticker || '').toUpperCase() === (ticker || '').toUpperCase()
+      }
+      // MF: match by ISIN field or AMFI code
+      if (row.isin && inv.isin === row.isin) return true
+      if (amfiCode && inv.mfCode === amfiCode) return true
+      return false
     })
-    return { row, existing: match || null, detId }
+
+    let action = 'ADD'
+    if (match) {
+      const unitsChanged = Math.abs((match.units ?? 0) - row.units) > 0.001
+      const priceChanged = Math.abs((match.buyPrice ?? 0) - row.avgPrice) > 0.01
+      action = (unitsChanged || priceChanged) ? 'UPDATE' : 'UNCHANGED'
+    }
+
+    return { row, name, isStock, isMF, ticker, type, amfiCode, detId, existing: match || null, action }
   })
 }
 
@@ -191,12 +309,7 @@ function buildMFDiff(rows, member, existing) {
       const overlap = words.filter(w => invWords.has(w)).length
       return overlap >= Math.min(2, Math.ceil(words.length * 0.5))
     })
-    return {
-      row,
-      existing: match || null,
-      type: detectMFType(row.schemeName),
-      mfCode: match?.mfCode || null,
-    }
+    return { row, existing: match || null, type: detectMFType(row.schemeName), mfCode: match?.mfCode || null }
   })
 }
 
@@ -209,31 +322,22 @@ export default function UpdateHoldingsModal({ onClose }) {
   const [importing, setImporting] = useState(false)
   const [member, setMember] = useState(MEMBERS[0])
 
-  // Per-option parsed state
-  const [parsedA, setParsedA] = useState(null)  // { holdings, diff }
-  const [parsedB, setParsedB] = useState(null)  // array of { row, existing, detId }
-  const [selectedB, setSelectedB] = useState(new Set())
-  const [parsedC, setParsedC] = useState(null)  // array of { row, existing, type, mfCode }
+  const [parsedA, setParsedA] = useState(null)
+  // parsedB shape: { rows: DiffRow[], warning: string|null, date: string|null }
+  const [parsedB, setParsedB] = useState(null)
+  const [selectedB, setSelectedB] = useState(new Set())   // keys: row.isin
+  const [parsedC, setParsedC] = useState(null)
 
   const fileRef = useRef(null)
 
   function switchTab(tab) {
-    setActiveTab(tab)
-    setStep('upload')
-    setError('')
-    setParsedA(null)
-    setParsedB(null)
-    setParsedC(null)
-    setSelectedB(new Set())
+    setActiveTab(tab); setStep('upload'); setError('')
+    setParsedA(null); setParsedB(null); setParsedC(null); setSelectedB(new Set())
   }
 
   function reset() {
-    setStep('upload')
-    setError('')
-    setParsedA(null)
-    setParsedB(null)
-    setParsedC(null)
-    setSelectedB(new Set())
+    setStep('upload'); setError('')
+    setParsedA(null); setParsedB(null); setParsedC(null); setSelectedB(new Set())
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -249,17 +353,18 @@ export default function UpdateHoldingsModal({ onClose }) {
 
       if (activeTab === 'family') {
         const holdings = parseTrackerHoldings(wb)
-        const diff = trackerDiff(holdings, existing)
-        setParsedA({ holdings, diff })
+        setParsedA({ holdings, diff: trackerDiff(holdings, existing) })
+
       } else if (activeTab === 'zerodha') {
-        const rows = parseZerodhaHoldings(wb)
-        const diff = buildZerodhaDiff(rows, member, existing)
-        setParsedB(diff)
-        setSelectedB(new Set(diff.map(d => d.row.instrument)))
+        const { rows: rawRows, warning, date } = parseZerodhaStatement(wb)
+        const diffRows = buildZerodhaStatementDiff(rawRows, member, existing)
+        setParsedB({ rows: diffRows, warning, date })
+        // Pre-select ADD and UPDATE; leave UNCHANGED deselected
+        setSelectedB(new Set(diffRows.filter(d => d.action !== 'UNCHANGED').map(d => d.row.isin)))
+
       } else {
         const rows = parseZerodhaMF(wb)
-        const diff = buildMFDiff(rows, member, existing)
-        setParsedC(diff)
+        setParsedC(buildMFDiff(rows, member, existing))
       }
       setStep('review')
     } catch (err) {
@@ -274,51 +379,58 @@ export default function UpdateHoldingsModal({ onClose }) {
       const existing = load(KEYS.INVESTMENTS, SEED_INVESTMENTS) || []
 
       if (activeTab === 'family') {
-        const merged = mergeByKey(existing, parsedA.holdings)
-        await applyImport({ [KEYS.INVESTMENTS]: merged })
+        await applyImport({ [KEYS.INVESTMENTS]: mergeByKey(existing, parsedA.holdings) })
 
       } else if (activeTab === 'zerodha') {
-        const selected = parsedB.filter(d => selectedB.has(d.row.instrument))
+        const selected = parsedB.rows.filter(d => selectedB.has(d.row.isin))
         const updated = [...existing]
         const now = Date.now()
         const cache = { ...(load(KEYS.PRICE_CACHE, {}) || {}) }
 
-        for (const { row, existing: match, detId } of selected) {
+        for (const { row, name, isStock, isMF, ticker, type, amfiCode, detId, existing: match } of selected) {
           if (match) {
             const idx = updated.findIndex(i => i.id === match.id)
             if (idx !== -1) {
               updated[idx] = {
                 ...updated[idx],
-                units: row.qty,
-                buyPrice: row.avgCost,
-                currentPrice: row.ltp != null ? row.ltp : updated[idx].currentPrice,
-                flags: row.ltp != null ? (updated[idx].flags || []).filter(f => f !== 'manual') : (updated[idx].flags || []),
+                units: row.units,
+                buyPrice: row.avgPrice,
+                currentPrice: row.prevClose ?? updated[idx].currentPrice,
+                isin: row.isin || updated[idx].isin || null,
+                // keep purchaseDate, notes, and non-manual flags intact
+                flags: row.prevClose != null
+                  ? (updated[idx].flags || []).filter(f => f !== 'manual')
+                  : (updated[idx].flags || []),
               }
-              if (row.ltp != null) cache[`stock:${updated[idx].ticker}`] = { fetchedAt: now, status: 'ok' }
+              if (row.prevClose != null && isStock && updated[idx].ticker) {
+                cache[`stock:${updated[idx].ticker}`] = { fetchedAt: now, status: 'ok' }
+              }
             }
           } else {
-            const ticker = `${row.instrument}.NS`
-            updated.push({
+            const newInv = {
               id: detId,
-              name: row.instrument,
-              ticker,
+              name,
               member,
-              type: 'Stock',
-              isMF: false,
-              mfCode: null,
-              units: row.qty,
-              buyPrice: row.avgCost,
-              currentPrice: row.ltp,
+              isMF,
+              type,
+              isin: row.isin || null,
+              ticker: isStock ? ticker : null,
+              mfCode: isMF ? (amfiCode || null) : null,
+              units: row.units,
+              buyPrice: row.avgPrice,
+              currentPrice: row.prevClose ?? null,
               buyDate: '',
-              flags: [],
-            })
-            if (row.ltp != null) cache[`stock:${ticker}`] = { fetchedAt: now, status: 'ok' }
+              flags: isMF && !amfiCode ? ['VERIFY_AMFI'] : [],
+            }
+            updated.push(newInv)
+            if (row.prevClose != null && isStock && ticker) {
+              cache[`stock:${ticker}`] = { fetchedAt: now, status: 'ok' }
+            }
           }
         }
         await applyImport({ [KEYS.INVESTMENTS]: updated, [KEYS.PRICE_CACHE]: cache })
 
       } else {
-        // Option C — MF
         const updated = [...existing]
         for (const { row, existing: match, type, mfCode } of parsedC) {
           if (match) {
@@ -338,8 +450,7 @@ export default function UpdateHoldingsModal({ onClose }) {
               name: row.schemeName,
               ticker: null,
               mfCode: mfCode || null,
-              member,
-              type,
+              member, type,
               isMF: true,
               units: row.units,
               buyPrice: row.avgNAV,
@@ -360,9 +471,9 @@ export default function UpdateHoldingsModal({ onClose }) {
   }
 
   const TABS = [
-    { id: 'family', label: 'Family Tracker' },
+    { id: 'family',  label: 'Family Tracker' },
     { id: 'zerodha', label: 'Zerodha Holdings' },
-    { id: 'mf', label: 'Zerodha MF' },
+    { id: 'mf',      label: 'Zerodha MF' },
   ]
 
   const inp = {
@@ -372,27 +483,29 @@ export default function UpdateHoldingsModal({ onClose }) {
   }
   const labelSt = { fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', display: 'block', marginBottom: 4 }
 
-  // Computed summary for review header
+  // ── Review subtitle ────────────────────────────────────────
   let reviewSubtitle = ''
   if (step === 'review') {
     if (activeTab === 'family' && parsedA) {
       reviewSubtitle = `${parsedA.holdings.length} holding${parsedA.holdings.length !== 1 ? 's' : ''} — ${parsedA.diff.toAdd} new, ${parsedA.diff.toUpdate} updated`
     } else if (activeTab === 'zerodha' && parsedB) {
-      const total = parsedB.filter(d => selectedB.has(d.row.instrument)).length
-      const newCount = parsedB.filter(d => selectedB.has(d.row.instrument) && !d.existing).length
-      reviewSubtitle = `${total} selected — ${newCount} new, ${total - newCount} updated for ${firstName(member)}`
+      const addN = parsedB.rows.filter(d => d.action === 'ADD').length
+      const updN = parsedB.rows.filter(d => d.action === 'UPDATE').length
+      const unchN = parsedB.rows.filter(d => d.action === 'UNCHANGED').length
+      reviewSubtitle = `${parsedB.rows.length} holdings for ${firstName(member)} — ${addN} new, ${updN} updated, ${unchN} unchanged`
     } else if (activeTab === 'mf' && parsedC) {
       const unmatched = parsedC.filter(d => !d.mfCode).length
       reviewSubtitle = `${parsedC.length} scheme${parsedC.length !== 1 ? 's' : ''} for ${firstName(member)}${unmatched > 0 ? ` — ${unmatched} need AMFI code` : ''}`
     }
   }
 
+  // ── JSX ───────────────────────────────────────────────────
   return (
     <>
       <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200 }} onClick={importing ? undefined : onClose} />
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-        zIndex: 201, width: 'calc(100% - 32px)', maxWidth: 620,
+        zIndex: 201, width: 'calc(100% - 32px)', maxWidth: 660,
         backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 16, padding: '24px 28px', maxHeight: '90vh', overflowY: 'auto',
       }}>
@@ -415,18 +528,15 @@ export default function UpdateHoldingsModal({ onClose }) {
         {/* Tab bar */}
         <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
           {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => switchTab(tab.id)}
-              disabled={importing}
+            <button key={tab.id} onClick={() => switchTab(tab.id)} disabled={importing}
               style={{
                 padding: '7px 14px', border: 'none', background: 'transparent',
                 color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-secondary)',
                 fontWeight: activeTab === tab.id ? 600 : 400, fontSize: '0.83rem',
-                cursor: 'pointer', borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
+                cursor: 'pointer',
+                borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
                 marginBottom: -1, transition: 'all 0.15s',
-              }}
-            >
+              }}>
               {tab.label}
             </button>
           ))}
@@ -435,62 +545,51 @@ export default function UpdateHoldingsModal({ onClose }) {
         {/* ── Upload step ───────────────────────────────────── */}
         {step === 'upload' && (
           <>
-            {/* Member selector (Options B and C) */}
             {(activeTab === 'zerodha' || activeTab === 'mf') && (
               <div style={{ marginBottom: 14 }}>
-                <span style={labelSt}>Assign holdings to member</span>
+                <span style={labelSt}>Whose holdings are these?</span>
                 <select value={member} onChange={e => setMember(e.target.value)} style={inp}>
                   {MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
             )}
 
-            {/* Drop zone */}
-            <div
-              onClick={() => fileRef.current?.click()}
-              style={{ border: '2px dashed var(--border)', borderRadius: 12, padding: '28px', textAlign: 'center', cursor: 'pointer', marginBottom: 14 }}
-            >
+            <div onClick={() => fileRef.current?.click()}
+              style={{ border: '2px dashed var(--border)', borderRadius: 12, padding: '28px', textAlign: 'center', cursor: 'pointer', marginBottom: 14 }}>
               <div style={{ fontSize: '1.8rem', marginBottom: 6 }}>
                 {activeTab === 'family' ? '📊' : activeTab === 'zerodha' ? '📈' : '📉'}
               </div>
               <p style={{ margin: '0 0 4px', fontWeight: 500, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                Click to select .xlsx file
+                {activeTab === 'zerodha' ? 'Import Zerodha Holdings Statement (.xlsx)' : 'Click to select .xlsx file'}
               </p>
               <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                {activeTab === 'family' && 'Family Finance Tracker workbook (.xlsx)'}
-                {activeTab === 'zerodha' && 'Zerodha Kite → Portfolio → Holdings → Download (.xlsx)'}
-                {activeTab === 'mf' && 'Zerodha Console → Reports → Holdings (.xlsx)'}
+                {activeTab === 'family'  && 'Family Finance Tracker workbook (.xlsx)'}
+                {activeTab === 'zerodha' && 'Download from console.zerodha.com → Portfolio → Holdings'}
+                {activeTab === 'mf'      && 'Zerodha Console → Reports → Holdings (.xlsx)'}
               </p>
               <input ref={fileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={handleFile} />
             </div>
 
             {error && (
-              <div style={{ backgroundColor: 'var(--loss-faint)', border: '1px solid var(--loss)', borderRadius: 8, padding: '10px 14px', fontSize: '0.82rem', color: 'var(--loss)', marginBottom: 12 }}>
+              <div style={{ backgroundColor: 'var(--loss-faint)', border: '1px solid var(--loss)', borderRadius: 8, padding: '10px 14px', fontSize: '0.82rem', color: 'var(--loss)', marginBottom: 12, whiteSpace: 'pre-line' }}>
                 {error}
               </div>
             )}
 
-            {/* Instructions */}
             <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 10, padding: '12px 14px', fontSize: '0.76rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
               {activeTab === 'family' && (
-                <>
-                  <strong style={{ color: 'var(--text-secondary)' }}>Matches by Name + Member.</strong>{' '}
-                  Existing records are updated; new ones are added. MFAPI codes and tickers from the sheet overwrite stored values.
-                </>
+                <><strong style={{ color: 'var(--text-secondary)' }}>Matches by Name + Member.</strong>{' '}
+                Existing records are updated; new ones are added.</>
               )}
               {activeTab === 'zerodha' && (
-                <>
-                  <strong style={{ color: 'var(--text-secondary)' }}>Columns used:</strong> Instrument, Qty, Avg cost, LTP.
-                  Matched by ticker for {firstName(member)}. New tickers get a .NS suffix and a deterministic ID.
-                  Deselect rows in the review step to skip them.
-                </>
+                <><strong style={{ color: 'var(--text-secondary)' }}>Uses the Combined sheet.</strong>{' '}
+                Reads Symbol, ISIN, Quantity Available, Average Price, and Previous Closing Price for both stocks and mutual funds.
+                Stocks get a .NS suffix (use .BO exceptions for BSE-only stocks).
+                MFs are matched by ISIN. Unmatched MFs get a VERIFY_AMFI flag.</>
               )}
               {activeTab === 'mf' && (
-                <>
-                  <strong style={{ color: 'var(--text-secondary)' }}>Columns used:</strong> Scheme Name, Units, Avg NAV, Current NAV.
-                  Matched by scheme name against existing holdings for {firstName(member)}.
-                  Unmatched schemes are added with a <code style={{ fontFamily: 'monospace' }}>VERIFY_AMFI</code> flag — set the MFAPI code manually afterwards.
-                </>
+                <><strong style={{ color: 'var(--text-secondary)' }}>Columns used:</strong> Scheme Name, Units, Avg NAV, Current NAV.
+                Matched by scheme name. Unmatched schemes are added with a <code style={{ fontFamily: 'monospace' }}>VERIFY_AMFI</code> flag.</>
               )}
             </div>
           </>
@@ -499,6 +598,20 @@ export default function UpdateHoldingsModal({ onClose }) {
         {/* ── Review step ───────────────────────────────────── */}
         {step === 'review' && (
           <>
+            {/* Statement date chip */}
+            {activeTab === 'zerodha' && parsedB?.date && (
+              <p style={{ margin: '0 0 10px', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                Statement date: <strong style={{ color: 'var(--text-secondary)' }}>{parsedB.date}</strong>
+              </p>
+            )}
+
+            {/* Warning banner */}
+            {activeTab === 'zerodha' && parsedB?.warning && (
+              <div style={{ backgroundColor: 'var(--amber-faint)', border: '1px solid var(--amber)', borderRadius: 8, padding: '9px 12px', fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 12 }}>
+                ⚠ {parsedB.warning}
+              </div>
+            )}
+
             {/* Option A diff table */}
             {activeTab === 'family' && parsedA && (
               <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
@@ -536,50 +649,88 @@ export default function UpdateHoldingsModal({ onClose }) {
               </div>
             )}
 
-            {/* Option B diff table with checkboxes */}
+            {/* Option B diff table — ADD / UPDATE / UNCHANGED with checkboxes */}
             {activeTab === 'zerodha' && parsedB && (
               <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
-                <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                <div style={{ maxHeight: 360, overflowY: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                     <thead>
                       <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                        {['', 'Instrument', 'Qty', 'Avg Cost', 'LTP', 'Action'].map((h, i) => (
-                          <th key={i} style={{ padding: '8px 10px', textAlign: i >= 2 && i <= 4 ? 'right' : i === 5 ? 'center' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.7rem', position: 'sticky', top: 0, backgroundColor: 'var(--surface-2)' }}>{h}</th>
+                        {['', 'Symbol', 'Kind', 'Units', 'Avg Price', 'Prev Close', 'Status'].map((h, i) => (
+                          <th key={i} style={{ padding: '8px 10px', textAlign: i >= 3 && i <= 5 ? 'right' : i === 6 ? 'center' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.7rem', whiteSpace: 'nowrap', position: 'sticky', top: 0, backgroundColor: 'var(--surface-2)' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {parsedB.map((d, i) => (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: selectedB.has(d.row.instrument) ? 1 : 0.4 }}>
-                          <td style={{ padding: '7px 10px' }}>
-                            <input
-                              type="checkbox"
-                              checked={selectedB.has(d.row.instrument)}
-                              onChange={() => setSelectedB(prev => {
-                                const next = new Set(prev)
-                                next.has(d.row.instrument) ? next.delete(d.row.instrument) : next.add(d.row.instrument)
-                                return next
-                              })}
-                            />
-                          </td>
-                          <td style={{ padding: '7px 10px', fontWeight: 500, fontFamily: 'monospace', fontSize: '0.8rem' }}>{d.row.instrument}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right' }}>{d.row.qty}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right' }}>{formatINR(d.row.avgCost)}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', color: 'var(--text-muted)' }}>{d.row.ltp != null ? formatINR(d.row.ltp) : '—'}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'center' }}>
-                            <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, backgroundColor: d.existing ? 'var(--amber-faint)' : 'var(--gain-faint)', color: d.existing ? 'var(--amber)' : 'var(--gain)' }}>
-                              {d.existing ? 'Update' : 'New'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {parsedB.rows.map((d, i) => {
+                        const isSelected = selectedB.has(d.row.isin)
+                        const badgeColor = d.action === 'ADD' ? { bg: 'var(--gain-faint)', fg: 'var(--gain)' }
+                          : d.action === 'UPDATE' ? { bg: 'var(--amber-faint)', fg: 'var(--amber)' }
+                          : { bg: 'var(--surface-2)', fg: 'var(--text-muted)' }
+                        return (
+                          <tr key={i} style={{ borderBottom: '1px solid var(--border)', opacity: isSelected ? 1 : 0.45 }}>
+                            <td style={{ padding: '7px 10px', width: 32 }}>
+                              <input type="checkbox" checked={isSelected}
+                                onChange={() => setSelectedB(prev => {
+                                  const next = new Set(prev)
+                                  next.has(d.row.isin) ? next.delete(d.row.isin) : next.add(d.row.isin)
+                                  return next
+                                })}
+                              />
+                            </td>
+                            <td style={{ padding: '7px 10px' }}>
+                              <p style={{ margin: 0, fontWeight: 500, fontFamily: 'monospace', fontSize: '0.8rem', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                title={d.name}>
+                                {d.row.symbol}
+                              </p>
+                              {d.action === 'UPDATE' && d.existing && (
+                                <p style={{ margin: '2px 0 0', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                  {Math.abs((d.existing.units ?? 0) - d.row.units) > 0.001 && (
+                                    <span>Units: {d.existing.units} → <strong style={{ color: 'var(--amber)' }}>{d.row.units}</strong>{' '}</span>
+                                  )}
+                                  {Math.abs((d.existing.buyPrice ?? 0) - d.row.avgPrice) > 0.01 && (
+                                    <span>Avg: {formatINR(d.existing.buyPrice)} → <strong style={{ color: 'var(--amber)' }}>{formatINR(d.row.avgPrice)}</strong></span>
+                                  )}
+                                </p>
+                              )}
+                              {d.isMF && !d.amfiCode && (
+                                <p style={{ margin: '2px 0 0', fontSize: '0.68rem', color: 'var(--amber)' }}>⚠ VERIFY_AMFI</p>
+                              )}
+                            </td>
+                            <td style={{ padding: '7px 10px', fontSize: '0.72rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                              {d.isStock ? 'Stock' : d.type}
+                            </td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right' }}>{d.row.units}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right' }}>{formatINR(d.row.avgPrice)}</td>
+                            <td style={{ padding: '7px 10px', textAlign: 'right', color: 'var(--text-muted)' }}>
+                              {d.row.prevClose != null ? formatINR(d.row.prevClose) : '—'}
+                            </td>
+                            <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                              <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, backgroundColor: badgeColor.bg, color: badgeColor.fg }}>
+                                {d.action}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
                 <div style={{ padding: '8px 12px', backgroundColor: 'var(--surface-2)', borderTop: '1px solid var(--border)', fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', gap: 8 }}>
-                  <button onClick={() => setSelectedB(new Set(parsedB.map(d => d.row.instrument)))} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.75rem', padding: 0 }}>Select all</button>
+                  <button onClick={() => setSelectedB(new Set(parsedB.rows.map(d => d.row.isin)))}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.75rem', padding: 0 }}>
+                    Select all
+                  </button>
                   <span>·</span>
-                  <button onClick={() => setSelectedB(new Set())} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem', padding: 0 }}>Deselect all</button>
+                  <button onClick={() => setSelectedB(new Set(parsedB.rows.filter(d => d.action !== 'UNCHANGED').map(d => d.row.isin)))}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem', padding: 0 }}>
+                    Changes only
+                  </button>
+                  <span>·</span>
+                  <button onClick={() => setSelectedB(new Set())}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.75rem', padding: 0 }}>
+                    Deselect all
+                  </button>
                 </div>
               </div>
             )}
@@ -601,9 +752,7 @@ export default function UpdateHoldingsModal({ onClose }) {
                         <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                           <td style={{ padding: '7px 12px', maxWidth: 220 }}>
                             <p style={{ margin: 0, fontWeight: 500, fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.row.schemeName}</p>
-                            {!d.mfCode && (
-                              <p style={{ margin: '1px 0 0', fontSize: '0.68rem', color: 'var(--amber)' }}>⚠ VERIFY_AMFI — set MFAPI code after import</p>
-                            )}
+                            {!d.mfCode && <p style={{ margin: '1px 0 0', fontSize: '0.68rem', color: 'var(--amber)' }}>⚠ VERIFY_AMFI</p>}
                           </td>
                           <td style={{ padding: '7px 12px', textAlign: 'right' }}>{d.row.units.toFixed(3)}</td>
                           <td style={{ padding: '7px 12px', textAlign: 'right' }}>{formatINR(d.row.avgNAV)}</td>
@@ -635,15 +784,16 @@ export default function UpdateHoldingsModal({ onClose }) {
               <button
                 onClick={handleImport}
                 disabled={importing || (activeTab === 'zerodha' && selectedB.size === 0)}
-                style={{ padding: '9px 20px', borderRadius: 8, border: 'none', backgroundColor: (importing || (activeTab === 'zerodha' && selectedB.size === 0)) ? 'var(--text-muted)' : 'var(--accent)', color: '#fff', fontSize: '0.875rem', fontWeight: 500, cursor: (importing || (activeTab === 'zerodha' && selectedB.size === 0)) ? 'not-allowed' : 'pointer' }}
+                style={{
+                  padding: '9px 20px', borderRadius: 8, border: 'none', fontSize: '0.875rem', fontWeight: 500,
+                  backgroundColor: (importing || (activeTab === 'zerodha' && selectedB.size === 0)) ? 'var(--text-muted)' : 'var(--accent)',
+                  color: '#fff', cursor: (importing || (activeTab === 'zerodha' && selectedB.size === 0)) ? 'not-allowed' : 'pointer',
+                }}
               >
                 {importing ? 'Importing…' : activeTab === 'zerodha' ? `Import Selected (${selectedB.size})` : 'Import Now'}
               </button>
-              <button
-                onClick={reset}
-                disabled={importing}
-                style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: importing ? 'not-allowed' : 'pointer' }}
-              >
+              <button onClick={reset} disabled={importing}
+                style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: importing ? 'not-allowed' : 'pointer' }}>
                 Back
               </button>
             </div>
