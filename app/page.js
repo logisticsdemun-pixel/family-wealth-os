@@ -19,18 +19,8 @@ function App() {
   const { theme, toggleTheme } = useTheme()
 
   useEffect(() => {
-    function onVisibility() {
-      if (document.hidden) {
-        lockStorage()
-        setIsUnlocked(false)
-      }
-    }
-    document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('beforeunload', lockStorage)
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility)
-      window.removeEventListener('beforeunload', lockStorage)
-    }
+    return () => window.removeEventListener('beforeunload', lockStorage)
   }, [])
 
   async function handleUnlock(password, mode) {
