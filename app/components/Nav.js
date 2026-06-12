@@ -36,7 +36,7 @@ function validateBackup(data) {
   }
   const found = BACKUP_SCHEMA.filter(s => s.key in data)
   if (found.length < 2) {
-    return 'This does not appear to be a Family Wealth OS backup. No recognised data sections found.'
+    return 'This does not appear to be a Grey Diary backup. No recognised data sections found.'
   }
   for (const { key, label } of found) {
     const v = data[key]
@@ -264,8 +264,8 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 24px', height: 56, gap: 8 }}>
           {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginRight: 16, flexShrink: 0 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700 }}>W</div>
-            <span style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>Family Wealth OS</span>
+            <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700 }}>G</div>
+            <span style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>Grey Diary</span>
           </div>
 
           {/* Tabs */}

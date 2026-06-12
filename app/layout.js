@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Family Wealth OS",
+  title: "Grey Diary",
   description: "Private family wealth management",
 };
 

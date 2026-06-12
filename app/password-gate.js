@@ -59,10 +59,10 @@ export default function PasswordGate({ onUnlock }) {
           width: 48, height: 48, borderRadius: 12, backgroundColor: 'var(--accent)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           margin: '0 auto 24px', fontSize: 22, fontWeight: 700, color: '#fff', letterSpacing: '-1px',
-        }}>W</div>
+        }}>G</div>
 
         <h1 style={{ color: 'var(--text-primary)', fontSize: '1.3rem', fontWeight: 600, margin: '0 0 6px' }}>
-          Family Wealth OS
+          Grey Diary
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0 0 32px' }}>
           {mode === 'setup' ? 'Create a password to secure your data' : 'Enter your password to continue'}

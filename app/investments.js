@@ -20,35 +20,22 @@ const btnPrimary = { padding: '9px 16px', borderRadius: 8, border: 'none', backg
 const btnGhost = { padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: 'pointer' }
 const card = { backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }
 
-// ── Price fetching ─────────────────────────────────────────
+// ── Price fetching via server-side API route (no CORS) ─────
 async function fetchStockPrice(ticker) {
-  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`
   try {
-    const res = await fetch(yahooUrl)
-    if (!res.ok) throw new Error()
+    const res = await fetch(`/api/price?ticker=${encodeURIComponent(ticker)}`)
     const data = await res.json()
-    const price = data.chart?.result?.[0]?.meta?.regularMarketPrice
-    if (price) return price
-    throw new Error()
+    return data.price ?? null
   } catch {
-    try {
-      const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`
-      const res2 = await fetch(proxy)
-      const wrapper = await res2.json()
-      const data = JSON.parse(wrapper.contents)
-      return data.chart?.result?.[0]?.meta?.regularMarketPrice ?? null
-    } catch {
-      return null
-    }
+    return null
   }
 }
 
 async function fetchMFPrice(mfCode) {
   try {
-    const res = await fetch(`https://api.mfapi.in/mf/${mfCode}/latest`)
+    const res = await fetch(`/api/price?mf=${encodeURIComponent(mfCode)}`)
     const data = await res.json()
-    const nav = parseFloat(data.data?.[0]?.nav)
-    return isNaN(nav) ? null : nav
+    return data.price ?? null
   } catch {
     return null
   }

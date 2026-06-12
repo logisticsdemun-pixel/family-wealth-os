@@ -1,4 +1,4 @@
-// Cryptographic primitives and in-memory data store for Family Wealth OS
+// Cryptographic primitives and in-memory data store for Grey Diary
 
 const AUTH_KEY = 'fwos:auth'
 const V2_PREFIX = 'fwos:v2:'
