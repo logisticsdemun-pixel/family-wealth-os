@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { load, save, KEYS } from './lib/storage'
 import { formatINR, formatPct, gainColor, firstName, MEMBERS, calculateCAGR, yearsElapsed } from './lib/format'
 import { SEED_INVESTMENTS, SEED_FIXED_INCOME } from './lib/seedData'
+import { takeSnapshotFromStorage } from './lib/snapshot'
 
 const INV_TYPES = ['Stock', 'Mutual Fund', 'Short Term Fund', 'ETF', 'Fixed Income']
 
@@ -392,6 +393,7 @@ export default function Investments({ activeMember }) {
     const ts = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     setLastUpdated(ts)
     save(KEYS.PRICE_UPDATED, ts)
+    takeSnapshotFromStorage()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const allFiltered = filterByMember(investments, activeMember)

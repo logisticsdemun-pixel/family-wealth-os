@@ -1,8 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { load, save, KEYS } from './lib/storage'
 import { formatINR, memberColor, memberInitials, firstName, MEMBERS, computeOutstanding } from './lib/format'
 import { SEED_INVESTMENTS, SEED_GOLD, DEFAULT_GOLD_PRICES, SEED_LOANS, SEED_FIXED_INCOME, SEED_CASH_ASSETS, SEED_LIABILITIES } from './lib/seedData'
+import { takeSnapshot, getSnapshots } from './lib/snapshot'
 
 const ASSET_TYPES = ['Cash & Savings', 'Fixed Deposit', 'EPF / PPF', 'Real Estate', 'Crypto', 'Other']
 const LIABILITY_TYPES = ['Credit Card', 'Personal Loan', 'Education Loan', 'Other Debt']
@@ -57,6 +59,31 @@ function sharedLoanTotal(loans) {
 }
 function manualLiabilityValue(liabilities, member) {
   return filterByMember(liabilities, member).reduce((s, l) => s + (l.value || 0), 0)
+}
+
+// ── Chart helpers ──────────────────────────────────────────
+function fmtAxisINR(v) {
+  if (v >= 10000000) return `₹${(v / 10000000).toFixed(1)}Cr`
+  if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`
+  if (v >= 1000) return `₹${(v / 1000).toFixed(0)}K`
+  return `₹${v}`
+}
+
+function fmtXDate(d) {
+  if (!d) return ''
+  const [, m, day] = d.split('-')
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  return `${months[parseInt(m) - 1]} ${parseInt(day)}`
+}
+
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+      <p style={{ margin: '0 0 4px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{label}</p>
+      <p style={{ margin: 0, fontWeight: 600, color: 'var(--accent)' }}>{formatINR(payload[0].value)}</p>
+    </div>
+  )
 }
 
 // ── Allocation bar ─────────────────────────────────────────
@@ -238,16 +265,35 @@ export default function Dashboard({ activeMember }) {
   const [liabilities, setLiabilities] = useState([])
   const [showAddCash, setShowAddCash] = useState(false)
   const [showAddLiability, setShowAddLiability] = useState(false)
+  const [snapshots, setSnapshots] = useState([])
 
   useEffect(() => {
-    setInvestments(load(KEYS.INVESTMENTS, SEED_INVESTMENTS))
-    setGold(load(KEYS.GOLD, SEED_GOLD))
-    setGoldPrices(load(KEYS.GOLD_PRICES, DEFAULT_GOLD_PRICES))
-    setLoans(load(KEYS.LOANS, SEED_LOANS))
-    setFixedIncome(load(KEYS.FIXED_INCOME, SEED_FIXED_INCOME))
+    const inv = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
+    const gld = load(KEYS.GOLD, SEED_GOLD)
+    const gp = load(KEYS.GOLD_PRICES, DEFAULT_GOLD_PRICES)
+    const lns = load(KEYS.LOANS, SEED_LOANS)
+    const fi = load(KEYS.FIXED_INCOME, SEED_FIXED_INCOME)
     // Filter out legacy items that lack a member field (old app version format)
-    setCashAssets((load(KEYS.CASH_ASSETS, SEED_CASH_ASSETS) || []).filter(a => a.member))
-    setLiabilities((load(KEYS.LIABILITIES, SEED_LIABILITIES) || []).filter(l => l.member))
+    const ca = (load(KEYS.CASH_ASSETS, SEED_CASH_ASSETS) || []).filter(a => a.member)
+    const liab = (load(KEYS.LIABILITIES, SEED_LIABILITIES) || []).filter(l => l.member)
+
+    setInvestments(inv)
+    setGold(gld)
+    setGoldPrices(gp)
+    setLoans(lns)
+    setFixedIncome(fi)
+    setCashAssets(ca)
+    setLiabilities(liab)
+
+    const invV = (inv || []).reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
+    const gldV = (gld || []).reduce((s, g) => s + g.grams * ((gp || {})[g.carat] ?? 0), 0)
+    const fdV = (fi || []).reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
+    const caV = ca.reduce((s, a) => s + (a.value || 0), 0)
+    const loanV = (lns || []).reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
+    const liabV = liab.reduce((s, l) => s + (l.value || 0), 0)
+    const nw = invV + gldV + fdV + caV - loanV - liabV
+    takeSnapshot(nw)
+    setSnapshots(getSnapshots())
   }, [])
 
   // ── Computed values ──────────────────────────────────────
@@ -324,6 +370,42 @@ export default function Dashboard({ activeMember }) {
           </p>
         )}
       </div>
+
+      {/* ── Net worth history chart ──────────────────────── */}
+      {snapshots.length >= 2 && (
+        <div style={{ ...card, padding: '20px 24px', marginBottom: 24 }}>
+          <p style={{ ...label, marginBottom: 16, fontSize: '0.72rem' }}>NET WORTH HISTORY</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={snapshots.slice(-90)} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis
+                dataKey="date"
+                tickFormatter={fmtXDate}
+                tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                tickLine={false}
+                axisLine={false}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                tickFormatter={fmtAxisINR}
+                tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                tickLine={false}
+                axisLine={false}
+                width={64}
+              />
+              <Tooltip content={<ChartTooltip />} />
+              <Line
+                type="monotone"
+                dataKey="netWorth"
+                stroke="var(--accent)"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4, fill: 'var(--accent)' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* ── Single-member shared loan note ──────────────── */}
       {activeMember !== 'All' && sharedLoans > 0 && (

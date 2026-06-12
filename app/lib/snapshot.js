@@ -1,0 +1,41 @@
+'use client'
+import { load, save, KEYS } from './storage'
+import { computeOutstanding } from './format'
+
+const MAX_SNAPSHOTS = 365
+
+export function takeSnapshot(netWorth) {
+  if (typeof window === 'undefined' || netWorth == null || isNaN(netWorth) || netWorth === 0) return
+  const snapshots = load(KEYS.SNAPSHOTS, []) || []
+  const today = new Date().toISOString().slice(0, 10)
+  const entry = { date: today, netWorth: Math.round(netWorth) }
+  const idx = snapshots.findIndex(s => s.date === today)
+  const updated = idx >= 0
+    ? snapshots.map((s, i) => i === idx ? entry : s)
+    : [...snapshots, entry]
+  save(KEYS.SNAPSHOTS, updated.sort((a, b) => a.date.localeCompare(b.date)).slice(-MAX_SNAPSHOTS))
+}
+
+export function takeSnapshotFromStorage(goldPriceDefaults) {
+  if (typeof window === 'undefined') return
+  const investments = load(KEYS.INVESTMENTS, []) || []
+  const gold = load(KEYS.GOLD, []) || []
+  const goldPrices = load(KEYS.GOLD_PRICES, goldPriceDefaults || {}) || {}
+  const fixedIncome = load(KEYS.FIXED_INCOME, []) || []
+  const cashAssets = (load(KEYS.CASH_ASSETS, []) || []).filter(a => a.member)
+  const liabilities = (load(KEYS.LIABILITIES, []) || []).filter(l => l.member)
+  const loans = load(KEYS.LOANS, []) || []
+
+  const invVal = investments.reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
+  const goldVal = gold.reduce((s, g) => s + g.grams * (goldPrices[g.carat] ?? 0), 0)
+  const fdVal = fixedIncome.reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
+  const cashVal = cashAssets.reduce((s, a) => s + (a.value || 0), 0)
+  const loanLiab = loans.reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
+  const manualLiab = liabilities.reduce((s, l) => s + (l.value || 0), 0)
+
+  takeSnapshot(invVal + goldVal + fdVal + cashVal - loanLiab - manualLiab)
+}
+
+export function getSnapshots() {
+  return load(KEYS.SNAPSHOTS, []) || []
+}
