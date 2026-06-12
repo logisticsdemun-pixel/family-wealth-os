@@ -1,477 +1,461 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { load, save, KEYS } from './lib/storage'
+import { formatINR, memberColor, memberInitials, firstName, MEMBERS, computeOutstanding } from './lib/format'
+import { SEED_INVESTMENTS, SEED_GOLD, DEFAULT_GOLD_PRICES, SEED_LOANS, SEED_FIXED_INCOME, SEED_CASH_ASSETS, SEED_LIABILITIES } from './lib/seedData'
 
-const ASSET_TYPES = [
-  'Cash & Savings',
-  'Fixed Deposits',
-  'Stocks',
-  'Mutual Funds',
-  'Gold',
-  'EPF / PPF',
-  'Real Estate',
-  'Crypto',
-  'Other'
-]
+const ASSET_TYPES = ['Cash & Savings', 'Fixed Deposit', 'EPF / PPF', 'Real Estate', 'Crypto', 'Other']
+const LIABILITY_TYPES = ['Credit Card', 'Personal Loan', 'Education Loan', 'Other Debt']
 
-const LIABILITY_TYPES = [
-  'Home Loan',
-  'Car Loan',
-  'Personal Loan',
-  'Credit Card',
-  'Education Loan',
-  'Other Debt'
-]
+// ── Shared style atoms ─────────────────────────────────────
+const card = { backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }
+const inp = {
+  width: '100%', padding: '9px 12px', borderRadius: 8,
+  border: '1px solid var(--border)', backgroundColor: 'var(--bg)',
+  color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none', marginBottom: 10,
+}
+const label = { fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', margin: '0 0 4px', display: 'block' }
+const btnPrimary = { padding: '9px 16px', borderRadius: 8, border: 'none', backgroundColor: 'var(--accent)', color: '#fff', fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer' }
+const btnGhost = { padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: 'pointer' }
 
-export default function Dashboard() {
-  const [assets, setAssets] = useState([])
-  const [liabilities, setLiabilities] = useState([])
-  const [showAssetForm, setShowAssetForm] = useState(false)
-  const [showLiabilityForm, setShowLiabilityForm] = useState(false)
+function filterByMember(arr, member) {
+  return member === 'All' ? arr : arr.filter(x => x.member === member)
+}
 
-  const [assetName, setAssetName] = useState('')
-  const [assetType, setAssetType] = useState(ASSET_TYPES[0])
-  const [assetValue, setAssetValue] = useState('')
+// ── Net worth computation helpers ──────────────────────────
+function investmentValue(investments, member) {
+  return filterByMember(investments, member)
+    .reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
+}
+function goldValue(gold, goldPrices, member) {
+  return filterByMember(gold, member)
+    .filter(g => g.category === 'Investment')
+    .reduce((s, g) => s + g.grams * (goldPrices[g.carat] ?? 0), 0)
+}
+function jewelleryValue(gold, goldPrices, member) {
+  return filterByMember(gold, member)
+    .filter(g => g.category === 'Jewellery')
+    .reduce((s, g) => s + g.grams * (goldPrices[g.carat] ?? 0), 0)
+}
+function cashValue(cashAssets, member) {
+  return filterByMember(cashAssets, member).reduce((s, a) => s + (a.value || 0), 0)
+}
+function fdValue(fixedIncome, member) {
+  return filterByMember(fixedIncome, member).reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
+}
+function loanLiabilities(loans, member) {
+  const relevant = member === 'All'
+    ? loans
+    : loans.filter(l => !l.isShared && l.member === member)
+  return relevant.reduce((s, l) => {
+    const o = computeOutstanding(l)
+    return s + (o ?? 0)
+  }, 0)
+}
+function sharedLoanTotal(loans) {
+  return loans.filter(l => l.isShared).reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
+}
+function manualLiabilityValue(liabilities, member) {
+  return filterByMember(liabilities, member).reduce((s, l) => s + (l.value || 0), 0)
+}
 
-  const [liabilityName, setLiabilityName] = useState('')
-  const [liabilityType, setLiabilityType] = useState(LIABILITY_TYPES[0])
-  const [liabilityValue, setLiabilityValue] = useState('')
+// ── Allocation bar ─────────────────────────────────────────
+function AllocationBar({ segments }) {
+  const total = segments.reduce((s, sg) => s + sg.value, 0)
+  if (!total) return null
+  return (
+    <div>
+      <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', gap: 1, marginBottom: 12 }}>
+        {segments.map((sg, i) => sg.value > 0 && (
+          <div key={i} style={{ flex: sg.value, backgroundColor: sg.color, minWidth: 2 }} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px' }}>
+        {segments.map((sg, i) => sg.value > 0 && (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: sg.color, flexShrink: 0 }} />
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              {sg.label} <strong style={{ color: 'var(--text-primary)' }}>{((sg.value / total) * 100).toFixed(1)}%</strong>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
-  useEffect(() => {
-    const savedAssets = localStorage.getItem('fwos-assets')
-    if (savedAssets) setAssets(JSON.parse(savedAssets))
-    const savedLiabilities = localStorage.getItem('fwos-liabilities')
-    if (savedLiabilities) setLiabilities(JSON.parse(savedLiabilities))
-  }, [])
+// ── Member avatar ──────────────────────────────────────────
+function Avatar({ name, size = 32 }) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%',
+      backgroundColor: memberColor(name),
+      color: '#fff',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: size * 0.35, fontWeight: 600, flexShrink: 0,
+      letterSpacing: '-0.5px',
+    }}>
+      {memberInitials(name)}
+    </div>
+  )
+}
 
-  function saveAssets(updated) {
-    setAssets(updated)
-    localStorage.setItem('fwos-assets', JSON.stringify(updated))
+// ── Inline editable row ────────────────────────────────────
+function EditableRow({ item, onSave, onDelete, valueLabel = 'Value', isLiability = false }) {
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({ ...item })
+
+  function save() {
+    onSave({ ...form, value: parseFloat(form.value) || 0 })
+    setEditing(false)
   }
 
-  function saveLiabilities(updated) {
-    setLiabilities(updated)
-    localStorage.setItem('fwos-liabilities', JSON.stringify(updated))
-  }
-
-  function handleAddAsset(e) {
-    e.preventDefault()
-    const newAsset = {
-      id: Date.now(),
-      name: assetName,
-      type: assetType,
-      value: parseFloat(assetValue)
-    }
-    saveAssets([...assets, newAsset])
-    setAssetName('')
-    setAssetType(ASSET_TYPES[0])
-    setAssetValue('')
-    setShowAssetForm(false)
-  }
-
-  function handleDeleteAsset(id) {
-    saveAssets(assets.filter(a => a.id !== id))
-  }
-
-  function handleEditAsset(id, newValue) {
-    saveAssets(assets.map(a =>
-      a.id === id ? { ...a, value: parseFloat(newValue) } : a
-    ))
-  }
-
-  function handleAddLiability(e) {
-    e.preventDefault()
-    const newLiability = {
-      id: Date.now(),
-      name: liabilityName,
-      type: liabilityType,
-      value: parseFloat(liabilityValue)
-    }
-    saveLiabilities([...liabilities, newLiability])
-    setLiabilityName('')
-    setLiabilityType(LIABILITY_TYPES[0])
-    setLiabilityValue('')
-    setShowLiabilityForm(false)
-  }
-
-  function handleDeleteLiability(id) {
-    saveLiabilities(liabilities.filter(l => l.id !== id))
-  }
-
-  function handleEditLiability(id, newValue) {
-    saveLiabilities(liabilities.map(l =>
-      l.id === id ? { ...l, value: parseFloat(newValue) } : l
-    ))
-  }
-
-  const totalAssets = assets.reduce((sum, a) => sum + a.value, 0)
-  const totalLiabilities = liabilities.reduce((sum, l) => sum + l.value, 0)
-  const totalNetWorth = totalAssets - totalLiabilities
-
-  const byType = ASSET_TYPES.map(t => ({
-    type: t,
-    total: assets.filter(a => a.type === t).reduce((sum, a) => sum + a.value, 0)
-  })).filter(t => t.total > 0)
-
-  function formatINR(amount) {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(amount)
-  }
-
-  const inputStyle = {
-    width: '100%',
-    padding: '10px 14px',
-    borderRadius: '8px',
-    border: '1px solid #334155',
-    backgroundColor: '#0f172a',
-    color: 'white',
-    fontSize: '0.95rem',
-    boxSizing: 'border-box',
-    marginBottom: '12px'
+  if (editing) {
+    return (
+      <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+          <div>
+            <span style={label}>Name</span>
+            <input style={inp} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div>
+            <span style={label}>Type</span>
+            <select style={inp} value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+              {(isLiability ? LIABILITY_TYPES : ASSET_TYPES).map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={label}>Member</span>
+            <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
+              {MEMBERS.map(m => <option key={m}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <span style={label}>{valueLabel} (₹)</span>
+            <input type="number" style={inp} value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} />
+          </div>
+          {isLiability && (
+            <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" id={`shared-${item.id}`} checked={!!form.isShared} onChange={e => setForm({ ...form, isShared: e.target.checked })} />
+              <label htmlFor={`shared-${item.id}`} style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Shared family liability</label>
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={save} style={btnPrimary}>Save</button>
+          <button onClick={() => setEditing(false)} style={btnGhost}>Cancel</button>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      backgroundColor: '#0f172a',
-      fontFamily: 'sans-serif',
-      color: 'white',
-      padding: '32px 24px'
-    }}>
-      <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-
-        {/* Header */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{ fontSize: '1.8rem', margin: 0 }}>Family Wealth OS</h1>
-          <p style={{ color: '#94a3b8', margin: '4px 0 0' }}>Net Worth Dashboard</p>
-        </div>
-
-        {/* Net Worth Card */}
-        <div style={{
-          backgroundColor: '#1e293b',
-          borderRadius: '16px',
-          padding: '32px',
-          marginBottom: '24px',
-          textAlign: 'center'
-        }}>
-          <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '8px' }}>
-            TOTAL NET WORTH
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Avatar name={item.member} size={28} />
+        <div>
+          <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+            {item.name}
+            {isLiability && item.isShared && (
+              <span style={{ marginLeft: 6, fontSize: '0.7rem', backgroundColor: 'var(--amber-faint)', color: 'var(--amber)', padding: '1px 6px', borderRadius: 4, fontWeight: 500 }}>
+                Shared
+              </span>
+            )}
           </p>
-          <h2 style={{ fontSize: '3rem', margin: 0, color: '#6366f1' }}>
-            {formatINR(totalNetWorth)}
-          </h2>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '32px',
-            marginTop: '16px'
-          }}>
-            <div>
-              <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: 0 }}>TOTAL ASSETS</p>
-              <p style={{ color: '#22c55e', fontSize: '1.1rem', margin: '4px 0 0' }}>
-                {formatINR(totalAssets)}
-              </p>
-            </div>
-            <div>
-              <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: 0 }}>TOTAL LIABILITIES</p>
-              <p style={{ color: '#ef4444', fontSize: '1.1rem', margin: '4px 0 0' }}>
-                {formatINR(totalLiabilities)}
-              </p>
-            </div>
+          <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.type} · {firstName(item.member)}</p>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ fontWeight: 600, color: isLiability ? 'var(--loss)' : 'var(--text-primary)', fontSize: '0.9rem' }}>
+          {formatINR(item.value)}
+        </span>
+        <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem', padding: '4px 6px' }}>Edit</button>
+        <button onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--loss)', cursor: 'pointer', fontSize: '0.8rem', padding: '4px 6px' }}>✕</button>
+      </div>
+    </div>
+  )
+}
+
+// ── Add form ───────────────────────────────────────────────
+function AddForm({ onAdd, onCancel, isLiability = false }) {
+  const [form, setForm] = useState({
+    name: '', type: isLiability ? LIABILITY_TYPES[0] : ASSET_TYPES[0],
+    member: MEMBERS[0], value: '', isShared: false,
+  })
+
+  function handleSubmit(e) {
+    e.preventDefault()
+    onAdd({ ...form, value: parseFloat(form.value) || 0, id: Date.now() })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} style={{ ...card, padding: 20, marginTop: 12 }}>
+      <p style={{ ...label, marginBottom: 12, fontSize: '0.75rem' }}>{isLiability ? 'ADD LIABILITY' : 'ADD CASH / ASSET'}</p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div>
+          <span style={label}>Name</span>
+          <input required style={inp} placeholder="e.g. SBI Savings" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+        </div>
+        <div>
+          <span style={label}>Type</span>
+          <select style={inp} value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+            {(isLiability ? LIABILITY_TYPES : ASSET_TYPES).map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <span style={label}>Member</span>
+          <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
+            {MEMBERS.map(m => <option key={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <span style={label}>Amount (₹)</span>
+          <input required type="number" style={inp} placeholder="0" value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} />
+        </div>
+        {isLiability && (
+          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+            <input type="checkbox" id="new-shared" checked={form.isShared} onChange={e => setForm({ ...form, isShared: e.target.checked })} />
+            <label htmlFor="new-shared" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Shared family liability</label>
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+        <button type="submit" style={btnPrimary}>Add</button>
+        <button type="button" onClick={onCancel} style={btnGhost}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+// ── Main Dashboard component ───────────────────────────────
+export default function Dashboard({ activeMember }) {
+  const [investments, setInvestments] = useState([])
+  const [gold, setGold] = useState([])
+  const [goldPrices, setGoldPrices] = useState(DEFAULT_GOLD_PRICES)
+  const [loans, setLoans] = useState([])
+  const [fixedIncome, setFixedIncome] = useState([])
+  const [cashAssets, setCashAssets] = useState([])
+  const [liabilities, setLiabilities] = useState([])
+  const [showAddCash, setShowAddCash] = useState(false)
+  const [showAddLiability, setShowAddLiability] = useState(false)
+
+  useEffect(() => {
+    setInvestments(load(KEYS.INVESTMENTS, SEED_INVESTMENTS))
+    setGold(load(KEYS.GOLD, SEED_GOLD))
+    setGoldPrices(load(KEYS.GOLD_PRICES, DEFAULT_GOLD_PRICES))
+    setLoans(load(KEYS.LOANS, SEED_LOANS))
+    setFixedIncome(load(KEYS.FIXED_INCOME, SEED_FIXED_INCOME))
+    // Filter out legacy items that lack a member field (old app version format)
+    setCashAssets((load(KEYS.CASH_ASSETS, SEED_CASH_ASSETS) || []).filter(a => a.member))
+    setLiabilities((load(KEYS.LIABILITIES, SEED_LIABILITIES) || []).filter(l => l.member))
+  }, [])
+
+  // ── Computed values ──────────────────────────────────────
+  const invVal = investmentValue(investments, activeMember)
+  const goldVal = goldValue(gold, goldPrices, activeMember)
+  const jewVal = jewelleryValue(gold, goldPrices, activeMember)
+  const cashVal = cashValue(cashAssets, activeMember)
+  const fdVal = fdValue(fixedIncome, activeMember)
+  const loanLiab = loanLiabilities(loans, activeMember)
+  const manualLiab = manualLiabilityValue(liabilities, activeMember)
+  const totalAssets = invVal + goldVal + jewVal + cashVal + fdVal
+  const totalLiab = loanLiab + manualLiab
+  const netWorth = totalAssets - totalLiab
+
+  const sharedLoans = activeMember !== 'All' ? sharedLoanTotal(loans) : 0
+
+  // ── Member breakdown (shown when All) ────────────────────
+  const memberRows = MEMBERS.map(m => {
+    const inv = investmentValue(investments, m)
+    const gld = goldValue(gold, goldPrices, m) + jewelleryValue(gold, goldPrices, m)
+    const csh = cashValue(cashAssets, m) + fdValue(fixedIncome, m)
+    const liab = manualLiabilityValue(liabilities, m) + loanLiabilities(loans, m)
+    return { member: m, inv, gld, csh, liab, net: inv + gld + csh - liab }
+  })
+
+  // ── Allocation segments ──────────────────────────────────
+  const allocSegments = [
+    { label: 'Equity', value: invVal, color: 'var(--accent)' },
+    { label: 'Gold', value: goldVal + jewVal, color: 'var(--gold-color)' },
+    { label: 'Cash & FD', value: cashVal + fdVal, color: 'var(--gain)' },
+  ].filter(s => s.value > 0)
+
+  // ── CRUD helpers ─────────────────────────────────────────
+  function saveCash(updated) { setCashAssets(updated); save(KEYS.CASH_ASSETS, updated) }
+  function saveLiab(updated) { setLiabilities(updated); save(KEYS.LIABILITIES, updated) }
+
+  function addCash(item) { saveCash([...cashAssets, item]); setShowAddCash(false) }
+  function updateCash(item) { saveCash(cashAssets.map(a => a.id === item.id ? item : a)) }
+  function deleteCash(id) { saveCash(cashAssets.filter(a => a.id !== id)) }
+
+  function addLiab(item) { saveLiab([...liabilities, item]); setShowAddLiability(false) }
+  function updateLiab(item) { saveLiab(liabilities.map(l => l.id === item.id ? item : l)) }
+  function deleteLiab(id) { saveLiab(liabilities.filter(l => l.id !== id)) }
+
+  const filteredCash = filterByMember(cashAssets, activeMember)
+  const filteredLiab = filterByMember(liabilities, activeMember)
+
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px' }}>
+
+      {/* ── Hero net worth ───────────────────────────────── */}
+      <div style={{ ...card, padding: '36px 32px', marginBottom: 24, textAlign: 'center' }}>
+        <p style={{ ...label, marginBottom: 8, fontSize: '0.75rem' }}>
+          {activeMember === 'All' ? 'FAMILY NET WORTH' : `${activeMember.split(' ')[0].toUpperCase()} NET WORTH`}
+        </p>
+        <div style={{ fontSize: '2.8rem', fontWeight: 700, color: netWorth >= 0 ? 'var(--text-primary)' : 'var(--loss)', letterSpacing: '-1.5px', lineHeight: 1.1 }}>
+          {formatINR(netWorth)}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 32, marginTop: 16 }}>
+          <div>
+            <p style={{ ...label, textAlign: 'center' }}>Assets</p>
+            <p style={{ margin: 0, color: 'var(--gain)', fontWeight: 600 }}>{formatINR(totalAssets)}</p>
+          </div>
+          <div style={{ width: 1, backgroundColor: 'var(--border)' }} />
+          <div>
+            <p style={{ ...label, textAlign: 'center' }}>Liabilities</p>
+            <p style={{ margin: 0, color: 'var(--loss)', fontWeight: 600 }}>{formatINR(totalLiab)}</p>
           </div>
         </div>
-
-        {/* Breakdown by type */}
-        {byType.length > 0 && (
-          <div style={{
-            backgroundColor: '#1e293b',
-            borderRadius: '16px',
-            padding: '24px',
-            marginBottom: '24px'
-          }}>
-            <h3 style={{ margin: '0 0 20px', fontSize: '1rem', color: '#94a3b8' }}>
-              BREAKDOWN BY TYPE
-            </h3>
-            {byType.map(t => (
-              <div key={t.type} style={{ marginBottom: '14px' }}>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: '6px',
-                  fontSize: '0.9rem'
-                }}>
-                  <span>{t.type}</span>
-                  <span style={{ color: '#6366f1' }}>{formatINR(t.total)}</span>
-                </div>
-                <div style={{
-                  height: '6px',
-                  backgroundColor: '#0f172a',
-                  borderRadius: '4px',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{
-                    height: '100%',
-                    width: `${(t.total / totalAssets) * 100}%`,
-                    backgroundColor: '#6366f1',
-                    borderRadius: '4px'
-                  }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Assets List */}
-        {assets.length > 0 && (
-          <div style={{
-            backgroundColor: '#1e293b',
-            borderRadius: '16px',
-            padding: '24px',
-            marginBottom: '24px'
-          }}>
-            <h3 style={{ margin: '0 0 20px', fontSize: '1rem', color: '#94a3b8' }}>
-              ASSETS
-            </h3>
-            {assets.map(asset => (
-              <div key={asset.id} style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '12px 0',
-                borderBottom: '1px solid #334155'
-              }}>
-                <div>
-                  <p style={{ margin: 0, fontSize: '0.95rem' }}>{asset.name}</p>
-                  <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#64748b' }}>
-                    {asset.type}
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <input
-                    type="number"
-                    defaultValue={asset.value}
-                    onBlur={e => handleEditAsset(asset.id, e.target.value)}
-                    style={{
-                      width: '120px',
-                      padding: '6px 10px',
-                      borderRadius: '6px',
-                      border: '1px solid #334155',
-                      backgroundColor: '#0f172a',
-                      color: '#22c55e',
-                      fontSize: '0.9rem',
-                      textAlign: 'right'
-                    }}
-                  />
-                  <button
-                    onClick={() => handleDeleteAsset(asset.id)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#ef4444',
-                      cursor: 'pointer',
-                      fontSize: '0.85rem'
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Liabilities List */}
-        {liabilities.length > 0 && (
-          <div style={{
-            backgroundColor: '#1e293b',
-            borderRadius: '16px',
-            padding: '24px',
-            marginBottom: '24px'
-          }}>
-            <h3 style={{ margin: '0 0 20px', fontSize: '1rem', color: '#94a3b8' }}>
-              LIABILITIES
-            </h3>
-            {liabilities.map(liability => (
-              <div key={liability.id} style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '12px 0',
-                borderBottom: '1px solid #334155'
-              }}>
-                <div>
-                  <p style={{ margin: 0, fontSize: '0.95rem' }}>{liability.name}</p>
-                  <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#64748b' }}>
-                    {liability.type}
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <input
-                    type="number"
-                    defaultValue={liability.value}
-                    onBlur={e => handleEditLiability(liability.id, e.target.value)}
-                    style={{
-                      width: '120px',
-                      padding: '6px 10px',
-                      borderRadius: '6px',
-                      border: '1px solid #334155',
-                      backgroundColor: '#0f172a',
-                      color: '#ef4444',
-                      fontSize: '0.9rem',
-                      textAlign: 'right'
-                    }}
-                  />
-                  <button
-                    onClick={() => handleDeleteLiability(liability.id)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#ef4444',
-                      cursor: 'pointer',
-                      fontSize: '0.85rem'
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Add Asset Button / Form */}
-        {showAssetForm ? (
-          <div style={{
-            backgroundColor: '#1e293b',
-            borderRadius: '16px',
-            padding: '24px',
-            marginBottom: '16px'
-          }}>
-            <h3 style={{ margin: '0 0 20px', fontSize: '1rem', color: '#94a3b8' }}>
-              ADD ASSET
-            </h3>
-            <form onSubmit={handleAddAsset}>
-              <input
-                style={inputStyle}
-                placeholder="Asset name (e.g. SBI Savings Account)"
-                value={assetName}
-                onChange={e => setAssetName(e.target.value)}
-                required
-              />
-              <select
-                style={inputStyle}
-                value={assetType}
-                onChange={e => setAssetType(e.target.value)}
-              >
-                {ASSET_TYPES.map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-              <input
-                style={inputStyle}
-                placeholder="Current value in ₹"
-                type="number"
-                value={assetValue}
-                onChange={e => setAssetValue(e.target.value)}
-                required
-              />
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button type="submit" style={{
-                  flex: 1, padding: '12px', borderRadius: '8px',
-                  backgroundColor: '#6366f1', color: 'white',
-                  border: 'none', cursor: 'pointer', fontSize: '1rem'
-                }}>
-                  Add Asset
-                </button>
-                <button type="button" onClick={() => setShowAssetForm(false)} style={{
-                  flex: 1, padding: '12px', borderRadius: '8px',
-                  backgroundColor: '#334155', color: 'white',
-                  border: 'none', cursor: 'pointer', fontSize: '1rem'
-                }}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        ) : (
-          <button onClick={() => setShowAssetForm(true)} style={{
-            width: '100%', padding: '16px', borderRadius: '16px',
-            backgroundColor: '#1e293b', color: '#6366f1',
-            border: '2px dashed #334155', cursor: 'pointer',
-            fontSize: '1rem', marginBottom: '16px'
-          }}>
-            + Add Asset
-          </button>
-        )}
-
-        {/* Add Liability Button / Form */}
-        {showLiabilityForm ? (
-          <div style={{
-            backgroundColor: '#1e293b',
-            borderRadius: '16px',
-            padding: '24px',
-            marginBottom: '16px'
-          }}>
-            <h3 style={{ margin: '0 0 20px', fontSize: '1rem', color: '#94a3b8' }}>
-              ADD LIABILITY
-            </h3>
-            <form onSubmit={handleAddLiability}>
-              <input
-                style={inputStyle}
-                placeholder="Liability name (e.g. HDFC Home Loan)"
-                value={liabilityName}
-                onChange={e => setLiabilityName(e.target.value)}
-                required
-              />
-              <select
-                style={inputStyle}
-                value={liabilityType}
-                onChange={e => setLiabilityType(e.target.value)}
-              >
-                {LIABILITY_TYPES.map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-              <input
-                style={inputStyle}
-                placeholder="Outstanding amount in ₹"
-                type="number"
-                value={liabilityValue}
-                onChange={e => setLiabilityValue(e.target.value)}
-                required
-              />
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button type="submit" style={{
-                  flex: 1, padding: '12px', borderRadius: '8px',
-                  backgroundColor: '#ef4444', color: 'white',
-                  border: 'none', cursor: 'pointer', fontSize: '1rem'
-                }}>
-                  Add Liability
-                </button>
-                <button type="button" onClick={() => setShowLiabilityForm(false)} style={{
-                  flex: 1, padding: '12px', borderRadius: '8px',
-                  backgroundColor: '#334155', color: 'white',
-                  border: 'none', cursor: 'pointer', fontSize: '1rem'
-                }}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        ) : (
-          <button onClick={() => setShowLiabilityForm(true)} style={{
-            width: '100%', padding: '16px', borderRadius: '16px',
-            backgroundColor: '#1e293b', color: '#ef4444',
-            border: '2px dashed #334155', cursor: 'pointer',
-            fontSize: '1rem', marginBottom: '16px'
-          }}>
-            + Add Liability
-          </button>
-        )}
-
       </div>
+
+      {/* ── Single-member shared loan note ──────────────── */}
+      {activeMember !== 'All' && sharedLoans > 0 && (
+        <div style={{
+          backgroundColor: 'var(--amber-faint)', border: '1px solid var(--amber)',
+          borderRadius: 10, padding: '12px 16px', marginBottom: 24, fontSize: '0.82rem', color: 'var(--text-secondary)',
+        }}>
+          <strong style={{ color: 'var(--text-primary)' }}>Note:</strong> Shared family liabilities (home loan etc.) totalling{' '}
+          <strong>{formatINR(sharedLoans)}</strong> are not included in {firstName(activeMember)}&apos;s personal net worth.
+          View the full picture under <em>All Members</em>.
+        </div>
+      )}
+
+      {/* ── 4 Metric cards ──────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 24 }}>
+        {[
+          { label: 'Investments', value: invVal, color: 'var(--accent)' },
+          { label: 'Gold', value: goldVal + jewVal, color: 'var(--gold-color)' },
+          { label: 'Cash & FDs', value: cashVal + fdVal, color: 'var(--gain)' },
+          { label: 'Liabilities', value: totalLiab, color: 'var(--loss)' },
+        ].map(m => (
+          <div key={m.label} style={{ ...card, padding: '20px 24px' }}>
+            <p style={label}>{m.label}</p>
+            <p style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700, color: m.color, letterSpacing: '-0.5px' }}>
+              {formatINR(m.value)}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Member breakdown (All only) ──────────────────── */}
+      {activeMember === 'All' && (
+        <div style={{ ...card, padding: '0 0 4px', marginBottom: 24, overflow: 'hidden' }}>
+          <p style={{ ...label, padding: '18px 20px 0', fontSize: '0.72rem' }}>MEMBER BREAKDOWN</p>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  {['Member', 'Investments', 'Gold', 'Cash & FDs', 'Liabilities', 'Net Worth'].map(h => (
+                    <th key={h} style={{ padding: '10px 16px', textAlign: h === 'Member' ? 'left' : 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.75rem' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {memberRows.map(row => (
+                  <tr key={row.member} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Avatar name={row.member} size={26} />
+                        <span style={{ fontWeight: 500 }}>{firstName(row.member)}</span>
+                      </div>
+                    </td>
+                    {[row.inv, row.gld, row.csh, row.liab].map((v, i) => (
+                      <td key={i} style={{ padding: '12px 16px', textAlign: 'right', color: i === 3 ? 'var(--loss)' : 'var(--text-primary)' }}>
+                        {formatINR(v)}
+                      </td>
+                    ))}
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: row.net >= 0 ? 'var(--text-primary)' : 'var(--loss)' }}>
+                      {formatINR(row.net)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Asset allocation ─────────────────────────────── */}
+      {allocSegments.length > 0 && (
+        <div style={{ ...card, padding: '20px 24px', marginBottom: 24 }}>
+          <p style={{ ...label, marginBottom: 14, fontSize: '0.72rem' }}>ASSET ALLOCATION</p>
+          <AllocationBar segments={allocSegments} />
+        </div>
+      )}
+
+      {/* ── Cash & Other Assets ──────────────────────────── */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>Cash &amp; Other Assets</h3>
+          <button
+            onClick={() => setShowAddCash(v => !v)}
+            style={{ ...btnGhost, padding: '6px 12px', fontSize: '0.8rem' }}
+          >
+            {showAddCash ? 'Cancel' : '+ Add'}
+          </button>
+        </div>
+        {filteredCash.length > 0 ? (
+          <div style={{ ...card, padding: '0 20px' }}>
+            {filteredCash.map(item => (
+              <EditableRow
+                key={item.id}
+                item={item}
+                onSave={updateCash}
+                onDelete={() => deleteCash(item.id)}
+              />
+            ))}
+          </div>
+        ) : !showAddCash && (
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>
+            No cash assets recorded. Add savings accounts, FDs, or other assets here.
+          </p>
+        )}
+        {showAddCash && <AddForm onAdd={addCash} onCancel={() => setShowAddCash(false)} />}
+      </div>
+
+      {/* ── Liabilities ──────────────────────────────────── */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>Other Liabilities</h3>
+          <button
+            onClick={() => setShowAddLiability(v => !v)}
+            style={{ ...btnGhost, padding: '6px 12px', fontSize: '0.8rem' }}
+          >
+            {showAddLiability ? 'Cancel' : '+ Add'}
+          </button>
+        </div>
+        {filteredLiab.length > 0 ? (
+          <div style={{ ...card, padding: '0 20px' }}>
+            {filteredLiab.map(item => (
+              <EditableRow
+                key={item.id}
+                item={item}
+                onSave={updateLiab}
+                onDelete={() => deleteLiab(item.id)}
+                valueLabel="Outstanding"
+                isLiability
+              />
+            ))}
+          </div>
+        ) : !showAddLiability && (
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>
+            No other liabilities. Loans are tracked in the Loans tab.
+          </p>
+        )}
+        {showAddLiability && <AddForm onAdd={addLiab} onCancel={() => setShowAddLiability(false)} isLiability />}
+      </div>
+
     </div>
   )
 }

@@ -1,0 +1,72 @@
+import { loadFromMemory, saveToMemory, getAllMemoryData } from './crypto'
+
+export const KEYS = {
+  THEME: 'fwos-theme',
+  INVESTMENTS: 'fwos-investments',
+  FIXED_INCOME: 'fwos-fixed-income',
+  GOLD: 'fwos-gold',
+  GOLD_PRICES: 'fwos-gold-prices',
+  LOANS: 'fwos-loans',
+  INSURANCE: 'fwos-insurance',
+  CASH_ASSETS: 'fwos-cash-assets',
+  LIABILITIES: 'fwos-liabilities',
+  PRICE_CACHE: 'fwos-price-cache',
+  PRICE_UPDATED: 'fwos-price-updated',
+}
+
+// Only theme is stored as plaintext; everything else goes through the encrypted memory store
+const PLAINTEXT = new Set(['fwos-theme'])
+
+export function load(key, fallback = null) {
+  if (typeof window === 'undefined') return fallback
+  if (PLAINTEXT.has(key)) {
+    try {
+      const v = localStorage.getItem(key)
+      return v !== null ? JSON.parse(v) : fallback
+    } catch { return fallback }
+  }
+  return loadFromMemory(key, fallback)
+}
+
+export function save(key, value) {
+  if (typeof window === 'undefined') return
+  if (PLAINTEXT.has(key)) {
+    try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
+    return
+  }
+  saveToMemory(key, value)
+}
+
+export function exportAllData() {
+  const data = getAllMemoryData()
+  const theme = localStorage.getItem('fwos-theme')
+  if (theme) { try { data['fwos-theme'] = JSON.parse(theme) } catch {} }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `fwos-backup-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export function importAllData(file, onSuccess, onError) {
+  const reader = new FileReader()
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result)
+      Object.entries(data).forEach(([key, value]) => {
+        if (key === 'fwos-theme') {
+          localStorage.setItem(key, JSON.stringify(value))
+        } else {
+          saveToMemory(key, value)
+        }
+      })
+      onSuccess?.()
+      window.location.reload()
+    } catch {
+      onError?.('Invalid backup file. Please use a file exported from this app.')
+    }
+  }
+  reader.readAsText(file)
+}
