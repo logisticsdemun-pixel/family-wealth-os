@@ -187,13 +187,14 @@ function AddInvForm({ onAdd, onCancel }) {
     e.preventDefault()
     onAdd({
       ...form,
-      id: Date.now(),
+      id: crypto.randomUUID(),
       isMF,
       ticker: isMF ? null : form.ticker || null,
       mfCode: isMF ? form.mfCode || null : null,
       units: parseFloat(form.units),
       buyPrice: parseFloat(form.buyPrice),
       currentPrice: null,
+      flags: [],
     })
   }
 
@@ -248,7 +249,7 @@ function AddFDForm({ onAdd, onCancel }) {
 
   function handleSubmit(e) {
     e.preventDefault()
-    onAdd({ ...form, id: Date.now(), principal: parseFloat(form.principal), rate: parseFloat(form.rate), maturityValue: parseFloat(form.maturityValue) || null })
+    onAdd({ ...form, id: crypto.randomUUID(), flags: [], principal: parseFloat(form.principal), rate: parseFloat(form.rate), maturityValue: parseFloat(form.maturityValue) || null })
   }
 
   return (
@@ -337,6 +338,17 @@ export default function Investments({ activeMember }) {
     ? allFiltered.filter(i => i.type === 'Mutual Fund' || i.type === 'Short Term Fund' || i.type === 'ETF')
     : []
 
+  const unpricedCount = allFiltered.filter(i => i.currentPrice == null).length
+
+  function upsertInv(item) {
+    const exists = investments.some(i => i.id === item.id)
+    saveInv(exists ? investments.map(i => i.id === item.id ? item : i) : [...investments, item])
+  }
+  function upsertFD(item) {
+    const exists = fixedIncome.some(f => f.id === item.id)
+    saveFD(exists ? fixedIncome.map(f => f.id === item.id ? item : f) : [...fixedIncome, item])
+  }
+
   const SUB_TABS = [
     { id: 'all', label: 'All' },
     { id: 'stocks', label: 'Stocks' },
@@ -370,6 +382,22 @@ export default function Investments({ activeMember }) {
           {loading ? 'Updating…' : 'Refresh Prices'}
         </button>
       </div>
+
+      {/* ── Unpriced assets banner ────────────────────────── */}
+      {unpricedCount > 0 && subTab !== 'fi' && (
+        <div style={{
+          backgroundColor: 'var(--amber-faint)', border: '1px solid var(--amber)',
+          borderRadius: 10, padding: '10px 16px', marginBottom: 20,
+          fontSize: '0.82rem', color: 'var(--text-secondary)',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span style={{ color: 'var(--amber)', fontWeight: 700 }}>⚠</span>
+          <span>
+            <strong style={{ color: 'var(--text-primary)' }}>{unpricedCount} holding{unpricedCount > 1 ? 's' : ''}</strong>{' '}
+            without a live price — values use buy price as a fallback. Click <strong>Refresh Prices</strong> to fetch current prices.
+          </span>
+        </div>
+      )}
 
       {/* ── Summary cards (non-FI only) ───────────────────── */}
       {subTab !== 'fi' && <SummaryCards items={displayed} />}
@@ -444,7 +472,7 @@ export default function Investments({ activeMember }) {
           </button>
           {showAddInv && (
             <AddInvForm
-              onAdd={item => { saveInv([...investments, item]); setShowAddInv(false) }}
+              onAdd={item => { upsertInv(item); setShowAddInv(false) }}
               onCancel={() => setShowAddInv(false)}
             />
           )}
@@ -507,7 +535,7 @@ export default function Investments({ activeMember }) {
           </button>
           {showAddFD && (
             <AddFDForm
-              onAdd={item => { saveFD([...fixedIncome, item]); setShowAddFD(false) }}
+              onAdd={item => { upsertFD(item); setShowAddFD(false) }}
               onCancel={() => setShowAddFD(false)}
             />
           )}

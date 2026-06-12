@@ -185,7 +185,7 @@ function AddForm({ onAdd, onCancel, isLiability = false }) {
 
   function handleSubmit(e) {
     e.preventDefault()
-    onAdd({ ...form, value: parseFloat(form.value) || 0, id: Date.now() })
+    onAdd({ ...form, value: parseFloat(form.value) || 0, id: crypto.randomUUID() })
   }
 
   return (

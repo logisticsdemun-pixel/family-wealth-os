@@ -82,10 +82,11 @@ function GoldForm({ initial, category, onSave, onCancel }) {
     e.preventDefault()
     onSave({
       ...form,
-      id: form.id ?? Date.now(),
+      id: form.id ?? crypto.randomUUID(),
       grams: parseFloat(form.grams),
       carat: parseInt(form.carat),
       buyPricePerGram: parseFloat(form.buyPricePerGram) || 0,
+      flags: form.flags ?? [],
     })
   }
 

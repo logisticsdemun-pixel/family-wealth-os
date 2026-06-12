@@ -41,7 +41,7 @@ function PolicyForm({ initial, onSave, onCancel }) {
     e.preventDefault()
     onSave({
       ...form,
-      id: form.id ?? Date.now(),
+      id: form.id ?? crypto.randomUUID(),
       cover: parseFloat(form.cover) || 0,
       premium: parseFloat(form.premium) || 0,
     })

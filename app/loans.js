@@ -34,7 +34,7 @@ function LoanForm({ initial, onSave, onCancel }) {
     e.preventDefault()
     onSave({
       ...form,
-      id: form.id ?? Date.now(),
+      id: form.id ?? crypto.randomUUID(),
       principal: parseFloat(form.principal) || null,
       rate: parseFloat(form.rate) || null,
       months: parseInt(form.months) || null,
