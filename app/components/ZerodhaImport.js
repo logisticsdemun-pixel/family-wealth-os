@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef } from 'react'
+import * as XLSX from 'xlsx'
 import { load, applyImport, KEYS } from '../lib/storage'
 import { MEMBERS, formatINR, firstName } from '../lib/format'
 import { takeSnapshotFromStorage } from '../lib/snapshot'
@@ -11,44 +12,54 @@ function parseNum(val) {
   return isNaN(n) ? null : n
 }
 
-function parseZerodhaCSV(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  if (lines.length < 2) throw new Error('File appears empty')
+function parseZerodhaXLSX(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = ev => {
+      try {
+        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
 
-  const delim = lines[0].includes('\t') ? '\t' : ','
-  const splitRow = line => line.split(delim).map(c => c.trim().replace(/^"|"$/g, ''))
+        const headerIdx = data.findIndex(row =>
+          row.some(cell => String(cell).toLowerCase().includes('instrument'))
+        )
+        if (headerIdx === -1) throw new Error('Column "Instrument" not found. Please use the Holdings export from Zerodha Kite.')
 
-  // Find header row — scan first 6 lines for one containing 'instrument'
-  const headerIdx = lines.findIndex(l => l.toLowerCase().includes('instrument'))
-  if (headerIdx === -1) throw new Error('Column "Instrument" not found. Please use the Holdings CSV from Zerodha Kite.')
+        const headers = data[headerIdx].map(h => String(h).toLowerCase().trim())
+        const col = name => headers.findIndex(h => h.includes(name))
 
-  const headers = splitRow(lines[headerIdx]).map(h => h.toLowerCase().trim())
-  const col = name => headers.findIndex(h => h.includes(name))
+        const iInstrument = col('instrument')
+        const iQty = col('qty')
+        const iAvgCost = col('avg cost')
+        const iLTP = col('ltp')
 
-  const iInstrument = col('instrument')
-  const iQty = col('qty')
-  const iAvgCost = col('avg cost')
-  const iLTP = col('ltp')
+        if (iQty === -1) throw new Error('Column "Qty" not found. Is this a Zerodha Holdings export?')
+        if (iAvgCost === -1) throw new Error('Column "Avg cost" not found. Is this a Zerodha Holdings export?')
 
-  if (iQty === -1) throw new Error('Column "Qty" not found. Is this a Zerodha Holdings CSV?')
-  if (iAvgCost === -1) throw new Error('Column "Avg cost" not found. Is this a Zerodha Holdings CSV?')
+        const rows = []
+        for (let i = headerIdx + 1; i < data.length; i++) {
+          const cols = data[i]
+          const instrument = String(cols[iInstrument] ?? '').trim()
+          if (!instrument || instrument.toLowerCase() === 'total' || /^-+$/.test(instrument)) continue
 
-  const rows = []
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const cols = splitRow(lines[i])
-    const instrument = cols[iInstrument]?.trim()
-    if (!instrument || instrument.toLowerCase() === 'total' || /^-+$/.test(instrument)) continue
+          const qty = parseNum(cols[iQty])
+          const avgCost = parseNum(cols[iAvgCost])
+          if (!qty || !avgCost || qty <= 0 || avgCost <= 0) continue
 
-    const qty = parseNum(cols[iQty])
-    const avgCost = parseNum(cols[iAvgCost])
-    if (!qty || !avgCost || qty <= 0 || avgCost <= 0) continue
+          const rawLTP = iLTP !== -1 ? parseNum(cols[iLTP]) : null
+          rows.push({ instrument: instrument.toUpperCase(), qty, avgCost, ltp: rawLTP && rawLTP > 0 ? rawLTP : null })
+        }
 
-    const rawLTP = iLTP !== -1 ? parseNum(cols[iLTP]) : null
-    rows.push({ instrument: instrument.toUpperCase(), qty, avgCost, ltp: rawLTP && rawLTP > 0 ? rawLTP : null })
-  }
-
-  if (rows.length === 0) throw new Error('No valid holdings found in the file')
-  return rows
+        if (rows.length === 0) throw new Error('No valid holdings found in the file')
+        resolve(rows)
+      } catch (err) {
+        reject(err)
+      }
+    }
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.readAsArrayBuffer(file)
+  })
 }
 
 function tickerMatch(inv, base) {
@@ -79,23 +90,19 @@ export default function ZerodhaImportWizard({ onClose }) {
   const [importing, setImporting] = useState(false)
   const fileRef = useRef(null)
 
-  function handleFile(e) {
+  async function handleFile(e) {
     const file = e.target.files?.[0]
     if (!file) return
     setError('')
-    const reader = new FileReader()
-    reader.onload = ev => {
-      try {
-        const rows = parseZerodhaCSV(ev.target.result)
-        const diff = buildDiff(rows, member)
-        setParsed({ rows, ...diff })
-        setStep('review')
-      } catch (err) {
-        setError(err.message)
-      }
-    }
-    reader.readAsText(file)
     e.target.value = ''
+    try {
+      const rows = await parseZerodhaXLSX(file)
+      const diff = buildDiff(rows, member)
+      setParsed({ rows, ...diff })
+      setStep('review')
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   async function handleImport() {
@@ -176,7 +183,7 @@ export default function ZerodhaImportWizard({ onClose }) {
             </h3>
             <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {step === 'select'
-                ? 'Upload your Zerodha Holdings CSV'
+                ? 'Upload your Zerodha Holdings export (.xlsx)'
                 : `${parsed.rows.length} holding${parsed.rows.length !== 1 ? 's' : ''} — ${parsed.toAdd.length} new, ${parsed.toUpdate.length} updated for ${firstName(member)}`
               }
             </p>
@@ -201,11 +208,11 @@ export default function ZerodhaImportWizard({ onClose }) {
               onClick={() => fileRef.current?.click()}
             >
               <div style={{ fontSize: '2rem', marginBottom: 8 }}>📈</div>
-              <p style={{ margin: '0 0 4px', fontWeight: 500, color: 'var(--text-primary)' }}>Click to select the Holdings CSV</p>
+              <p style={{ margin: '0 0 4px', fontWeight: 500, color: 'var(--text-primary)' }}>Click to select the Holdings file (.xlsx)</p>
               <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                 Zerodha Kite → Portfolio → Holdings → Download
               </p>
-              <input ref={fileRef} type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleFile} />
+              <input ref={fileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={handleFile} />
             </div>
 
             {error && (

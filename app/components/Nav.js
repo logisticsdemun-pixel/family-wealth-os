@@ -354,7 +354,7 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
                       📈 Import from Zerodha
                     </button>
                     <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
-                      Zerodha Kite holdings CSV (with diff preview)
+                      Zerodha Kite holdings .xlsx (with diff preview)
                     </p>
 
                     <div style={{ height: 1, backgroundColor: 'var(--border)', margin: '6px 0' }} />

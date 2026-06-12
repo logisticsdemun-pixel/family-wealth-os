@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { ThemeProvider, useTheme } from './lib/theme'
-import PasswordGate from './password-gate'
+import { useState } from 'react'
+import { useTheme } from './lib/theme'
+import { useLock } from './components/AuthShell'
 import Nav from './components/Nav'
 import MemberFilter from './components/MemberFilter'
 import Dashboard from './dashboard'
@@ -10,42 +10,13 @@ import Gold from './gold'
 import Loans from './loans'
 import Insurance from './insurance'
 import Artha from './artha'
-import { setupPassword, unlockStorage, lockStorage } from './lib/crypto'
 
-function App() {
-  const [isUnlocked, setIsUnlocked] = useState(false)
+export default function Home() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [activeMember, setActiveMember] = useState('All')
   const [mountedTabs, setMountedTabs] = useState(() => new Set(['dashboard']))
   const { theme, toggleTheme } = useTheme()
-
-  useEffect(() => {
-    window.addEventListener('beforeunload', lockStorage)
-    return () => window.removeEventListener('beforeunload', lockStorage)
-  }, [])
-
-  async function handleUnlock(password, mode) {
-    try {
-      if (mode === 'setup') {
-        await setupPassword(password)
-      } else {
-        await unlockStorage(password)
-      }
-      setIsUnlocked(true)
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  function handleLock() {
-    lockStorage()
-    setIsUnlocked(false)
-  }
-
-  if (!isUnlocked) {
-    return <PasswordGate onUnlock={handleUnlock} />
-  }
+  const handleLock = useLock()
 
   const tabProps = { activeMember }
 
@@ -60,7 +31,6 @@ function App() {
       />
       <MemberFilter activeMember={activeMember} onMemberChange={setActiveMember} />
 
-      {/* Tab panels — mounted on first visit, then kept mounted to preserve state */}
       {mountedTabs.has('dashboard') && (
         <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}>
           <Dashboard {...tabProps} />
@@ -92,13 +62,5 @@ function App() {
         </div>
       )}
     </div>
-  )
-}
-
-export default function Home() {
-  return (
-    <ThemeProvider>
-      <App />
-    </ThemeProvider>
   )
 }
