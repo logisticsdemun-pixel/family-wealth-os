@@ -1,0 +1,297 @@
+'use client'
+import { useState, useRef } from 'react'
+import { load, applyImport, KEYS } from '../lib/storage'
+import { MEMBERS, formatINR, firstName } from '../lib/format'
+import { takeSnapshotFromStorage } from '../lib/snapshot'
+import { SEED_INVESTMENTS } from '../lib/seedData'
+
+function parseNum(val) {
+  if (val == null || val === '') return null
+  const n = parseFloat(String(val).replace(/[,₹\s%]/g, ''))
+  return isNaN(n) ? null : n
+}
+
+function parseZerodhaCSV(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  if (lines.length < 2) throw new Error('File appears empty')
+
+  const delim = lines[0].includes('\t') ? '\t' : ','
+  const splitRow = line => line.split(delim).map(c => c.trim().replace(/^"|"$/g, ''))
+
+  // Find header row — scan first 6 lines for one containing 'instrument'
+  const headerIdx = lines.findIndex(l => l.toLowerCase().includes('instrument'))
+  if (headerIdx === -1) throw new Error('Column "Instrument" not found. Please use the Holdings CSV from Zerodha Kite.')
+
+  const headers = splitRow(lines[headerIdx]).map(h => h.toLowerCase().trim())
+  const col = name => headers.findIndex(h => h.includes(name))
+
+  const iInstrument = col('instrument')
+  const iQty = col('qty')
+  const iAvgCost = col('avg cost')
+  const iLTP = col('ltp')
+
+  if (iQty === -1) throw new Error('Column "Qty" not found. Is this a Zerodha Holdings CSV?')
+  if (iAvgCost === -1) throw new Error('Column "Avg cost" not found. Is this a Zerodha Holdings CSV?')
+
+  const rows = []
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const cols = splitRow(lines[i])
+    const instrument = cols[iInstrument]?.trim()
+    if (!instrument || instrument.toLowerCase() === 'total' || /^-+$/.test(instrument)) continue
+
+    const qty = parseNum(cols[iQty])
+    const avgCost = parseNum(cols[iAvgCost])
+    if (!qty || !avgCost || qty <= 0 || avgCost <= 0) continue
+
+    const rawLTP = iLTP !== -1 ? parseNum(cols[iLTP]) : null
+    rows.push({ instrument: instrument.toUpperCase(), qty, avgCost, ltp: rawLTP && rawLTP > 0 ? rawLTP : null })
+  }
+
+  if (rows.length === 0) throw new Error('No valid holdings found in the file')
+  return rows
+}
+
+function tickerMatch(inv, base) {
+  if (!inv.ticker) return false
+  const t = inv.ticker.toUpperCase()
+  return t === `${base}.NS` || t === `${base}.BO` || t === base
+}
+
+function buildDiff(rows, member) {
+  const existing = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
+  const toAdd = []
+  const toUpdate = []
+
+  for (const row of rows) {
+    const match = existing.find(inv => !inv.isMF && inv.member === member && tickerMatch(inv, row.instrument))
+    if (match) toUpdate.push({ existing: match, row })
+    else toAdd.push(row)
+  }
+
+  return { toAdd, toUpdate }
+}
+
+export default function ZerodhaImportWizard({ onClose }) {
+  const [step, setStep] = useState('select')
+  const [member, setMember] = useState(MEMBERS[0])
+  const [parsed, setParsed] = useState(null)
+  const [error, setError] = useState('')
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef(null)
+
+  function handleFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setError('')
+    const reader = new FileReader()
+    reader.onload = ev => {
+      try {
+        const rows = parseZerodhaCSV(ev.target.result)
+        const diff = buildDiff(rows, member)
+        setParsed({ rows, ...diff })
+        setStep('review')
+      } catch (err) {
+        setError(err.message)
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
+  async function handleImport() {
+    setImporting(true)
+    try {
+      takeSnapshotFromStorage()
+      const existing = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
+      const cache = { ...load(KEYS.PRICE_CACHE, {}) }
+      const updated = [...existing]
+      const now = Date.now()
+
+      for (const row of parsed.rows) {
+        const idx = updated.findIndex(inv => !inv.isMF && inv.member === member && tickerMatch(inv, row.instrument))
+
+        if (idx !== -1) {
+          const prev = updated[idx]
+          updated[idx] = {
+            ...prev,
+            units: row.qty,
+            buyPrice: row.avgCost,
+            currentPrice: row.ltp != null ? row.ltp : prev.currentPrice,
+            flags: row.ltp != null ? (prev.flags || []).filter(f => f !== 'manual') : (prev.flags || []),
+          }
+          if (row.ltp != null) cache[`stock:${prev.ticker}`] = { fetchedAt: now, status: 'ok' }
+        } else {
+          const ticker = `${row.instrument}.NS`
+          updated.push({
+            id: crypto.randomUUID(),
+            name: row.instrument,
+            ticker,
+            member,
+            type: 'Stock',
+            isMF: false,
+            mfCode: null,
+            units: row.qty,
+            buyPrice: row.avgCost,
+            currentPrice: row.ltp,
+            buyDate: '',
+            flags: [],
+          })
+          if (row.ltp != null) cache[`stock:${ticker}`] = { fetchedAt: now, status: 'ok' }
+        }
+      }
+
+      await applyImport({ [KEYS.INVESTMENTS]: updated, [KEYS.PRICE_CACHE]: cache })
+      window.location.reload()
+    } catch (err) {
+      setError(err.message || 'Import failed. Please try again.')
+      setImporting(false)
+    }
+  }
+
+  const labelStyle = {
+    fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.07em',
+    color: 'var(--text-muted)', display: 'block', marginBottom: 4,
+  }
+  const inp = {
+    width: '100%', padding: '9px 12px', borderRadius: 8,
+    border: '1px solid var(--border)', backgroundColor: 'var(--bg)',
+    color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none',
+  }
+
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200 }} onClick={importing ? undefined : onClose} />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+        zIndex: 201, width: 'calc(100% - 48px)', maxWidth: 560,
+        backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 16, padding: '28px', maxHeight: '90vh', overflowY: 'auto',
+      }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+          <div>
+            <h3 style={{ margin: '0 0 4px', fontSize: '1rem', fontWeight: 600 }}>
+              {step === 'select' ? 'Import from Zerodha' : 'Review Import'}
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {step === 'select'
+                ? 'Upload your Zerodha Holdings CSV'
+                : `${parsed.rows.length} holding${parsed.rows.length !== 1 ? 's' : ''} — ${parsed.toAdd.length} new, ${parsed.toUpdate.length} updated for ${firstName(member)}`
+              }
+            </p>
+          </div>
+          {!importing && (
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>✕</button>
+          )}
+        </div>
+
+        {/* ── Select step ──────────────────────────────────────── */}
+        {step === 'select' && (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <span style={labelStyle}>Assign all holdings to member</span>
+              <select value={member} onChange={e => setMember(e.target.value)} style={inp}>
+                {MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+
+            <div
+              style={{ border: '2px dashed var(--border)', borderRadius: 12, padding: '32px', textAlign: 'center', marginBottom: 16, cursor: 'pointer' }}
+              onClick={() => fileRef.current?.click()}
+            >
+              <div style={{ fontSize: '2rem', marginBottom: 8 }}>📈</div>
+              <p style={{ margin: '0 0 4px', fontWeight: 500, color: 'var(--text-primary)' }}>Click to select the Holdings CSV</p>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Zerodha Kite → Portfolio → Holdings → Download
+              </p>
+              <input ref={fileRef} type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleFile} />
+            </div>
+
+            {error && (
+              <div style={{ backgroundColor: 'var(--loss-faint)', border: '1px solid var(--loss)', borderRadius: 8, padding: '10px 14px', fontSize: '0.82rem', color: 'var(--loss)', marginBottom: 12 }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 10, padding: '12px 14px', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              <strong style={{ color: 'var(--text-secondary)' }}>What gets imported:</strong>{' '}
+              Holdings matched by ticker are updated (qty + avg cost + LTP). New tickers are added with a{' '}
+              <code style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>.NS</code> suffix — edit manually in Investments if the stock is on BSE.
+            </div>
+          </>
+        )}
+
+        {/* ── Review step ──────────────────────────────────────── */}
+        {step === 'review' && parsed && (
+          <>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+              <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+                      {['Instrument', 'Qty', 'Avg Cost', 'LTP', 'Action'].map((h, i) => (
+                        <th key={h} style={{ padding: '8px 12px', textAlign: i >= 1 && i <= 3 ? 'right' : i === 4 ? 'center' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', whiteSpace: 'nowrap', position: 'sticky', top: 0, backgroundColor: 'var(--surface-2)' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsed.rows.map((row, i) => {
+                      const isNew = !parsed.toUpdate.some(u => u.row === row)
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '8px 12px', fontWeight: 500, fontFamily: 'monospace', fontSize: '0.8rem' }}>{row.instrument}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right' }}>{row.qty}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right' }}>{formatINR(row.avgCost)}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-muted)' }}>
+                            {row.ltp != null ? formatINR(row.ltp) : '—'}
+                          </td>
+                          <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                            <span style={{
+                              fontSize: '0.7rem', fontWeight: 600, padding: '2px 7px', borderRadius: 4,
+                              backgroundColor: isNew ? 'var(--gain-faint)' : 'var(--amber-faint)',
+                              color: isNew ? 'var(--gain)' : 'var(--amber)',
+                            }}>
+                              {isNew ? 'New' : 'Update'}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {error && (
+              <div style={{ backgroundColor: 'var(--loss-faint)', border: '1px solid var(--loss)', borderRadius: 8, padding: '10px 14px', fontSize: '0.82rem', color: 'var(--loss)', marginBottom: 12 }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ backgroundColor: 'var(--accent-faint)', border: '1px solid var(--accent)', borderRadius: 8, padding: '10px 12px', marginBottom: 20, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              A net worth snapshot will be taken before the import.
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={handleImport}
+                disabled={importing}
+                style={{ padding: '9px 20px', borderRadius: 8, border: 'none', backgroundColor: importing ? 'var(--text-muted)' : 'var(--accent)', color: '#fff', fontSize: '0.875rem', fontWeight: 500, cursor: importing ? 'not-allowed' : 'pointer' }}
+              >
+                {importing ? 'Importing…' : 'Import Now'}
+              </button>
+              <button
+                onClick={() => { setStep('select'); setParsed(null); setError('') }}
+                disabled={importing}
+                style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: importing ? 'not-allowed' : 'pointer' }}
+              >
+                Back
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  )
+}

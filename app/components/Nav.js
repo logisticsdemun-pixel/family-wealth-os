@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { exportAllData, applyImport, load, KEYS } from '../lib/storage'
 import { changePassword } from '../lib/crypto'
 import ExcelImportWizard from './ExcelImport'
+import ZerodhaImportWizard from './ZerodhaImport'
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -228,6 +229,7 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
   const [showMenu, setShowMenu] = useState(false)
   const [showChangePw, setShowChangePw] = useState(false)
   const [showExcelImport, setShowExcelImport] = useState(false)
+  const [showZerodhaImport, setShowZerodhaImport] = useState(false)
   const [importError, setImportError] = useState(null)
   const [importData, setImportData] = useState(null)
   const fileRef = useRef(null)
@@ -345,6 +347,16 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
                       Wizard for .xlsx files (with diff preview)
                     </p>
 
+                    <button
+                      onClick={() => { setShowZerodhaImport(true); setShowMenu(false) }}
+                      style={menuBtnStyle}
+                    >
+                      📈 Import from Zerodha
+                    </button>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
+                      Zerodha Kite holdings CSV (with diff preview)
+                    </p>
+
                     <div style={{ height: 1, backgroundColor: 'var(--border)', margin: '6px 0' }} />
 
                     <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Account</p>
@@ -367,6 +379,7 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
       {showChangePw && <ChangePasswordDialog onClose={() => setShowChangePw(false)} />}
       {importData && <BackupRestoreDialog data={importData} onClose={() => setImportData(null)} />}
       {showExcelImport && <ExcelImportWizard onClose={() => setShowExcelImport(false)} />}
+      {showZerodhaImport && <ZerodhaImportWizard onClose={() => setShowZerodhaImport(false)} />}
     </>
   )
 }
