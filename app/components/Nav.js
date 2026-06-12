@@ -1,6 +1,6 @@
 'use client'
 import { useRef, useState } from 'react'
-import { exportAllData, importAllData } from '../lib/storage'
+import { exportAllData, applyImport, load, KEYS } from '../lib/storage'
 import { changePassword } from '../lib/crypto'
 
 const TABS = [
@@ -16,6 +16,128 @@ const inp = {
   width: '100%', padding: '9px 12px', borderRadius: 8,
   border: '1px solid var(--border)', backgroundColor: 'var(--bg)',
   color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none', marginBottom: 10,
+}
+
+const BACKUP_SCHEMA = [
+  { key: KEYS.INVESTMENTS, label: 'Investments' },
+  { key: KEYS.FIXED_INCOME, label: 'Fixed Income' },
+  { key: KEYS.GOLD, label: 'Gold' },
+  { key: KEYS.LOANS, label: 'Loans' },
+  { key: KEYS.INSURANCE, label: 'Insurance' },
+  { key: KEYS.CASH_ASSETS, label: 'Cash & Assets' },
+  { key: KEYS.LIABILITIES, label: 'Liabilities' },
+  { key: KEYS.SNAPSHOTS, label: 'History' },
+]
+
+function validateBackup(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return 'Invalid backup file — expected a JSON object.'
+  }
+  const found = BACKUP_SCHEMA.filter(s => s.key in data)
+  if (found.length < 2) {
+    return 'This does not appear to be a Family Wealth OS backup. No recognised data sections found.'
+  }
+  for (const { key, label } of found) {
+    const v = data[key]
+    if (v !== null && v !== undefined && !Array.isArray(v) && typeof v !== 'object') {
+      return `Invalid data for "${label}": unexpected format.`
+    }
+  }
+  return null
+}
+
+function buildDiff(backup) {
+  return BACKUP_SCHEMA.map(({ key, label }) => {
+    if (!(key in backup) || !Array.isArray(backup[key])) return null
+    const curr = load(key, [])
+    const currCount = Array.isArray(curr) ? curr.length : 0
+    const impCount = backup[key].length
+    return { label, currCount, impCount, changed: currCount !== impCount }
+  }).filter(Boolean)
+}
+
+function BackupRestoreDialog({ data, onClose }) {
+  const [restoring, setRestoring] = useState(false)
+  const diff = buildDiff(data)
+
+  async function handleRestore() {
+    setRestoring(true)
+    await applyImport(data)
+    window.location.reload()
+  }
+
+  return (
+    <>
+      <div
+        style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200 }}
+        onClick={restoring ? undefined : onClose}
+      />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+        zIndex: 201, width: 'calc(100% - 48px)', maxWidth: 460,
+        backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 16, padding: '28px',
+      }}>
+        <h3 style={{ margin: '0 0 6px', fontSize: '1rem', fontWeight: 600 }}>Restore from Backup</h3>
+        <p style={{ margin: '0 0 18px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+          Review what will change. The page will reload after restore.
+        </p>
+
+        {diff.length > 0 && (
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+                  {['Section', 'Current', '', 'Backup'].map((h, i) => (
+                    <th key={i} style={{ padding: '7px 12px', textAlign: i === 0 ? 'left' : i === 2 ? 'center' : 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {diff.map(({ label, currCount, impCount, changed }) => (
+                  <tr key={label} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '9px 12px', color: 'var(--text-primary)' }}>{label}</td>
+                    <td style={{ padding: '9px 12px', textAlign: 'right', color: 'var(--text-secondary)' }}>{currCount}</td>
+                    <td style={{ padding: '9px 4px', textAlign: 'center', fontSize: '0.85rem', color: changed ? 'var(--amber)' : 'var(--border)' }}>→</td>
+                    <td style={{
+                      padding: '9px 12px', textAlign: 'right',
+                      fontWeight: changed ? 700 : 400,
+                      color: changed
+                        ? impCount > currCount ? 'var(--gain)' : 'var(--loss)'
+                        : 'var(--text-muted)',
+                    }}>
+                      {impCount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div style={{ backgroundColor: 'var(--amber-faint)', border: '1px solid var(--amber)', borderRadius: 8, padding: '10px 12px', marginBottom: 20, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          ⚠ <strong style={{ color: 'var(--text-primary)' }}>Warning:</strong> This overwrites all current data and cannot be undone.
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={handleRestore}
+            disabled={restoring}
+            style={{ padding: '9px 20px', borderRadius: 8, border: 'none', backgroundColor: restoring ? 'var(--text-muted)' : 'var(--accent)', color: '#fff', fontSize: '0.875rem', fontWeight: 500, cursor: restoring ? 'not-allowed' : 'pointer' }}
+          >
+            {restoring ? 'Restoring…' : 'Restore Now'}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={restoring}
+            style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: restoring ? 'not-allowed' : 'pointer' }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </>
+  )
 }
 
 function ChangePasswordDialog({ onClose }) {
@@ -47,12 +169,10 @@ function ChangePasswordDialog({ onClose }) {
 
   return (
     <>
-      {/* Backdrop */}
       <div
         style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 200 }}
         onClick={onClose}
       />
-      {/* Modal */}
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
         zIndex: 201, width: '100%', maxWidth: 360,
@@ -107,12 +227,25 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
   const [showMenu, setShowMenu] = useState(false)
   const [showChangePw, setShowChangePw] = useState(false)
   const [importError, setImportError] = useState(null)
+  const [importData, setImportData] = useState(null)
   const fileRef = useRef(null)
 
-  function handleImport(e) {
+  function handleImportFile(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    importAllData(file, null, msg => setImportError(msg))
+    const reader = new FileReader()
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result)
+        const err = validateBackup(data)
+        if (err) { setImportError(err); return }
+        setImportData(data)
+        setImportError(null)
+      } catch {
+        setImportError('Could not parse file. Please select a valid .json backup.')
+      }
+    }
+    reader.readAsText(file)
     e.target.value = ''
   }
 
@@ -175,12 +308,30 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
                     position: 'absolute', top: 44, right: 0,
                     backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
                     borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                    padding: 8, minWidth: 190, zIndex: 100,
+                    padding: 8, minWidth: 220, zIndex: 100,
                   }}>
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Data</p>
-                    <button onClick={() => { exportAllData(); setShowMenu(false) }} style={menuBtnStyle}>↓ Export Backup</button>
-                    <button onClick={() => { fileRef.current?.click(); setShowMenu(false) }} style={menuBtnStyle}>↑ Import Backup</button>
-                    <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Backup & Restore</p>
+
+                    <button
+                      onClick={() => { exportAllData(); setShowMenu(false) }}
+                      style={{ ...menuBtnStyle, color: 'var(--accent)', fontWeight: 500 }}
+                    >
+                      ↓ Export Backup
+                    </button>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
+                      Download encrypted data as JSON
+                    </p>
+
+                    <button
+                      onClick={() => { fileRef.current?.click(); setShowMenu(false) }}
+                      style={menuBtnStyle}
+                    >
+                      ↑ Restore from Backup
+                    </button>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
+                      Import a previously exported file
+                    </p>
+                    <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
 
                     <div style={{ height: 1, backgroundColor: 'var(--border)', margin: '6px 0' }} />
 
@@ -202,6 +353,7 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
       </nav>
 
       {showChangePw && <ChangePasswordDialog onClose={() => setShowChangePw(false)} />}
+      {importData && <BackupRestoreDialog data={importData} onClose={() => setImportData(null)} />}
     </>
   )
 }

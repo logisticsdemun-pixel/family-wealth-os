@@ -1,4 +1,4 @@
-import { loadFromMemory, saveToMemory, getAllMemoryData } from './crypto'
+import { loadFromMemory, saveToMemory, getAllMemoryData, flushAll } from './crypto'
 
 export const KEYS = {
   THEME: 'fwos-theme',
@@ -51,18 +51,24 @@ export function exportAllData() {
   URL.revokeObjectURL(url)
 }
 
+// Applies pre-parsed backup data to memory store, awaiting encryption before caller reloads
+export async function applyImport(data) {
+  Object.entries(data).forEach(([key, value]) => {
+    if (key === 'fwos-theme') {
+      try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
+    } else {
+      saveToMemory(key, value)
+    }
+  })
+  await flushAll()
+}
+
 export function importAllData(file, onSuccess, onError) {
   const reader = new FileReader()
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const data = JSON.parse(e.target.result)
-      Object.entries(data).forEach(([key, value]) => {
-        if (key === 'fwos-theme') {
-          localStorage.setItem(key, JSON.stringify(value))
-        } else {
-          saveToMemory(key, value)
-        }
-      })
+      await applyImport(data)
       onSuccess?.()
       window.location.reload()
     } catch {

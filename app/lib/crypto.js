@@ -151,6 +151,13 @@ export function getAllMemoryData() {
   return { ..._memoryStore }
 }
 
+export async function flushAll() {
+  if (!_cryptoKey) return
+  for (const [key, value] of Object.entries(_memoryStore)) {
+    await persistOne(key, value)
+  }
+}
+
 export async function changePassword(oldPassword, newPassword) {
   const raw = localStorage.getItem(AUTH_KEY)
   if (!raw) throw new Error('NO_AUTH')
