@@ -343,6 +343,8 @@ function AddFDForm({ onAdd, onCancel }) {
 }
 
 // ── Main Investments component ─────────────────────────────
+const UNPRICED_BANNER_KEY = 'fwos-unpriced-dismissed'
+
 export default function Investments({ activeMember }) {
   const [investments, setInvestments] = useState([])
   const [fixedIncome, setFixedIncome] = useState([])
@@ -351,6 +353,14 @@ export default function Investments({ activeMember }) {
   const [subTab, setSubTab] = useState('all')
   const [showAddInv, setShowAddInv] = useState(false)
   const [showAddFD, setShowAddFD] = useState(false)
+  const [bannerDismissed, setBannerDismissed] = useState(() =>
+    typeof window !== 'undefined' && sessionStorage.getItem(UNPRICED_BANNER_KEY) === '1'
+  )
+
+  function dismissBanner() {
+    setBannerDismissed(true)
+    sessionStorage.setItem(UNPRICED_BANNER_KEY, '1')
+  }
 
   useEffect(() => {
     setInvestments(load(KEYS.INVESTMENTS, SEED_INVESTMENTS))
@@ -454,7 +464,7 @@ export default function Investments({ activeMember }) {
       </div>
 
       {/* ── Unpriced assets banner ────────────────────────── */}
-      {unpricedCount > 0 && subTab !== 'fi' && (
+      {unpricedCount > 0 && subTab !== 'fi' && !bannerDismissed && (
         <div style={{
           backgroundColor: 'var(--amber-faint)', border: '1px solid var(--amber)',
           borderRadius: 10, padding: '10px 16px', marginBottom: 20,
@@ -462,10 +472,17 @@ export default function Investments({ activeMember }) {
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
           <span style={{ color: 'var(--amber)', fontWeight: 700 }}>⚠</span>
-          <span>
+          <span style={{ flex: 1 }}>
             <strong style={{ color: 'var(--text-primary)' }}>{unpricedCount} holding{unpricedCount > 1 ? 's' : ''}</strong>{' '}
             without a live price — values use buy price as a fallback. Click <strong>Refresh Prices</strong> to fetch current prices.
           </span>
+          <button
+            onClick={dismissBanner}
+            style={{ background: 'none', border: 'none', color: 'var(--amber)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '2px 4px', flexShrink: 0 }}
+            title="Dismiss for this session"
+          >
+            ✕
+          </button>
         </div>
       )}
 

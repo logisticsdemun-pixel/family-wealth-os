@@ -16,7 +16,7 @@ function daysUntil(dateStr) {
 }
 
 // ── Insight card ───────────────────────────────────────────
-function InsightCard({ severity, title, body, extra }) {
+function InsightCard({ severity, title, body, extra, onDismiss }) {
   const colors = {
     alert: { border: 'var(--loss)', bg: 'var(--loss-faint)', dot: 'var(--loss)', badge: '#fecaca', badgeText: '#7f1d1d' },
     warning: { border: 'var(--amber)', bg: 'var(--amber-faint)', dot: 'var(--amber)', badge: '#fde68a', badgeText: '#78350f' },
@@ -42,6 +42,15 @@ function InsightCard({ severity, title, body, extra }) {
           <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{body}</p>
           {extra && <div style={{ marginTop: 10 }}>{extra}</div>}
         </div>
+        {onDismiss && (
+          <button
+            onClick={onDismiss}
+            title="Dismiss for this session"
+            style={{ background: 'none', border: 'none', color: c.dot, cursor: 'pointer', fontSize: '0.85rem', padding: '0 2px', lineHeight: 1, flexShrink: 0, opacity: 0.6 }}
+          >
+            ✕
+          </button>
+        )}
       </div>
     </div>
   )
@@ -172,14 +181,14 @@ function generateInsights({ investments, gold, goldPrices, loans, fixedIncome, c
       section: 'Financial Safety',
       severity: 'alert',
       title: 'Emergency Fund Insufficient',
-      body: `Liquid assets (cash + FDs + short-term funds) total ${formatINR(liquidFunds)}, but ${EMERGENCY_MONTHS} months of expenses (₹1.8L/mo) = ${formatINR(emergencyTarget)}. Shortfall: ${formatINR(shortfall)}. Build this before investing further.`,
+      body: `Liquid assets (cash + FDs + short-term funds) total ${formatINR(liquidFunds)}, covering only ${(liquidFunds / MONTHLY_EXPENSES).toFixed(1)} months at ${formatINR(MONTHLY_EXPENSES)}/mo. Target: ${EMERGENCY_MONTHS} months (${formatINR(emergencyTarget)}). Shortfall: ${formatINR(shortfall)}.`,
     })
   } else {
     insights.push({
       section: 'Financial Safety',
       severity: 'good',
       title: 'Emergency Fund Adequate',
-      body: `Liquid assets (${formatINR(liquidFunds)}) cover ${(liquidFunds / MONTHLY_EXPENSES).toFixed(1)} months of expenses. Target of ${EMERGENCY_MONTHS} months met.`,
+      body: `Liquid assets (${formatINR(liquidFunds)}) cover ${(liquidFunds / MONTHLY_EXPENSES).toFixed(1)} months at ${formatINR(MONTHLY_EXPENSES)}/mo — target of ${EMERGENCY_MONTHS} months met.`,
     })
   }
 
@@ -256,6 +265,11 @@ export default function Artha() {
   const [monthlyExpenses, setMonthlyExpenses] = useState(DEFAULT_MONTHLY_EXPENSES)
   const [editingExpenses, setEditingExpenses] = useState(false)
   const [expensesDraft, setExpensesDraft] = useState('')
+  const [dismissedTitles, setDismissedTitles] = useState(new Set())
+
+  function dismissInsight(title) {
+    setDismissedTitles(prev => new Set([...prev, title]))
+  }
 
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem(EXPENSES_KEY) : null
@@ -279,8 +293,9 @@ export default function Artha() {
   }
 
   const insights = useMemo(() => data ? generateInsights({ ...data, monthlyExpenses }) : [], [data, monthlyExpenses])
+  const visibleInsights = insights.filter(i => !dismissedTitles.has(i.title))
 
-  const sections = [...new Set(insights.map(i => i.section))]
+  const sections = [...new Set(visibleInsights.map(i => i.section))]
 
   const severity_order = { alert: 0, warning: 1, info: 2, good: 3 }
   const counts = {
@@ -288,6 +303,16 @@ export default function Artha() {
     warning: insights.filter(i => i.severity === 'warning').length,
     good: insights.filter(i => i.severity === 'good').length,
   }
+
+  const emergencyMonths = useMemo(() => {
+    if (!data || monthlyExpenses <= 0) return null
+    const cashVal = (data.cashAssets || []).reduce((s, a) => s + (a.value || 0), 0)
+    const fdVal = (data.fixedIncome || []).reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
+    const shortTermVal = (data.investments || [])
+      .filter(i => i.type === 'Short Term Fund')
+      .reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
+    return (cashVal + fdVal + shortTermVal) / monthlyExpenses
+  }, [data, monthlyExpenses])
 
   return (
     <div style={{ maxWidth: 820, margin: '0 auto', padding: '28px 24px' }}>
@@ -328,30 +353,42 @@ export default function Artha() {
       {data && (
         <div style={{
           backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
-          borderRadius: 12, padding: '16px 20px', marginBottom: 24,
-          display: 'flex', gap: 24, flexWrap: 'wrap',
+          borderRadius: 12, padding: '16px 24px', marginBottom: 24,
+          display: 'flex', gap: 0, flexWrap: 'wrap',
         }}>
           {[
             { label: 'Action Needed', value: counts.alert, color: 'var(--loss)' },
             { label: 'Watch Out', value: counts.warning, color: 'var(--amber)' },
             { label: 'On Track', value: counts.good, color: 'var(--gain)' },
-          ].map(s => (
-            <div key={s.label} style={{ textAlign: 'center', minWidth: 80 }}>
+          ].map((s, i) => (
+            <div key={s.label} style={{ textAlign: 'center', flex: 1, minWidth: 80, borderRight: i < 2 ? '1px solid var(--border)' : undefined, padding: '4px 16px' }}>
               <p style={{ margin: 0, fontSize: '1.8rem', fontWeight: 700, color: s.color, lineHeight: 1 }}>{s.value}</p>
               <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{s.label}</p>
             </div>
           ))}
+          {emergencyMonths !== null && (
+            <div style={{ textAlign: 'center', flex: 1, minWidth: 80, borderLeft: '1px solid var(--border)', padding: '4px 16px' }}>
+              <p style={{ margin: 0, fontSize: '1.8rem', fontWeight: 700, color: emergencyMonths >= EMERGENCY_MONTHS ? 'var(--gain)' : 'var(--loss)', lineHeight: 1 }}>
+                {emergencyMonths.toFixed(1)}
+              </p>
+              <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>Emergency Months</p>
+            </div>
+          )}
         </div>
       )}
 
       {/* ── Insights ──────────────────────────────────────── */}
       {!data ? (
         <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+      ) : visibleInsights.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+          All insights reviewed for this session.
+        </div>
       ) : (
         sections.map(section => (
           <div key={section}>
             <Section title={section} />
-            {insights
+            {visibleInsights
               .filter(i => i.section === section)
               .sort((a, b) => (severity_order[a.severity] ?? 9) - (severity_order[b.severity] ?? 9))
               .map((insight, idx) => (
@@ -361,6 +398,7 @@ export default function Artha() {
                   title={insight.title}
                   body={insight.body}
                   extra={insight.extra}
+                  onDismiss={() => dismissInsight(insight.title)}
                 />
               ))
             }
