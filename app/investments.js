@@ -64,8 +64,33 @@ function SummaryCards({ items }) {
   )
 }
 
+const PRICE_TTL_MS = 5 * 60 * 1000
+
+function getCacheKey(inv) {
+  return inv.isMF ? `mf:${inv.mfCode}` : `stock:${inv.ticker}`
+}
+
+function StatusDot({ fetching, cacheEntry }) {
+  if (fetching) return (
+    <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: 1, flexShrink: 0 }}>↻</span>
+  )
+  let color = 'var(--text-muted)'
+  if (cacheEntry) {
+    if (cacheEntry.status === 'error') color = 'var(--loss)'
+    else if (Date.now() - cacheEntry.fetchedAt < PRICE_TTL_MS) color = 'var(--gain)'
+    else color = 'var(--amber)'
+  }
+  const title = !cacheEntry ? 'Never fetched'
+    : cacheEntry.status === 'error' ? 'Last fetch failed'
+    : Date.now() - cacheEntry.fetchedAt < PRICE_TTL_MS ? 'Price is fresh'
+    : 'Price is stale'
+  return (
+    <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', backgroundColor: color, flexShrink: 0 }} title={title} />
+  )
+}
+
 // ── Investment table row ───────────────────────────────────
-function InvRow({ inv, fetching, onUpdate, onDelete }) {
+function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete }) {
   const [editMode, setEditMode] = useState(false)
   const [units, setUnits] = useState(String(inv.units))
   const [buyPrice, setBuyPrice] = useState(String(inv.buyPrice))
@@ -102,9 +127,12 @@ function InvRow({ inv, fetching, onUpdate, onDelete }) {
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }}>
       {td(
-        <div>
-          <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 500 }}>{inv.name}</p>
-          <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{identifier}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <StatusDot fetching={fetching} cacheEntry={cacheEntry} />
+          <div>
+            <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 500 }}>{inv.name}</p>
+            <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{identifier}</p>
+          </div>
         </div>
       )}
       {td(<span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{firstName(inv.member)}</span>)}
@@ -343,6 +371,7 @@ export default function Investments({ activeMember }) {
   const [bannerDismissed, setBannerDismissed] = useState(() =>
     typeof window !== 'undefined' && sessionStorage.getItem(UNPRICED_BANNER_KEY) === '1'
   )
+  const [priceCache, setPriceCache] = useState(() => load(KEYS.PRICE_CACHE, {}))
 
   function dismissBanner() {
     setBannerDismissed(true)
@@ -357,16 +386,28 @@ export default function Investments({ activeMember }) {
   function saveInv(updated) { setInvestments(updated); save(KEYS.INVESTMENTS, updated) }
   function saveFD(updated) { setFixedIncome(updated); save(KEYS.FIXED_INCOME, updated) }
 
-  const refreshPrices = useCallback(async () => {
+  const refreshPrices = useCallback(async (forceAll = false) => {
     const snapshot = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
+    const cache = { ...load(KEYS.PRICE_CACHE, {}) }
     const map = new Map(snapshot.map(inv => [inv.id, { ...inv }]))
+    const now = Date.now()
     const BATCH_SIZE = 5
 
-    for (let i = 0; i < snapshot.length; i += BATCH_SIZE) {
-      const batch = snapshot.slice(i, i + BATCH_SIZE)
+    const toFetch = forceAll
+      ? snapshot
+      : snapshot.filter(inv => {
+          const entry = cache[getCacheKey(inv)]
+          return !entry || entry.status === 'error' || (now - entry.fetchedAt) >= PRICE_TTL_MS
+        })
+
+    if (toFetch.length === 0) return
+
+    for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
+      const batch = toFetch.slice(i, i + BATCH_SIZE)
       setFetchingIds(new Set(batch.map(b => b.id)))
 
       await Promise.all(batch.map(async inv => {
+        const key = getCacheKey(inv)
         const price = inv.isMF
           ? await fetchMFPrice(inv.mfCode)
           : await fetchStockPrice(inv.ticker)
@@ -374,14 +415,19 @@ export default function Investments({ activeMember }) {
           const entry = map.get(inv.id)
           entry.currentPrice = price
           entry.flags = (entry.flags || []).filter(f => f !== 'manual')
+          cache[key] = { fetchedAt: now, status: 'ok' }
+        } else {
+          cache[key] = { fetchedAt: cache[key]?.fetchedAt ?? 0, status: 'error' }
         }
       }))
 
       const partial = snapshot.map(inv => map.get(inv.id))
       setInvestments(partial)
       save(KEYS.INVESTMENTS, partial)
+      setPriceCache({ ...cache })
+      save(KEYS.PRICE_CACHE, cache)
 
-      if (i + BATCH_SIZE < snapshot.length) {
+      if (i + BATCH_SIZE < toFetch.length) {
         await new Promise(r => setTimeout(r, 500))
       }
     }
@@ -436,18 +482,29 @@ export default function Investments({ activeMember }) {
             </p>
           )}
         </div>
-        <button
-          onClick={refreshPrices}
-          disabled={loading}
-          style={{
-            ...btnGhost,
-            color: loading ? 'var(--text-muted)' : 'var(--accent)',
-            display: 'flex', alignItems: 'center', gap: 6, cursor: loading ? 'not-allowed' : 'pointer',
-          }}
-        >
-          <span style={{ display: 'inline-block', animation: loading ? 'spin 1s linear infinite' : 'none' }}>↻</span>
-          {loading ? 'Updating…' : 'Refresh Prices'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => refreshPrices()}
+            disabled={loading}
+            style={{
+              ...btnGhost,
+              color: loading ? 'var(--text-muted)' : 'var(--accent)',
+              display: 'flex', alignItems: 'center', gap: 6, cursor: loading ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <span style={{ display: 'inline-block', animation: loading ? 'spin 1s linear infinite' : 'none' }}>↻</span>
+            {loading ? 'Updating…' : 'Refresh Prices'}
+          </button>
+          {!loading && (
+            <button
+              onClick={() => refreshPrices(true)}
+              style={{ ...btnGhost, fontSize: '0.78rem', color: 'var(--text-muted)', cursor: 'pointer' }}
+              title="Re-fetch all prices ignoring cache"
+            >
+              Refresh All
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Unpriced assets banner ────────────────────────── */}
@@ -525,6 +582,7 @@ export default function Investments({ activeMember }) {
                       key={inv.id}
                       inv={inv}
                       fetching={fetchingIds.has(inv.id)}
+                      cacheEntry={priceCache[getCacheKey(inv)]}
                       onUpdate={updated => saveInv(investments.map(i => i.id === updated.id ? updated : i))}
                       onDelete={() => saveInv(investments.filter(i => i.id !== inv.id))}
                     />
