@@ -130,7 +130,8 @@ function isZerodhaSourced(inv, member) {
   if (inv.member !== member) return false
   if (inv.institution === 'Zerodha') return true
   const mSlug = slugify(member)
-  return inv.id.startsWith(mSlug + '|') && inv.id.endsWith('|na')
+  const id = String(inv.id ?? '')
+  return id.startsWith(mSlug + '|') && id.endsWith('|na')
 }
 
 function parseZerodhaStatement(wb) {
