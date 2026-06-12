@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { load, save, KEYS } from './lib/storage'
-import { formatINR, formatPct, gainColor, firstName, MEMBERS } from './lib/format'
+import { formatINR, formatPct, gainColor, firstName, MEMBERS, calculateCAGR, yearsElapsed } from './lib/format'
 import { SEED_INVESTMENTS, SEED_FIXED_INCOME } from './lib/seedData'
 
 const INV_TYPES = ['Stock', 'Mutual Fund', 'Short Term Fund', 'ETF', 'Fixed Income']
@@ -86,6 +86,8 @@ function InvRow({ inv, loading, onUpdate, onDelete }) {
   const current = inv.currentPrice != null ? inv.units * inv.currentPrice : null
   const gain = current != null ? current - invested : null
   const gainPct = gain != null && invested > 0 ? (gain / invested) * 100 : null
+  const years = yearsElapsed(inv.buyDate)
+  const cagr = current != null && years ? calculateCAGR(invested, current, years) : null
 
   function saveEdit() {
     onUpdate({ ...inv, units: parseFloat(units) || inv.units, buyPrice: parseFloat(buyPrice) || inv.buyPrice })
@@ -147,10 +149,17 @@ function InvRow({ inv, loading, onUpdate, onDelete }) {
       )}
       {td(
         gain != null ? (
-          <span style={{ color: gainColor(gain), fontWeight: 500 }}>
-            {formatINR(gain)}
-            <span style={{ fontSize: '0.75rem', marginLeft: 4 }}>{formatPct(gainPct)}</span>
-          </span>
+          <div>
+            <span style={{ color: gainColor(gain), fontWeight: 500 }}>
+              {formatINR(gain)}
+              <span style={{ fontSize: '0.75rem', marginLeft: 4 }}>{formatPct(gainPct)}</span>
+            </span>
+            {cagr != null && (
+              <p style={{ margin: '2px 0 0', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                CAGR {formatPct(cagr, 1)}
+              </p>
+            )}
+          </div>
         ) : '—',
         'right'
       )}
@@ -178,7 +187,7 @@ function InvRow({ inv, loading, onUpdate, onDelete }) {
 function AddInvForm({ onAdd, onCancel }) {
   const [form, setForm] = useState({
     member: MEMBERS[0], type: 'Stock', name: '', ticker: '', mfCode: '',
-    units: '', buyPrice: '',
+    units: '', buyPrice: '', buyDate: '',
   })
 
   const isMF = form.type === 'Mutual Fund' || form.type === 'Short Term Fund' || form.type === 'ETF'
@@ -233,6 +242,10 @@ function AddInvForm({ onAdd, onCancel }) {
         <div>
           <span style={label}>Buy Price / NAV (₹)</span>
           <input required type="number" step="any" style={inp} placeholder="0" value={form.buyPrice} onChange={e => setForm({ ...form, buyPrice: e.target.value })} />
+        </div>
+        <div>
+          <span style={label}>Buy Date (optional — for CAGR)</span>
+          <input type="date" style={inp} value={form.buyDate} onChange={e => setForm({ ...form, buyDate: e.target.value })} />
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>

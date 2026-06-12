@@ -251,6 +251,7 @@ export default function Dashboard({ activeMember }) {
   }, [])
 
   // ── Computed values ──────────────────────────────────────
+  const unpricedHoldings = filterByMember(investments, activeMember).filter(i => i.currentPrice == null).length
   const invVal = investmentValue(investments, activeMember)
   const goldVal = goldValue(gold, goldPrices, activeMember)
   const jewVal = jewelleryValue(gold, goldPrices, activeMember)
@@ -317,6 +318,11 @@ export default function Dashboard({ activeMember }) {
             <p style={{ margin: 0, color: 'var(--loss)', fontWeight: 600 }}>{formatINR(totalLiab)}</p>
           </div>
         </div>
+        {unpricedHoldings > 0 && (
+          <p style={{ margin: '12px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            {unpricedHoldings} holding{unpricedHoldings > 1 ? 's' : ''} valued at cost basis — refresh prices for live values
+          </p>
+        )}
       </div>
 
       {/* ── Single-member shared loan note ──────────────── */}

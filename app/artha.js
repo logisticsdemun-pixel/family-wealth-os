@@ -4,8 +4,9 @@ import { load, KEYS } from './lib/storage'
 import { formatINR, computeOutstanding, firstName } from './lib/format'
 import { SEED_INVESTMENTS, SEED_GOLD, DEFAULT_GOLD_PRICES, SEED_LOANS, SEED_FIXED_INCOME, SEED_CASH_ASSETS } from './lib/seedData'
 
-const MONTHLY_EXPENSES = 180000 // ₹1,80,000/month assumed
+const DEFAULT_MONTHLY_EXPENSES = 180000
 const EMERGENCY_MONTHS = 6
+const EXPENSES_KEY = 'fwos-artha-monthly-expenses'
 
 function daysUntil(dateStr) {
   if (!dateStr) return null
@@ -57,7 +58,8 @@ function Section({ title }) {
 }
 
 // ── Generate insights ──────────────────────────────────────
-function generateInsights({ investments, gold, goldPrices, loans, fixedIncome, cashAssets, insurance }) {
+function generateInsights({ investments, gold, goldPrices, loans, fixedIncome, cashAssets, insurance, monthlyExpenses }) {
+  const MONTHLY_EXPENSES = monthlyExpenses || DEFAULT_MONTHLY_EXPENSES
   const insights = []
 
   // ─── 1. Equity values ─────────────────────────────────
@@ -251,8 +253,13 @@ function generateInsights({ investments, gold, goldPrices, loans, fixedIncome, c
 // ── Main ARTHA component ───────────────────────────────────
 export default function Artha() {
   const [data, setData] = useState(null)
+  const [monthlyExpenses, setMonthlyExpenses] = useState(DEFAULT_MONTHLY_EXPENSES)
+  const [editingExpenses, setEditingExpenses] = useState(false)
+  const [expensesDraft, setExpensesDraft] = useState('')
 
   useEffect(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem(EXPENSES_KEY) : null
+    if (saved) setMonthlyExpenses(parseFloat(saved) || DEFAULT_MONTHLY_EXPENSES)
     setData({
       investments: load(KEYS.INVESTMENTS, SEED_INVESTMENTS),
       gold: load(KEYS.GOLD, SEED_GOLD),
@@ -264,7 +271,14 @@ export default function Artha() {
     })
   }, [])
 
-  const insights = useMemo(() => data ? generateInsights(data) : [], [data])
+  function saveExpenses(val) {
+    const n = parseFloat(val) || DEFAULT_MONTHLY_EXPENSES
+    setMonthlyExpenses(n)
+    localStorage.setItem(EXPENSES_KEY, String(n))
+    setEditingExpenses(false)
+  }
+
+  const insights = useMemo(() => data ? generateInsights({ ...data, monthlyExpenses }) : [], [data, monthlyExpenses])
 
   const sections = [...new Set(insights.map(i => i.section))]
 
@@ -279,11 +293,35 @@ export default function Artha() {
     <div style={{ maxWidth: 820, margin: '0 auto', padding: '28px 24px' }}>
 
       {/* ── Header ────────────────────────────────────────── */}
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ margin: '0 0 6px', fontSize: '1.3rem', fontWeight: 700 }}>ARTHA Advisor</h2>
-        <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-          Rule-based insights generated from your actual data. Updated on every visit.
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h2 style={{ margin: '0 0 6px', fontSize: '1.3rem', fontWeight: 700 }}>ARTHA Advisor</h2>
+          <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+            Rule-based insights generated from your actual data. Updated on every visit.
+          </p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {editingExpenses ? (
+            <>
+              <input
+                type="number"
+                value={expensesDraft}
+                onChange={e => setExpensesDraft(e.target.value)}
+                autoFocus
+                style={{ width: 120, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'var(--bg)', color: 'var(--text-primary)', fontSize: '0.875rem' }}
+              />
+              <button onClick={() => saveExpenses(expensesDraft)} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', backgroundColor: 'var(--accent)', color: '#fff', fontSize: '0.8rem', cursor: 'pointer' }}>Save</button>
+              <button onClick={() => setEditingExpenses(false)} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.8rem', cursor: 'pointer' }}>Cancel</button>
+            </>
+          ) : (
+            <button
+              onClick={() => { setExpensesDraft(String(monthlyExpenses)); setEditingExpenses(true) }}
+              style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.8rem', cursor: 'pointer' }}
+            >
+              Monthly expenses: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(monthlyExpenses)} ✎
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Scorecard ─────────────────────────────────────── */}
