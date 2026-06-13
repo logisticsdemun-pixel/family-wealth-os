@@ -1,8 +1,8 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { load, save, KEYS } from './lib/storage'
+import { useState } from 'react'
+import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS, computeOutstanding, loanMonthsRemaining, totalInterestPaid, monthsElapsed } from './lib/format'
-import { SEED_LOANS } from './lib/seedData'
+import { useStore } from './lib/store'
 
 const LOAN_TYPES = ['Home Loan', 'Car Loan', 'Personal Loan', 'Education Loan', 'Business Loan', 'Other']
 
@@ -206,17 +206,14 @@ function LoanCard({ loan, propertyName, onEdit, onDelete }) {
 
 // ── Main Loans component ───────────────────────────────────
 export default function Loans({ activeMember }) {
-  const [loans, setLoans] = useState([])
-  const [properties, setProperties] = useState([])
+  const { data, set } = useStore()
+  const loans = data?.loans ?? []
+  const properties = data?.realEstate ?? []
+
   const [showAdd, setShowAdd] = useState(false)
   const [editLoan, setEditLoan] = useState(null)
 
-  useEffect(() => {
-    setLoans(load(KEYS.LOANS, SEED_LOANS))
-    setProperties(load(KEYS.REAL_ESTATE, []))
-  }, [])
-
-  function saveLoans(updated) { setLoans(updated); save(KEYS.LOANS, updated) }
+  function saveLoans(updated) { set(KEYS.LOANS, updated) }
 
   function handleSave(loan) {
     if (loan.id && loans.find(l => l.id === loan.id)) {

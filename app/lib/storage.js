@@ -65,6 +65,7 @@ export async function applyImport(data) {
     }
   })
   await flushAll()
+  window.dispatchEvent(new CustomEvent('fwos:datachanged', { detail: { key: 'import' } }))
 }
 
 export function importAllData(file, onSuccess, onError) {

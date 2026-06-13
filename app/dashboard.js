@@ -1,10 +1,11 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { load, save, KEYS } from './lib/storage'
+import { KEYS } from './lib/storage'
 import { formatINR, memberColor, memberInitials, firstName, MEMBERS, computeOutstanding } from './lib/format'
-import { SEED_INVESTMENTS, SEED_GOLD, DEFAULT_GOLD_PRICES, SEED_LOANS, SEED_FIXED_INCOME, SEED_CASH_ASSETS, SEED_LIABILITIES, SEED_REAL_ESTATE } from './lib/seedData'
-import { takeSnapshot, getSnapshots } from './lib/snapshot'
+import { DEFAULT_GOLD_PRICES } from './lib/seedData'
+import { takeSnapshot } from './lib/snapshot'
+import { useStore } from './lib/store'
 
 const ASSET_TYPES = ['Cash & Savings', 'Fixed Deposit', 'EPF / PPF', 'Real Estate', 'Crypto', 'Other']
 const LIABILITY_TYPES = ['Credit Card', 'Personal Loan', 'Education Loan', 'Other Debt']
@@ -272,57 +273,20 @@ function AddForm({ onAdd, onCancel, isLiability = false, activeMember = 'All' })
 
 // ── Main Dashboard component ───────────────────────────────
 export default function Dashboard({ activeMember }) {
-  const [investments, setInvestments] = useState([])
-  const [gold, setGold] = useState([])
-  const [goldPrices, setGoldPrices] = useState(DEFAULT_GOLD_PRICES)
-  const [loans, setLoans] = useState([])
-  const [fixedIncome, setFixedIncome] = useState([])
-  const [cashAssets, setCashAssets] = useState([])
-  const [liabilities, setLiabilities] = useState([])
-  const [realEstate, setRealEstate] = useState([])
+  const { data, set } = useStore()
+
+  const investments = data?.investments ?? []
+  const gold = data?.gold ?? []
+  const goldPrices = data?.goldPrices ?? DEFAULT_GOLD_PRICES
+  const loans = data?.loans ?? []
+  const fixedIncome = data?.fixedIncome ?? []
+  const cashAssets = data?.cashAssets ?? []
+  const liabilities = data?.liabilities ?? []
+  const realEstate = data?.realEstate ?? []
+  const snapshots = data?.snapshots ?? []
+
   const [showAddCash, setShowAddCash] = useState(false)
   const [showAddLiability, setShowAddLiability] = useState(false)
-  const [snapshots, setSnapshots] = useState([])
-
-  useEffect(() => {
-    function loadAll() {
-      const inv = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
-      const gld = load(KEYS.GOLD, SEED_GOLD)
-      const gp = load(KEYS.GOLD_PRICES, DEFAULT_GOLD_PRICES)
-      const lns = load(KEYS.LOANS, SEED_LOANS)
-      const fi = load(KEYS.FIXED_INCOME, SEED_FIXED_INCOME)
-      const ca = (load(KEYS.CASH_ASSETS, SEED_CASH_ASSETS) || []).filter(a => a.member)
-      const liab = (load(KEYS.LIABILITIES, SEED_LIABILITIES) || []).filter(l => l.member)
-      const re = load(KEYS.REAL_ESTATE, SEED_REAL_ESTATE) || []
-      setInvestments(inv)
-      setGold(gld)
-      setGoldPrices(gp)
-      setLoans(lns)
-      setFixedIncome(fi)
-      setCashAssets(ca)
-      setLiabilities(liab)
-      setRealEstate(re)
-      setSnapshots(getSnapshots())
-      return { inv, gld, gp, lns, fi, ca, liab, re }
-    }
-
-    const { inv, gld, gp, lns, fi, ca, liab, re } = loadAll()
-    const invV = (inv || []).reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
-    const gldV = (gld || []).reduce((s, g) => s + g.grams * ((gp || {})[g.carat] ?? 0), 0)
-    const fdV = (fi || []).reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
-    const caV = ca.reduce((s, a) => s + (a.value || 0), 0)
-    const reV = re.reduce((s, p) => {
-      const primaryPct = p.ownershipPct ?? 100
-      const coOwnerPct = (p.coOwners || []).reduce((cs, co) => cs + (co.pct || 0), 0)
-      return s + (p.currentValue || 0) * ((primaryPct + coOwnerPct) / 100)
-    }, 0)
-    const loanV = (lns || []).reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
-    const liabV = liab.reduce((s, l) => s + (l.value || 0), 0)
-    takeSnapshot(invV + gldV + fdV + caV + reV - loanV - liabV)
-
-    window.addEventListener('fwos:datachanged', loadAll)
-    return () => window.removeEventListener('fwos:datachanged', loadAll)
-  }, [])
 
   // ── Memoised metrics ─────────────────────────────────────
   const {
@@ -348,6 +312,10 @@ export default function Dashboard({ activeMember }) {
     }
   }, [investments, gold, goldPrices, cashAssets, fixedIncome, loans, liabilities, realEstate, activeMember])
 
+  // ── Snapshot on first data load ──────────────────────────
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (data) takeSnapshot(netWorth) }, [!!data])
+
   // ── Member breakdown (shown when All) ────────────────────
   const memberRows = useMemo(() => MEMBERS.map(m => {
     const inv = investmentValue(investments, m)
@@ -367,8 +335,8 @@ export default function Dashboard({ activeMember }) {
   ].filter(s => s.value > 0), [invVal, realVal, goldVal, jewVal, cashVal, fdVal])
 
   // ── CRUD helpers ─────────────────────────────────────────
-  function saveCash(updated) { setCashAssets(updated); save(KEYS.CASH_ASSETS, updated) }
-  function saveLiab(updated) { setLiabilities(updated); save(KEYS.LIABILITIES, updated) }
+  function saveCash(updated) { set(KEYS.CASH_ASSETS, updated) }
+  function saveLiab(updated) { set(KEYS.LIABILITIES, updated) }
 
   function addCash(item) { saveCash([...cashAssets, item]); setShowAddCash(false) }
   function updateCash(item) { saveCash(cashAssets.map(a => a.id === item.id ? item : a)) }

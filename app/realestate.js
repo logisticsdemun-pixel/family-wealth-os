@@ -1,8 +1,8 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
-import { load, save, KEYS, flushAll } from './lib/storage'
+import { useState, useMemo } from 'react'
+import { KEYS, flushAll } from './lib/storage'
 import { formatINR, firstName, MEMBERS, computeOutstanding } from './lib/format'
-import { SEED_REAL_ESTATE, SEED_LOANS } from './lib/seedData'
+import { useStore } from './lib/store'
 
 const PROPERTY_TYPES = ['Residential', 'Commercial', 'Land', 'Other']
 
@@ -406,25 +406,16 @@ function PropertyCard({ property, linkedLoans, onEdit, onDelete }) {
 
 // ── Main Real Estate component ─────────────────────────────
 export default function RealEstate({ activeMember }) {
-  const [properties, setProperties] = useState([])
-  const [loans, setLoans] = useState([])
+  const { data, set } = useStore()
+  const properties = data?.realEstate ?? []
+  const loans = data?.loans ?? []
+
   const [showForm, setShowForm] = useState(false)
   const [editProperty, setEditProperty] = useState(null)
 
-  useEffect(() => {
-    setProperties(load(KEYS.REAL_ESTATE, SEED_REAL_ESTATE))
-    setLoans(load(KEYS.LOANS, SEED_LOANS))
-  }, [])
+  function saveProperties(updated) { set(KEYS.REAL_ESTATE, updated) }
 
-  function saveProperties(updated) {
-    setProperties(updated)
-    save(KEYS.REAL_ESTATE, updated)
-  }
-
-  function saveLoans(updated) {
-    setLoans(updated)
-    save(KEYS.LOANS, updated)
-  }
+  function saveLoans(updated) { set(KEYS.LOANS, updated) }
 
   function handleSave(property, linkedLoanIds) {
     const linkedSet = new Set(linkedLoanIds.map(String))

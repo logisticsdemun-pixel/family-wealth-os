@@ -1,8 +1,8 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { load, save, KEYS } from './lib/storage'
+import { useState } from 'react'
+import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS } from './lib/format'
-import { SEED_INSURANCE } from './lib/seedData'
+import { useStore } from './lib/store'
 
 const POLICY_TYPES = ['Term Life', 'Health', 'Vehicle', 'Endowment', 'ULIP', 'Critical Illness', 'Other']
 
@@ -151,15 +151,13 @@ function typeColor(type) {
 
 // ── Main Insurance component ───────────────────────────────
 export default function Insurance({ activeMember }) {
-  const [policies, setPolicies] = useState([])
+  const { data, set } = useStore()
+  const policies = data?.insurance ?? []
+
   const [showAdd, setShowAdd] = useState(false)
   const [editPolicy, setEditPolicy] = useState(null)
 
-  useEffect(() => {
-    setPolicies(load(KEYS.INSURANCE, SEED_INSURANCE))
-  }, [])
-
-  function savePolicies(updated) { setPolicies(updated); save(KEYS.INSURANCE, updated) }
+  function savePolicies(updated) { set(KEYS.INSURANCE, updated) }
 
   function handleSave(policy) {
     if (policy.id && policies.find(p => p.id === policy.id)) {

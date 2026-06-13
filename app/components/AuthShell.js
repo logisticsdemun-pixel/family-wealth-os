@@ -3,6 +3,7 @@ import { useState, useEffect, createContext, useContext } from 'react'
 import { ThemeProvider } from '../lib/theme'
 import PasswordGate from '../password-gate'
 import { unlock, isSessionUnlocked, lock } from '../lib/auth'
+import { AppProvider } from '../lib/store'
 
 const LockCtx = createContext(() => {})
 export const useLock = () => useContext(LockCtx)
@@ -31,7 +32,9 @@ export default function AuthShell({ children }) {
   return (
     <LockCtx.Provider value={handleLock}>
       <ThemeProvider>
-        {children}
+        <AppProvider>
+          {children}
+        </AppProvider>
       </ThemeProvider>
     </LockCtx.Provider>
   )

@@ -1,6 +1,7 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { load, save, KEYS, flushAll } from './lib/storage'
+import { useStore } from './lib/store'
 import { formatINR, formatPct, gainColor, firstName, MEMBERS, calculateCAGR, yearsElapsed } from './lib/format'
 import { SEED_INVESTMENTS, SEED_FIXED_INCOME } from './lib/seedData'
 import { takeSnapshotFromStorage } from './lib/snapshot'
@@ -780,8 +781,14 @@ function AddFDForm({ onAdd, onCancel, activeMember = 'All' }) {
 const UNPRICED_BANNER_KEY = 'fwos-unpriced-dismissed'
 
 export default function Investments({ activeMember }) {
-  const [investments, setInvestments] = useState([])
-  const [fixedIncome, setFixedIncome] = useState([])
+  const { data, set } = useStore()
+  const storeSetRef = useRef(null)
+  storeSetRef.current = set
+
+  const investments = data?.investments ?? []
+  const fixedIncome = data?.fixedIncome ?? []
+  const priceCache = data?.priceCache ?? {}
+
   const [fetchingIds, setFetchingIds] = useState(new Set())
   const [lastUpdated, setLastUpdated] = useState(() => load(KEYS.PRICE_UPDATED, null))
   const [subTab, setSubTab] = useState('all')
@@ -790,33 +797,17 @@ export default function Investments({ activeMember }) {
   const [bannerDismissed, setBannerDismissed] = useState(() =>
     typeof window !== 'undefined' && sessionStorage.getItem(UNPRICED_BANNER_KEY) === '1'
   )
-  const [priceCache, setPriceCache] = useState(() => load(KEYS.PRICE_CACHE, {}))
   const [showUpdateHoldings, setShowUpdateHoldings] = useState(false)
-  const [saveStatus, setSaveStatus] = useState('idle') // 'idle' | 'saving' | 'saved'
-  const [sipModal, setSipModal] = useState(null) // null | { type: 'config'|'instalment', inv }
+  const [saveStatus, setSaveStatus] = useState('idle')
+  const [sipModal, setSipModal] = useState(null)
 
   function dismissBanner() {
     setBannerDismissed(true)
     sessionStorage.setItem(UNPRICED_BANNER_KEY, '1')
   }
 
-  useEffect(() => {
-    const raw = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
-    let dirty = false
-    const migrated = raw.map(h => {
-      if (h.isMF && !h.investmentMode) {
-        dirty = true
-        return { ...h, investmentMode: 'lumpsum' }
-      }
-      return h
-    })
-    if (dirty) save(KEYS.INVESTMENTS, migrated)
-    setInvestments(migrated)
-    setFixedIncome(load(KEYS.FIXED_INCOME, SEED_FIXED_INCOME))
-  }, [])
-
-  function saveInv(updated) { setInvestments(updated); save(KEYS.INVESTMENTS, updated) }
-  function saveFD(updated) { setFixedIncome(updated); save(KEYS.FIXED_INCOME, updated) }
+  function saveInv(updated) { set(KEYS.INVESTMENTS, updated) }
+  function saveFD(updated) { set(KEYS.FIXED_INCOME, updated) }
 
   const refreshPrices = useCallback(async (forceAll = false) => {
     const snapshot = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
@@ -854,10 +845,8 @@ export default function Investments({ activeMember }) {
       }))
 
       const partial = snapshot.map(inv => map.get(inv.id))
-      setInvestments(partial)
-      save(KEYS.INVESTMENTS, partial)
-      setPriceCache({ ...cache })
-      save(KEYS.PRICE_CACHE, cache)
+      storeSetRef.current(KEYS.INVESTMENTS, partial)
+      storeSetRef.current(KEYS.PRICE_CACHE, cache)
 
       if (i + BATCH_SIZE < toFetch.length) {
         await new Promise(r => setTimeout(r, 500))

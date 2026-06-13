@@ -1,8 +1,9 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { load, save, KEYS } from './lib/storage'
+import { useState } from 'react'
+import { KEYS } from './lib/storage'
 import { formatINR, gainColor, firstName, MEMBERS } from './lib/format'
-import { SEED_GOLD, DEFAULT_GOLD_PRICES } from './lib/seedData'
+import { DEFAULT_GOLD_PRICES } from './lib/seedData'
+import { useStore } from './lib/store'
 
 const CARATS = [24, 22, 18]
 
@@ -201,23 +202,17 @@ function GoldTable({ items, prices, onEdit, onDelete, isJewellery = false }) {
 
 // ── Main Gold component ────────────────────────────────────
 export default function Gold({ activeMember }) {
-  const [gold, setGold] = useState([])
-  const [goldPrices, setGoldPrices] = useState(DEFAULT_GOLD_PRICES)
+  const { data, set } = useStore()
+  const gold = data?.gold ?? []
+  const goldPrices = data?.goldPrices ?? DEFAULT_GOLD_PRICES
+
   const [subTab, setSubTab] = useState('investment')
   const [showAdd, setShowAdd] = useState(false)
   const [editItem, setEditItem] = useState(null)
 
-  useEffect(() => {
-    setGold(load(KEYS.GOLD, SEED_GOLD))
-    setGoldPrices(load(KEYS.GOLD_PRICES, DEFAULT_GOLD_PRICES))
-  }, [])
+  function saveGold(updated) { set(KEYS.GOLD, updated) }
 
-  function saveGold(updated) { setGold(updated); save(KEYS.GOLD, updated) }
-
-  function updatePrices(prices) {
-    setGoldPrices(prices)
-    save(KEYS.GOLD_PRICES, prices)
-  }
+  function updatePrices(prices) { set(KEYS.GOLD_PRICES, prices) }
 
   function handleSave(item) {
     if (item.id && gold.find(g => g.id === item.id)) {
