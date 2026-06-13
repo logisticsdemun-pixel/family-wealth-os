@@ -285,24 +285,28 @@ export default function Dashboard({ activeMember }) {
   const [snapshots, setSnapshots] = useState([])
 
   useEffect(() => {
-    const inv = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
-    const gld = load(KEYS.GOLD, SEED_GOLD)
-    const gp = load(KEYS.GOLD_PRICES, DEFAULT_GOLD_PRICES)
-    const lns = load(KEYS.LOANS, SEED_LOANS)
-    const fi = load(KEYS.FIXED_INCOME, SEED_FIXED_INCOME)
-    const ca = (load(KEYS.CASH_ASSETS, SEED_CASH_ASSETS) || []).filter(a => a.member)
-    const liab = (load(KEYS.LIABILITIES, SEED_LIABILITIES) || []).filter(l => l.member)
-    const re = load(KEYS.REAL_ESTATE, SEED_REAL_ESTATE) || []
+    function loadAll() {
+      const inv = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
+      const gld = load(KEYS.GOLD, SEED_GOLD)
+      const gp = load(KEYS.GOLD_PRICES, DEFAULT_GOLD_PRICES)
+      const lns = load(KEYS.LOANS, SEED_LOANS)
+      const fi = load(KEYS.FIXED_INCOME, SEED_FIXED_INCOME)
+      const ca = (load(KEYS.CASH_ASSETS, SEED_CASH_ASSETS) || []).filter(a => a.member)
+      const liab = (load(KEYS.LIABILITIES, SEED_LIABILITIES) || []).filter(l => l.member)
+      const re = load(KEYS.REAL_ESTATE, SEED_REAL_ESTATE) || []
+      setInvestments(inv)
+      setGold(gld)
+      setGoldPrices(gp)
+      setLoans(lns)
+      setFixedIncome(fi)
+      setCashAssets(ca)
+      setLiabilities(liab)
+      setRealEstate(re)
+      setSnapshots(getSnapshots())
+      return { inv, gld, gp, lns, fi, ca, liab, re }
+    }
 
-    setInvestments(inv)
-    setGold(gld)
-    setGoldPrices(gp)
-    setLoans(lns)
-    setFixedIncome(fi)
-    setCashAssets(ca)
-    setLiabilities(liab)
-    setRealEstate(re)
-
+    const { inv, gld, gp, lns, fi, ca, liab, re } = loadAll()
     const invV = (inv || []).reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
     const gldV = (gld || []).reduce((s, g) => s + g.grams * ((gp || {})[g.carat] ?? 0), 0)
     const fdV = (fi || []).reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
@@ -314,9 +318,10 @@ export default function Dashboard({ activeMember }) {
     }, 0)
     const loanV = (lns || []).reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
     const liabV = liab.reduce((s, l) => s + (l.value || 0), 0)
-    const nw = invV + gldV + fdV + caV + reV - loanV - liabV
-    takeSnapshot(nw)
-    setSnapshots(getSnapshots())
+    takeSnapshot(invV + gldV + fdV + caV + reV - loanV - liabV)
+
+    window.addEventListener('fwos:datachanged', loadAll)
+    return () => window.removeEventListener('fwos:datachanged', loadAll)
   }, [])
 
   // ── Memoised metrics ─────────────────────────────────────

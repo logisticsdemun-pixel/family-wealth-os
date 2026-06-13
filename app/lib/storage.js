@@ -39,6 +39,7 @@ export function save(key, value) {
   }
   saveToMemory(key, value)
   flushAll() // fire-and-forget: ensure every write reaches localStorage
+  window.dispatchEvent(new CustomEvent('fwos:datachanged', { detail: { key } }))
 }
 
 export function exportAllData() {
