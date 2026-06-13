@@ -30,10 +30,10 @@ async function fetchStock(ticker) {
   throw new Error(`No price found for ${ticker}`)
 }
 
-// Mutual fund NAV via MFAPI
+// Mutual fund latest NAV via MFAPI
 async function fetchMF(mfCode) {
   const res = await fetch(`https://api.mfapi.in/mf/${encodeURIComponent(mfCode)}/latest`, {
-    next: { revalidate: 3600 }, // NAVs update once per day
+    next: { revalidate: 3600 },
   })
   if (!res.ok) throw new Error(`MFAPI: ${res.status}`)
   const data = await res.json()
@@ -42,16 +42,39 @@ async function fetchMF(mfCode) {
   return nav
 }
 
+// Historical NAV for a specific date (DD-MM-YYYY in MFAPI)
+async function fetchMFHistorical(mfCode, dateStr) {
+  const [y, m, d] = dateStr.split('-')
+  const mfapiDate = `${d}-${m}-${y}`
+  const res = await fetch(`https://api.mfapi.in/mf/${encodeURIComponent(mfCode)}`, {
+    next: { revalidate: 86400 },
+  })
+  if (!res.ok) throw new Error(`MFAPI: ${res.status}`)
+  const data = await res.json()
+  // Find exact date or fall back to nearest earlier entry
+  const entry = data?.data?.find(e => e.date === mfapiDate) ?? data?.data?.[0]
+  if (!entry) throw new Error('No NAV data for date')
+  const nav = parseFloat(entry.nav)
+  if (isNaN(nav)) throw new Error('Invalid NAV')
+  const [nd, nm, ny] = entry.date.split('-')
+  return { nav, resolvedDate: `${ny}-${nm}-${nd}` }
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const ticker = searchParams.get('ticker')
   const mf = searchParams.get('mf')
+  const date = searchParams.get('date')
 
   if (!ticker && !mf) {
     return NextResponse.json({ error: 'Pass ?ticker= or ?mf=' }, { status: 400 })
   }
 
   try {
+    if (mf && date) {
+      const { nav, resolvedDate } = await fetchMFHistorical(mf, date)
+      return NextResponse.json({ nav, date: resolvedDate })
+    }
     const price = ticker ? await fetchStock(ticker) : await fetchMF(mf)
     return NextResponse.json({ price })
   } catch (err) {

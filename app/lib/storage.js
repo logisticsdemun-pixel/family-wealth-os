@@ -14,6 +14,7 @@ export const KEYS = {
   PRICE_CACHE: 'fwos-price-cache',
   PRICE_UPDATED: 'fwos-price-updated',
   SNAPSHOTS: 'fwos-snapshots',
+  REAL_ESTATE: 'fwos-real-estate',
 }
 
 // Only theme is stored as plaintext; everything else goes through the encrypted memory store

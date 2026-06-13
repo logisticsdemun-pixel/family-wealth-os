@@ -10,6 +10,7 @@ const TABS = [
   { id: 'investments', label: 'Investments' },
   { id: 'gold', label: 'Gold' },
   { id: 'loans', label: 'Loans' },
+  { id: 'realestate', label: 'Real Estate' },
   { id: 'insurance', label: 'Insurance' },
   { id: 'artha', label: 'ARTHA' },
 ]
@@ -25,6 +26,7 @@ const BACKUP_SCHEMA = [
   { key: KEYS.FIXED_INCOME, label: 'Fixed Income' },
   { key: KEYS.GOLD, label: 'Gold' },
   { key: KEYS.LOANS, label: 'Loans' },
+  { key: KEYS.REAL_ESTATE, label: 'Real Estate' },
   { key: KEYS.INSURANCE, label: 'Insurance' },
   { key: KEYS.CASH_ASSETS, label: 'Cash & Assets' },
   { key: KEYS.LIABILITIES, label: 'Liabilities' },

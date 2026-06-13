@@ -110,6 +110,67 @@ flag. The MFAPI code is needed for live NAV fetching via Refresh Prices.
 
 ---
 
+## Real Estate Tab
+
+A dedicated **Real Estate** tab appears between Loans and Insurance in the navigation bar. It tracks property assets across the family.
+
+### Property schema
+
+Each property stores: name, type (Residential / Commercial / Land / Other), city/area, current value, purchase price, purchase date, monthly rent, primary owner (member), primary ownership %, co-owners list, linked loans, and notes.
+
+### Co-owner support
+
+Properties can have multiple family co-owners in addition to the primary owner. Each co-owner has a member name and an ownership percentage. The primary owner's % and all co-owner %s are tracked independently — they need not sum to 100 (e.g. a property can have 40% family ownership with the remainder held by outsiders).
+
+- **Dashboard** uses the sum of primary + all family co-owner percentages when computing the family total Real Estate value.
+- **Per-member views** show only that member's attributable portion (primary % or co-owner %).
+- **Real Estate page** filters show a property for a member if they are the primary owner **or** a co-owner.
+- The **Attributable Value** summary card on the Real Estate page reflects the active member's ownership-adjusted value.
+
+### Linked loans (bidirectional)
+
+Loans can be linked to a property from either the Loans tab or the Real Estate add/edit modal. The relationship is stored on the loan (`linkedPropertyId`). Deleting a property automatically unlinks all associated loans.
+
+### Dashboard integration
+
+- Real Estate appears as a metric card between Investments and Gold.
+- Included in the allocation bar (purple segment).
+- Each family member's Real Estate column appears in the member breakdown table.
+- Net worth history snapshots include Real Estate value.
+
+---
+
+## MF SIP vs Lumpsum
+
+Mutual Fund holdings in the Investments tab can now be configured as **SIP** (Systematic Investment Plan) or **Lumpsum**.
+
+### SIP configuration
+
+Click the **SIP** button (🔄) on any MF holding row to open the SIP Config modal:
+- Toggle between Lumpsum and SIP mode.
+- Set a monthly SIP amount and start date.
+- View the full instalment history for the holding.
+
+### Adding SIP instalments
+
+Click **+inst** on a SIP-mode MF holding to record a new instalment:
+1. Enter the instalment date and amount.
+2. Click **Look up NAV** — the app fetches the NAV for that date from MFAPI (or the closest available date).
+3. Confirm to add the instalment. Units are accumulated and the average NAV is updated using a weighted average.
+
+### SIP summary card
+
+A summary card above the MF holdings table shows:
+- Number of active SIPs.
+- Total monthly outgo across all active SIPs.
+- Next upcoming SIP date and fund name.
+
+### Next SIP date
+
+Computed from the SIP start date: the next occurrence of the same day-of-month that is on or after today.
+
+---
+
 ## Known Limitations
 
 - **Zerodha MF fuzzy matching** uses word overlap on scheme names. Schemes with very

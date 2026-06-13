@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { load, save, KEYS } from './lib/storage'
 import { formatINR, memberColor, memberInitials, firstName, MEMBERS, computeOutstanding } from './lib/format'
-import { SEED_INVESTMENTS, SEED_GOLD, DEFAULT_GOLD_PRICES, SEED_LOANS, SEED_FIXED_INCOME, SEED_CASH_ASSETS, SEED_LIABILITIES } from './lib/seedData'
+import { SEED_INVESTMENTS, SEED_GOLD, DEFAULT_GOLD_PRICES, SEED_LOANS, SEED_FIXED_INCOME, SEED_CASH_ASSETS, SEED_LIABILITIES, SEED_REAL_ESTATE } from './lib/seedData'
 import { takeSnapshot, getSnapshots } from './lib/snapshot'
 
 const ASSET_TYPES = ['Cash & Savings', 'Fixed Deposit', 'EPF / PPF', 'Real Estate', 'Crypto', 'Other']
@@ -59,6 +59,20 @@ function sharedLoanTotal(loans) {
 }
 function manualLiabilityValue(liabilities, member) {
   return filterByMember(liabilities, member).reduce((s, l) => s + (l.value || 0), 0)
+}
+function realEstateValue(properties, member) {
+  if (member === 'All') {
+    return properties.reduce((s, p) => {
+      const primaryPct = p.ownershipPct ?? 100
+      const coOwnerPct = (p.coOwners || []).reduce((cs, co) => cs + (co.pct || 0), 0)
+      return s + (p.currentValue || 0) * ((primaryPct + coOwnerPct) / 100)
+    }, 0)
+  }
+  return properties.reduce((s, p) => {
+    if (p.member === member) return s + (p.currentValue || 0) * ((p.ownershipPct ?? 100) / 100)
+    const co = (p.coOwners || []).find(c => c.member === member)
+    return co ? s + (p.currentValue || 0) * (co.pct / 100) : s
+  }, 0)
 }
 
 // ── Chart helpers ──────────────────────────────────────────
@@ -263,6 +277,7 @@ export default function Dashboard({ activeMember }) {
   const [fixedIncome, setFixedIncome] = useState([])
   const [cashAssets, setCashAssets] = useState([])
   const [liabilities, setLiabilities] = useState([])
+  const [realEstate, setRealEstate] = useState([])
   const [showAddCash, setShowAddCash] = useState(false)
   const [showAddLiability, setShowAddLiability] = useState(false)
   const [snapshots, setSnapshots] = useState([])
@@ -273,9 +288,9 @@ export default function Dashboard({ activeMember }) {
     const gp = load(KEYS.GOLD_PRICES, DEFAULT_GOLD_PRICES)
     const lns = load(KEYS.LOANS, SEED_LOANS)
     const fi = load(KEYS.FIXED_INCOME, SEED_FIXED_INCOME)
-    // Filter out legacy items that lack a member field (old app version format)
     const ca = (load(KEYS.CASH_ASSETS, SEED_CASH_ASSETS) || []).filter(a => a.member)
     const liab = (load(KEYS.LIABILITIES, SEED_LIABILITIES) || []).filter(l => l.member)
+    const re = load(KEYS.REAL_ESTATE, SEED_REAL_ESTATE) || []
 
     setInvestments(inv)
     setGold(gld)
@@ -284,21 +299,27 @@ export default function Dashboard({ activeMember }) {
     setFixedIncome(fi)
     setCashAssets(ca)
     setLiabilities(liab)
+    setRealEstate(re)
 
     const invV = (inv || []).reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
     const gldV = (gld || []).reduce((s, g) => s + g.grams * ((gp || {})[g.carat] ?? 0), 0)
     const fdV = (fi || []).reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
     const caV = ca.reduce((s, a) => s + (a.value || 0), 0)
+    const reV = re.reduce((s, p) => {
+      const primaryPct = p.ownershipPct ?? 100
+      const coOwnerPct = (p.coOwners || []).reduce((cs, co) => cs + (co.pct || 0), 0)
+      return s + (p.currentValue || 0) * ((primaryPct + coOwnerPct) / 100)
+    }, 0)
     const loanV = (lns || []).reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
     const liabV = liab.reduce((s, l) => s + (l.value || 0), 0)
-    const nw = invV + gldV + fdV + caV - loanV - liabV
+    const nw = invV + gldV + fdV + caV + reV - loanV - liabV
     takeSnapshot(nw)
     setSnapshots(getSnapshots())
   }, [])
 
   // ── Memoised metrics ─────────────────────────────────────
   const {
-    unpricedHoldings, invVal, goldVal, jewVal, cashVal, fdVal,
+    unpricedHoldings, invVal, goldVal, jewVal, cashVal, fdVal, realVal,
     loanLiab, manualLiab, totalAssets, totalLiab, netWorth, sharedLoans,
   } = useMemo(() => {
     const invVal = investmentValue(investments, activeMember)
@@ -306,34 +327,37 @@ export default function Dashboard({ activeMember }) {
     const jewVal = jewelleryValue(gold, goldPrices, activeMember)
     const cashVal = cashValue(cashAssets, activeMember)
     const fdVal = fdValue(fixedIncome, activeMember)
+    const realVal = realEstateValue(realEstate, activeMember)
     const loanLiab = loanLiabilities(loans, activeMember)
     const manualLiab = manualLiabilityValue(liabilities, activeMember)
-    const totalAssets = invVal + goldVal + jewVal + cashVal + fdVal
+    const totalAssets = invVal + goldVal + jewVal + cashVal + fdVal + realVal
     const totalLiab = loanLiab + manualLiab
     return {
       unpricedHoldings: filterByMember(investments, activeMember).filter(i => i.currentPrice == null).length,
-      invVal, goldVal, jewVal, cashVal, fdVal,
+      invVal, goldVal, jewVal, cashVal, fdVal, realVal,
       loanLiab, manualLiab, totalAssets, totalLiab,
       netWorth: totalAssets - totalLiab,
       sharedLoans: activeMember !== 'All' ? sharedLoanTotal(loans) : 0,
     }
-  }, [investments, gold, goldPrices, cashAssets, fixedIncome, loans, liabilities, activeMember])
+  }, [investments, gold, goldPrices, cashAssets, fixedIncome, loans, liabilities, realEstate, activeMember])
 
   // ── Member breakdown (shown when All) ────────────────────
   const memberRows = useMemo(() => MEMBERS.map(m => {
     const inv = investmentValue(investments, m)
+    const re = realEstateValue(realEstate, m)
     const gld = goldValue(gold, goldPrices, m) + jewelleryValue(gold, goldPrices, m)
     const csh = cashValue(cashAssets, m) + fdValue(fixedIncome, m)
     const liab = manualLiabilityValue(liabilities, m) + loanLiabilities(loans, m)
-    return { member: m, inv, gld, csh, liab, net: inv + gld + csh - liab }
-  }), [investments, gold, goldPrices, cashAssets, fixedIncome, loans, liabilities])
+    return { member: m, inv, re, gld, csh, liab, net: inv + re + gld + csh - liab }
+  }), [investments, gold, goldPrices, cashAssets, fixedIncome, loans, liabilities, realEstate])
 
   // ── Allocation segments ──────────────────────────────────
   const allocSegments = useMemo(() => [
     { label: 'Equity', value: invVal, color: 'var(--accent)' },
+    { label: 'Real Estate', value: realVal, color: '#8b5cf6' },
     { label: 'Gold', value: goldVal + jewVal, color: 'var(--gold-color)' },
     { label: 'Cash & FD', value: cashVal + fdVal, color: 'var(--gain)' },
-  ].filter(s => s.value > 0), [invVal, goldVal, jewVal, cashVal, fdVal])
+  ].filter(s => s.value > 0), [invVal, realVal, goldVal, jewVal, cashVal, fdVal])
 
   // ── CRUD helpers ─────────────────────────────────────────
   function saveCash(updated) { setCashAssets(updated); save(KEYS.CASH_ASSETS, updated) }
@@ -428,9 +452,10 @@ export default function Dashboard({ activeMember }) {
       )}
 
       {/* ── 4 Metric cards ──────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 24 }}>
         {[
           { label: 'Investments', value: invVal, color: 'var(--accent)' },
+          { label: 'Real Estate', value: realVal, color: '#8b5cf6' },
           { label: 'Gold', value: goldVal + jewVal, color: 'var(--gold-color)' },
           { label: 'Cash & FDs', value: cashVal + fdVal, color: 'var(--gain)' },
           { label: 'Liabilities', value: totalLiab, color: 'var(--loss)' },
@@ -452,7 +477,7 @@ export default function Dashboard({ activeMember }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Member', 'Investments', 'Gold', 'Cash & FDs', 'Liabilities', 'Net Worth'].map(h => (
+                  {['Member', 'Investments', 'Real Estate', 'Gold', 'Cash & FDs', 'Liabilities', 'Net Worth'].map(h => (
                     <th key={h} style={{ padding: '10px 16px', textAlign: h === 'Member' ? 'left' : 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.75rem' }}>{h}</th>
                   ))}
                 </tr>
@@ -466,8 +491,8 @@ export default function Dashboard({ activeMember }) {
                         <span style={{ fontWeight: 500 }}>{firstName(row.member)}</span>
                       </div>
                     </td>
-                    {[row.inv, row.gld, row.csh, row.liab].map((v, i) => (
-                      <td key={i} style={{ padding: '12px 16px', textAlign: 'right', color: i === 3 ? 'var(--loss)' : 'var(--text-primary)' }}>
+                    {[row.inv, row.re, row.gld, row.csh, row.liab].map((v, i) => (
+                      <td key={i} style={{ padding: '12px 16px', textAlign: 'right', color: i === 4 ? 'var(--loss)' : 'var(--text-primary)' }}>
                         {formatINR(v)}
                       </td>
                     ))}

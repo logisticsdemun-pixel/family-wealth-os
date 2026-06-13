@@ -9,6 +9,7 @@ import Investments from './investments'
 import Gold from './gold'
 import Loans from './loans'
 import Insurance from './insurance'
+import RealEstate from './realestate'
 import Artha from './artha'
 
 export default function Home() {
@@ -49,6 +50,11 @@ export default function Home() {
       {mountedTabs.has('loans') && (
         <div style={{ display: activeTab === 'loans' ? 'block' : 'none' }}>
           <Loans {...tabProps} />
+        </div>
+      )}
+      {mountedTabs.has('realestate') && (
+        <div style={{ display: activeTab === 'realestate' ? 'block' : 'none' }}>
+          <RealEstate {...tabProps} />
         </div>
       )}
       {mountedTabs.has('insurance') && (

@@ -86,3 +86,4 @@ export const SEED_LOANS = [
 export const SEED_INSURANCE = []
 export const SEED_CASH_ASSETS = []
 export const SEED_LIABILITIES = []
+export const SEED_REAL_ESTATE = []

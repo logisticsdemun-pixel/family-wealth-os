@@ -24,10 +24,11 @@ function filterByMember(arr, member) {
 }
 
 // ── Loan form ──────────────────────────────────────────────
-function LoanForm({ initial, onSave, onCancel }) {
+function LoanForm({ initial, properties, onSave, onCancel }) {
   const [form, setForm] = useState(initial ?? {
     lender: '', type: LOAN_TYPES[0], member: MEMBERS[0], isShared: false,
     principal: '', rate: '', months: '', emi: '', startDate: '', outstandingOverride: '',
+    linkedPropertyId: null,
   })
 
   function handleSubmit(e) {
@@ -93,6 +94,15 @@ function LoanForm({ initial, onSave, onCancel }) {
             Shared family liability (not counted in individual member net worth)
           </label>
         </div>
+        {properties && properties.length > 0 && (
+          <div style={{ gridColumn: '1 / -1' }}>
+            <span style={label}>Linked Property</span>
+            <select style={inp} value={form.linkedPropertyId || ''} onChange={e => setForm({ ...form, linkedPropertyId: e.target.value || null })}>
+              <option value="">None</option>
+              {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <button type="submit" style={btnPrimary}>{initial?.id ? 'Save Changes' : 'Add Loan'}</button>
@@ -112,7 +122,7 @@ function ProgressBar({ pct, color = 'var(--accent)' }) {
 }
 
 // ── Loan card ──────────────────────────────────────────────
-function LoanCard({ loan, onEdit, onDelete }) {
+function LoanCard({ loan, propertyName, onEdit, onDelete }) {
   const outstanding = computeOutstanding(loan)
   const monthsRemaining = loanMonthsRemaining(loan)
   const interestPaid = totalInterestPaid(loan)
@@ -135,6 +145,11 @@ function LoanCard({ loan, onEdit, onDelete }) {
             {loan.isShared && (
               <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: 12, backgroundColor: 'var(--amber-faint)', color: 'var(--amber)', fontWeight: 500 }}>
                 Shared
+              </span>
+            )}
+            {propertyName && (
+              <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: 12, backgroundColor: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
+                🏠 {propertyName}
               </span>
             )}
           </div>
@@ -190,11 +205,13 @@ function LoanCard({ loan, onEdit, onDelete }) {
 // ── Main Loans component ───────────────────────────────────
 export default function Loans({ activeMember }) {
   const [loans, setLoans] = useState([])
+  const [properties, setProperties] = useState([])
   const [showAdd, setShowAdd] = useState(false)
   const [editLoan, setEditLoan] = useState(null)
 
   useEffect(() => {
     setLoans(load(KEYS.LOANS, SEED_LOANS))
+    setProperties(load(KEYS.REAL_ESTATE, []))
   }, [])
 
   function saveLoans(updated) { setLoans(updated); save(KEYS.LOANS, updated) }
@@ -208,6 +225,8 @@ export default function Loans({ activeMember }) {
     setEditLoan(null)
     setShowAdd(false)
   }
+
+  const propertyMap = Object.fromEntries(properties.map(p => [String(p.id), p.name]))
 
   const filtered = filterByMember(loans, activeMember)
   const totalOutstanding = filtered.reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
@@ -242,10 +261,10 @@ export default function Loans({ activeMember }) {
 
       {/* ── Add / Edit form ───────────────────────────────── */}
       {showAdd && !editLoan && (
-        <LoanForm onSave={handleSave} onCancel={() => setShowAdd(false)} />
+        <LoanForm properties={properties} onSave={handleSave} onCancel={() => setShowAdd(false)} />
       )}
       {editLoan && (
-        <LoanForm initial={editLoan} onSave={handleSave} onCancel={() => setEditLoan(null)} />
+        <LoanForm initial={editLoan} properties={properties} onSave={handleSave} onCancel={() => setEditLoan(null)} />
       )}
 
       {/* ── Loan cards ────────────────────────────────────── */}
@@ -256,6 +275,7 @@ export default function Loans({ activeMember }) {
           <LoanCard
             key={loan.id}
             loan={loan}
+            propertyName={loan.linkedPropertyId ? propertyMap[String(loan.linkedPropertyId)] : null}
             onEdit={() => { setEditLoan(loan); setShowAdd(false) }}
             onDelete={() => saveLoans(loans.filter(l => l.id !== loan.id))}
           />

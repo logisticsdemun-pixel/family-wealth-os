@@ -91,7 +91,7 @@ function StatusDot({ fetching, cacheEntry }) {
 }
 
 // ── Investment table row ───────────────────────────────────
-function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete }) {
+function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete, onSIPConfig, onAddInstalment }) {
   const [editMode, setEditMode] = useState(false)
   const [units, setUnits] = useState(String(inv.units))
   const [buyPrice, setBuyPrice] = useState(String(inv.buyPrice))
@@ -131,8 +131,18 @@ function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <StatusDot fetching={fetching} cacheEntry={cacheEntry} />
           <div>
-            <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 500 }}>{inv.name}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 500 }}>{inv.name}</p>
+              {inv.investmentMode === 'sip' && (
+                <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, backgroundColor: 'var(--accent-faint)', color: 'var(--accent)', fontWeight: 700 }}>SIP</span>
+              )}
+            </div>
             <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{identifier}</p>
+            {inv.investmentMode === 'sip' && inv.sip?.startDate && (
+              <p style={{ margin: '2px 0 0', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                Next: {fmtShortDate(nextSIPDate(inv.sip.startDate))}
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -222,6 +232,16 @@ function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete }) {
             </>
           ) : (
             <>
+              {inv.isMF && (
+                <button onClick={() => onSIPConfig?.()} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.72rem', padding: '4px 6px' }} title="SIP / Lumpsum settings">
+                  {inv.investmentMode === 'sip' ? '📅' : 'SIP'}
+                </button>
+              )}
+              {inv.investmentMode === 'sip' && (
+                <button onClick={() => onAddInstalment?.()} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '0.72rem', padding: '4px 6px' }} title="Record SIP instalment">
+                  +inst
+                </button>
+              )}
               <button onClick={() => setEditMode(true)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 6px' }}>Edit</button>
               <button onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--loss)', cursor: 'pointer', fontSize: '0.78rem', padding: '4px 6px' }}>✕</button>
             </>
@@ -233,17 +253,248 @@ function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete }) {
   )
 }
 
+// ── SIP helpers ────────────────────────────────────────────
+function nextSIPDate(startDate) {
+  if (!startDate) return null
+  const dayOfMonth = new Date(startDate).getDate()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const thisMonth = new Date(today.getFullYear(), today.getMonth(), dayOfMonth)
+  return (thisMonth < today
+    ? new Date(today.getFullYear(), today.getMonth() + 1, dayOfMonth)
+    : thisMonth
+  ).toISOString().split('T')[0]
+}
+
+function fmtShortDate(dateStr) {
+  if (!dateStr) return '—'
+  const [y, m, d] = dateStr.split('-')
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  return `${parseInt(d)} ${months[parseInt(m) - 1]}`
+}
+
+// ── SIP instalment modal ───────────────────────────────────
+function SIPInstalmentModal({ inv, onConfirm, onCancel }) {
+  const today = new Date().toISOString().split('T')[0]
+  const [date, setDate] = useState(today)
+  const [amount, setAmount] = useState(String(inv.sip?.monthlyAmount || ''))
+  const [fetching, setFetching] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError] = useState(null)
+
+  async function handleFetchNav() {
+    if (!date || !amount || !inv.mfCode) return
+    setFetching(true)
+    setError(null)
+    setResult(null)
+    try {
+      const res = await fetch(`/api/price?mf=${encodeURIComponent(inv.mfCode)}&date=${date}`)
+      const data = await res.json()
+      if (!data.nav) throw new Error(data.error || 'NAV not found for this date')
+      const units = parseFloat(amount) / data.nav
+      setResult({ nav: data.nav, date: data.date || date, units })
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  function handleConfirm() {
+    if (!result) return
+    const newUnits = parseFloat(amount) / result.nav
+    const totalUnits = (inv.units || 0) + newUnits
+    const totalCost = (inv.units || 0) * (inv.buyPrice || 0) + parseFloat(amount)
+    const newAvgNav = totalCost / totalUnits
+    onConfirm({
+      ...inv,
+      units: totalUnits,
+      buyPrice: newAvgNav,
+      sip: {
+        ...inv.sip,
+        instalments: [...(inv.sip?.instalments || []), {
+          date: result.date, amount: parseFloat(amount), nav: result.nav, units: newUnits,
+        }],
+      },
+    })
+  }
+
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200 }} onClick={onCancel} />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+        zIndex: 201, width: 'calc(100% - 48px)', maxWidth: 420,
+        backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 16, padding: '28px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Add SIP Instalment</h3>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+        </div>
+        <p style={{ margin: '0 0 20px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{inv.name}</p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+          <div>
+            <span style={label}>Instalment Date</span>
+            <input type="date" style={inp} value={date} onChange={e => { setDate(e.target.value); setResult(null) }} />
+          </div>
+          <div>
+            <span style={label}>Amount (₹)</span>
+            <input type="number" style={inp} placeholder={inv.sip?.monthlyAmount || '0'} value={amount} onChange={e => { setAmount(e.target.value); setResult(null) }} />
+          </div>
+        </div>
+
+        {!result && (
+          <button
+            onClick={handleFetchNav}
+            disabled={fetching || !date || !amount}
+            style={{ ...btnGhost, width: '100%', marginBottom: 12, color: 'var(--accent)' }}
+          >
+            {fetching ? 'Fetching NAV…' : 'Look up NAV for Date →'}
+          </button>
+        )}
+
+        {error && <p style={{ color: 'var(--loss)', fontSize: '0.8rem', margin: '0 0 12px' }}>{error}</p>}
+
+        {result && (
+          <div style={{ backgroundColor: 'var(--accent-faint)', border: '1px solid var(--accent)', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            <div><p style={label}>NAV (₹)</p><p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem' }}>{result.nav.toFixed(4)}</p></div>
+            <div><p style={label}>Units</p><p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem' }}>{result.units.toFixed(4)}</p></div>
+            <div><p style={label}>Date Used</p><p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>{result.date}</p></div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleConfirm} disabled={!result} style={{ ...btnPrimary, opacity: result ? 1 : 0.5, cursor: result ? 'pointer' : 'not-allowed' }}>
+            Confirm Instalment
+          </button>
+          <button onClick={onCancel} style={btnGhost}>Cancel</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── SIP configure modal ────────────────────────────────────
+function SIPConfigModal({ inv, onSave, onCancel }) {
+  const [form, setForm] = useState({
+    investmentMode: inv.investmentMode || 'lumpsum',
+    monthlyAmount: inv.sip?.monthlyAmount ?? '',
+    startDate: inv.sip?.startDate ?? '',
+  })
+  const instalments = inv.sip?.instalments || []
+
+  function handleSave() {
+    const isSIP = form.investmentMode === 'sip'
+    onSave({
+      ...inv,
+      investmentMode: form.investmentMode,
+      sip: isSIP ? {
+        ...(inv.sip || {}),
+        monthlyAmount: parseFloat(form.monthlyAmount) || 0,
+        startDate: form.startDate,
+        frequency: 'monthly',
+        instalments: inv.sip?.instalments || [],
+      } : inv.sip,
+    })
+  }
+
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200 }} onClick={onCancel} />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+        zIndex: 201, width: 'calc(100% - 48px)', maxWidth: 480,
+        maxHeight: 'calc(100vh - 80px)', overflowY: 'auto',
+        backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 16, padding: '28px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>SIP Configuration</h3>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+        </div>
+        <p style={{ margin: '0 0 20px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{inv.name}</p>
+
+        <div style={{ marginBottom: 16 }}>
+          <span style={label}>Investment Mode</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {['lumpsum', 'sip'].map(mode => (
+              <button key={mode} type="button" onClick={() => setForm({ ...form, investmentMode: mode })} style={{
+                flex: 1, padding: '8px 16px', borderRadius: 8, cursor: 'pointer',
+                border: `1.5px solid ${form.investmentMode === mode ? 'var(--accent)' : 'var(--border)'}`,
+                backgroundColor: form.investmentMode === mode ? 'var(--accent-faint)' : 'transparent',
+                color: form.investmentMode === mode ? 'var(--accent)' : 'var(--text-secondary)',
+                fontWeight: form.investmentMode === mode ? 600 : 400, fontSize: '0.875rem',
+              }}>
+                {mode === 'lumpsum' ? 'Lumpsum' : 'SIP'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {form.investmentMode === 'sip' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div>
+              <span style={label}>Monthly Amount (₹)</span>
+              <input type="number" style={inp} placeholder="e.g. 5000" value={form.monthlyAmount} onChange={e => setForm({ ...form, monthlyAmount: e.target.value })} />
+            </div>
+            <div>
+              <span style={label}>SIP Start Date</span>
+              <input type="date" style={inp} value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
+            </div>
+          </div>
+        )}
+
+        {instalments.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ ...label, marginBottom: 8 }}>Instalment History ({instalments.length})</p>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+                    {['Date', 'Amount', 'NAV', 'Units'].map(h => (
+                      <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Date' ? 'left' : 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.7rem' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...instalments].reverse().map((inst, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '6px 10px' }}>{inst.date}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>{formatINR(inst.amount)}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>{inst.nav?.toFixed(4)}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>{inst.units?.toFixed(4)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleSave} style={btnPrimary}>Save</button>
+          <button onClick={onCancel} style={btnGhost}>Cancel</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── Add investment form ────────────────────────────────────
 function AddInvForm({ onAdd, onCancel }) {
   const [form, setForm] = useState({
     member: MEMBERS[0], type: 'Stock', name: '', ticker: '', mfCode: '',
-    units: '', buyPrice: '', buyDate: '',
+    units: '', buyPrice: '', buyDate: '', investmentMode: 'lumpsum',
+    sipMonthlyAmount: '', sipStartDate: '',
   })
 
   const isMF = form.type === 'Mutual Fund' || form.type === 'Short Term Fund' || form.type === 'ETF'
 
   function handleSubmit(e) {
     e.preventDefault()
+    const isSIP = isMF && form.investmentMode === 'sip'
     onAdd({
       ...form,
       id: crypto.randomUUID(),
@@ -254,6 +505,13 @@ function AddInvForm({ onAdd, onCancel }) {
       buyPrice: parseFloat(form.buyPrice),
       currentPrice: null,
       flags: [],
+      investmentMode: isMF ? form.investmentMode : undefined,
+      sip: isSIP ? {
+        monthlyAmount: parseFloat(form.sipMonthlyAmount) || 0,
+        startDate: form.sipStartDate || '',
+        frequency: 'monthly',
+        instalments: [],
+      } : undefined,
     })
   }
 
@@ -297,6 +555,36 @@ function AddInvForm({ onAdd, onCancel }) {
           <span style={label}>Buy Date (optional — for CAGR)</span>
           <input type="date" style={inp} value={form.buyDate} onChange={e => setForm({ ...form, buyDate: e.target.value })} />
         </div>
+        {isMF && (
+          <div style={{ gridColumn: '1 / -1' }}>
+            <span style={label}>Investment Mode</span>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              {['lumpsum', 'sip'].map(mode => (
+                <button key={mode} type="button" onClick={() => setForm({ ...form, investmentMode: mode })} style={{
+                  flex: 1, padding: '7px 12px', borderRadius: 8, cursor: 'pointer',
+                  border: `1.5px solid ${form.investmentMode === mode ? 'var(--accent)' : 'var(--border)'}`,
+                  backgroundColor: form.investmentMode === mode ? 'var(--accent-faint)' : 'transparent',
+                  color: form.investmentMode === mode ? 'var(--accent)' : 'var(--text-secondary)',
+                  fontWeight: form.investmentMode === mode ? 600 : 400, fontSize: '0.82rem',
+                }}>
+                  {mode === 'lumpsum' ? 'Lumpsum' : 'SIP'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {isMF && form.investmentMode === 'sip' && (
+          <>
+            <div>
+              <span style={label}>Monthly SIP Amount (₹)</span>
+              <input type="number" style={inp} placeholder="e.g. 5000" value={form.sipMonthlyAmount} onChange={e => setForm({ ...form, sipMonthlyAmount: e.target.value })} />
+            </div>
+            <div>
+              <span style={label}>SIP Start Date</span>
+              <input type="date" style={inp} value={form.sipStartDate} onChange={e => setForm({ ...form, sipStartDate: e.target.value })} />
+            </div>
+          </>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
         <button type="submit" style={btnPrimary}>Add Investment</button>
@@ -375,6 +663,7 @@ export default function Investments({ activeMember }) {
   const [priceCache, setPriceCache] = useState(() => load(KEYS.PRICE_CACHE, {}))
   const [showUpdateHoldings, setShowUpdateHoldings] = useState(false)
   const [saveStatus, setSaveStatus] = useState('idle') // 'idle' | 'saving' | 'saved'
+  const [sipModal, setSipModal] = useState(null) // null | { type: 'config'|'instalment', inv }
 
   function dismissBanner() {
     setBannerDismissed(true)
@@ -578,6 +867,27 @@ export default function Investments({ activeMember }) {
         ))}
       </div>
 
+      {/* ── SIP summary (MF tab only) ─────────────────────── */}
+      {subTab === 'mf' && (() => {
+        const sipInvs = displayed.filter(i => i.investmentMode === 'sip' && i.sip)
+        if (sipInvs.length === 0) return null
+        const totalMonthly = sipInvs.reduce((s, i) => s + (i.sip.monthlyAmount || 0), 0)
+        const nextSIPs = sipInvs
+          .filter(i => i.sip?.startDate)
+          .map(i => ({ name: i.name, date: nextSIPDate(i.sip.startDate) }))
+          .filter(x => x.date)
+          .sort((a, b) => a.date < b.date ? -1 : 1)
+        return (
+          <div style={{ ...card, padding: '16px 20px', marginBottom: 16, display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div><p style={label}>ACTIVE SIPS</p><p style={{ margin: 0, fontWeight: 700, fontSize: '1.1rem', color: 'var(--accent)' }}>{sipInvs.length}</p></div>
+            <div><p style={label}>MONTHLY OUTGO</p><p style={{ margin: 0, fontWeight: 700, fontSize: '1.1rem', color: 'var(--text-primary)' }}>{formatINR(totalMonthly)}</p></div>
+            {nextSIPs[0] && (
+              <div><p style={label}>NEXT SIP</p><p style={{ margin: 0, fontWeight: 500, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{fmtShortDate(nextSIPs[0].date)} · {nextSIPs[0].name}</p></div>
+            )}
+          </div>
+        )
+      })()}
+
       {/* ── Investment table ───────────────────────────────── */}
       {subTab !== 'fi' && (
         <>
@@ -606,6 +916,8 @@ export default function Investments({ activeMember }) {
                       cacheEntry={priceCache[getCacheKey(inv)]}
                       onUpdate={updated => saveInv(investments.map(i => i.id === updated.id ? updated : i))}
                       onDelete={() => saveInv(investments.filter(i => i.id !== inv.id))}
+                      onSIPConfig={() => setSipModal({ type: 'config', inv })}
+                      onAddInstalment={() => setSipModal({ type: 'instalment', inv })}
                     />
                   ))}
                 </tbody>
@@ -696,6 +1008,21 @@ export default function Investments({ activeMember }) {
       )}
 
       {showUpdateHoldings && <UpdateHoldingsModal activeMember={activeMember} onClose={() => setShowUpdateHoldings(false)} />}
+
+      {sipModal?.type === 'config' && (
+        <SIPConfigModal
+          inv={sipModal.inv}
+          onSave={updated => { upsertInv(updated); setSipModal(null) }}
+          onCancel={() => setSipModal(null)}
+        />
+      )}
+      {sipModal?.type === 'instalment' && (
+        <SIPInstalmentModal
+          inv={sipModal.inv}
+          onConfirm={updated => { upsertInv(updated); setSipModal(null) }}
+          onCancel={() => setSipModal(null)}
+        />
+      )}
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }

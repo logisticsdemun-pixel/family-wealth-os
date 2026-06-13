@@ -7,7 +7,7 @@ const PBKDF2_ITERATIONS = 200000
 const ENCRYPTED_KEYS = [
   'fwos-investments', 'fwos-fixed-income', 'fwos-gold', 'fwos-gold-prices',
   'fwos-loans', 'fwos-insurance', 'fwos-cash-assets', 'fwos-liabilities',
-  'fwos-price-cache', 'fwos-price-updated', 'fwos-snapshots',
+  'fwos-price-cache', 'fwos-price-updated', 'fwos-snapshots', 'fwos-real-estate',
 ]
 
 let _cryptoKey = null
