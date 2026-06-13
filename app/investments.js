@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { load, save, KEYS } from './lib/storage'
+import { load, save, KEYS, flushAll } from './lib/storage'
 import { formatINR, formatPct, gainColor, firstName, MEMBERS, calculateCAGR, yearsElapsed } from './lib/format'
 import { SEED_INVESTMENTS, SEED_FIXED_INCOME } from './lib/seedData'
 import { takeSnapshotFromStorage } from './lib/snapshot'
@@ -374,6 +374,7 @@ export default function Investments({ activeMember }) {
   )
   const [priceCache, setPriceCache] = useState(() => load(KEYS.PRICE_CACHE, {}))
   const [showUpdateHoldings, setShowUpdateHoldings] = useState(false)
+  const [saveStatus, setSaveStatus] = useState('idle') // 'idle' | 'saving' | 'saved'
 
   function dismissBanner() {
     setBannerDismissed(true)
@@ -485,6 +486,18 @@ export default function Investments({ activeMember }) {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            onClick={async () => {
+              setSaveStatus('saving')
+              await flushAll()
+              setSaveStatus('saved')
+              setTimeout(() => setSaveStatus('idle'), 2000)
+            }}
+            disabled={saveStatus !== 'idle'}
+            style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 80 }}
+          >
+            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : '💾 Save'}
+          </button>
           <button
             onClick={() => setShowUpdateHoldings(true)}
             style={{ ...btnPrimary, fontSize: '0.85rem' }}

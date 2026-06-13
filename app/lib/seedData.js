@@ -1,7 +1,7 @@
 export const SEED_INVESTMENTS = [
   // Poonam — Stocks
-  { id: 1, member: 'Poonam Saxena', type: 'Stock', name: 'LG Electronics', ticker: 'LGELIMITED.NS', mfCode: null, isMF: false, units: 13, buyPrice: 1140, currentPrice: null },
-  { id: 2, member: 'Poonam Saxena', type: 'Stock', name: 'Midwest', ticker: 'MIDWEST.NS', mfCode: null, isMF: false, units: 7, buyPrice: 1065, currentPrice: null },
+  { id: 1, member: 'Poonam Saxena', type: 'Stock', name: 'LG Electronics India', ticker: 'LGEINDIA.BO', mfCode: null, isMF: false, units: 13, buyPrice: 1140, currentPrice: null },
+  { id: 2, member: 'Poonam Saxena', type: 'Stock', name: 'Midwest Limited', ticker: 'MIDWESTLTD.BO', mfCode: null, isMF: false, units: 7, buyPrice: 1065, currentPrice: null },
   // Poonam — Mutual Funds
   { id: 3, member: 'Poonam Saxena', type: 'Mutual Fund', name: 'Motilal Oswal Midcap', ticker: null, mfCode: '120503', isMF: true, units: 126.216, buyPrice: 118.83, currentPrice: null },
   { id: 4, member: 'Poonam Saxena', type: 'Mutual Fund', name: 'Quant Smallcap', ticker: null, mfCode: '120828', isMF: true, units: 71.573, buyPrice: 279.42, currentPrice: null },

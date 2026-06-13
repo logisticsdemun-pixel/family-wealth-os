@@ -1,4 +1,5 @@
 import { loadFromMemory, saveToMemory, getAllMemoryData, flushAll } from './crypto'
+export { flushAll } from './crypto'
 
 export const KEYS = {
   THEME: 'fwos-theme',
