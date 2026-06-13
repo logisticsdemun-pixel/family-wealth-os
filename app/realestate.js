@@ -1,6 +1,6 @@
 'use client'
 import { useState, useMemo } from 'react'
-import { KEYS, flushAll } from './lib/storage'
+import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS, computeOutstanding } from './lib/format'
 import { useStore } from './lib/store'
 
@@ -406,12 +406,13 @@ function PropertyCard({ property, linkedLoans, onEdit, onDelete }) {
 
 // ── Main Real Estate component ─────────────────────────────
 export default function RealEstate({ activeMember }) {
-  const { data, set } = useStore()
+  const { data, set, flush } = useStore()
   const properties = data?.realEstate ?? []
   const loans = data?.loans ?? []
 
   const [showForm, setShowForm] = useState(false)
   const [editProperty, setEditProperty] = useState(null)
+  const [saveStatus, setSaveStatus] = useState('idle')
 
   function saveProperties(updated) { set(KEYS.REAL_ESTATE, updated) }
 
@@ -482,10 +483,16 @@ export default function RealEstate({ activeMember }) {
         <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Real Estate</h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
-            onClick={() => flushAll()}
-            style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem' }}
+            onClick={async () => {
+              setSaveStatus('saving')
+              await flush()
+              setSaveStatus('saved')
+              setTimeout(() => setSaveStatus('idle'), 2000)
+            }}
+            disabled={saveStatus !== 'idle'}
+            style={{ ...btnGhost, fontSize: '0.85rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 72 }}
           >
-            Save
+            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
           </button>
           <button
             onClick={() => { setShowForm(v => !v); setEditProperty(null) }}

@@ -151,11 +151,12 @@ function typeColor(type) {
 
 // ── Main Insurance component ───────────────────────────────
 export default function Insurance({ activeMember }) {
-  const { data, set } = useStore()
+  const { data, set, flush } = useStore()
   const policies = data?.insurance ?? []
 
   const [showAdd, setShowAdd] = useState(false)
   const [editPolicy, setEditPolicy] = useState(null)
+  const [saveStatus, setSaveStatus] = useState('idle')
 
   function savePolicies(updated) { set(KEYS.INSURANCE, updated) }
 
@@ -182,12 +183,26 @@ export default function Insurance({ activeMember }) {
       {/* ── Header ────────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
         <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Insurance</h2>
-        <button
-          onClick={() => { setShowAdd(v => !v); setEditPolicy(null) }}
-          style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem', color: 'var(--accent)' }}
-        >
-          {showAdd ? 'Cancel' : '+ Add Policy'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={async () => {
+              setSaveStatus('saving')
+              await flush()
+              setSaveStatus('saved')
+              setTimeout(() => setSaveStatus('idle'), 2000)
+            }}
+            disabled={saveStatus !== 'idle'}
+            style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 72 }}
+          >
+            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
+          </button>
+          <button
+            onClick={() => { setShowAdd(v => !v); setEditPolicy(null) }}
+            style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem', color: 'var(--accent)' }}
+          >
+            {showAdd ? 'Cancel' : '+ Add Policy'}
+          </button>
+        </div>
       </div>
 
       {/* ── Summary cards ─────────────────────────────────── */}

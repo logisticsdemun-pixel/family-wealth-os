@@ -202,11 +202,12 @@ function GoldTable({ items, prices, onEdit, onDelete, isJewellery = false }) {
 
 // ── Main Gold component ────────────────────────────────────
 export default function Gold({ activeMember }) {
-  const { data, set } = useStore()
+  const { data, set, flush } = useStore()
   const gold = data?.gold ?? []
   const goldPrices = data?.goldPrices ?? DEFAULT_GOLD_PRICES
 
   const [subTab, setSubTab] = useState('investment')
+  const [saveStatus, setSaveStatus] = useState('idle')
   const [showAdd, setShowAdd] = useState(false)
   const [editItem, setEditItem] = useState(null)
 
@@ -233,6 +234,18 @@ export default function Gold({ activeMember }) {
       {/* ── Header ────────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Gold</h2>
+        <button
+          onClick={async () => {
+            setSaveStatus('saving')
+            await flush()
+            setSaveStatus('saved')
+            setTimeout(() => setSaveStatus('idle'), 2000)
+          }}
+          disabled={saveStatus !== 'idle'}
+          style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 72 }}
+        >
+          {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
+        </button>
       </div>
 
       {/* ── Price settings ────────────────────────────────── */}

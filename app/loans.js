@@ -206,12 +206,13 @@ function LoanCard({ loan, propertyName, onEdit, onDelete }) {
 
 // ── Main Loans component ───────────────────────────────────
 export default function Loans({ activeMember }) {
-  const { data, set } = useStore()
+  const { data, set, flush } = useStore()
   const loans = data?.loans ?? []
   const properties = data?.realEstate ?? []
 
   const [showAdd, setShowAdd] = useState(false)
   const [editLoan, setEditLoan] = useState(null)
+  const [saveStatus, setSaveStatus] = useState('idle')
 
   function saveLoans(updated) { set(KEYS.LOANS, updated) }
 
@@ -237,12 +238,26 @@ export default function Loans({ activeMember }) {
       {/* ── Header ────────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
         <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Loans</h2>
-        <button
-          onClick={() => { setShowAdd(v => !v); setEditLoan(null) }}
-          style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem', color: 'var(--accent)' }}
-        >
-          {showAdd ? 'Cancel' : '+ Add Loan'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={async () => {
+              setSaveStatus('saving')
+              await flush()
+              setSaveStatus('saved')
+              setTimeout(() => setSaveStatus('idle'), 2000)
+            }}
+            disabled={saveStatus !== 'idle'}
+            style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 72 }}
+          >
+            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
+          </button>
+          <button
+            onClick={() => { setShowAdd(v => !v); setEditLoan(null) }}
+            style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem', color: 'var(--accent)' }}
+          >
+            {showAdd ? 'Cancel' : '+ Add Loan'}
+          </button>
+        </div>
       </div>
 
       {/* ── Summary cards ─────────────────────────────────── */}
