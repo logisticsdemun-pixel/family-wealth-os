@@ -408,27 +408,51 @@ function SIPInstalmentModal({ inv, onConfirm, onCancel }) {
 }
 
 // ── SIP configure modal ────────────────────────────────────
+const FREQUENCIES = ['Daily', 'Weekly', 'Fortnightly', 'Monthly', 'Quarterly']
+const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+const STARTING_MONTHS = ['Jan', 'Apr', 'Jul', 'Oct']
+
 function SIPConfigModal({ inv, onSave, onCancel }) {
+  const sipData = inv.sip || {}
   const [form, setForm] = useState({
     investmentMode: inv.investmentMode || 'lumpsum',
-    monthlyAmount: inv.sip?.monthlyAmount ?? '',
-    startDate: inv.sip?.startDate ?? '',
+    amount: sipData.monthlyAmount ?? '',
+    startDate: sipData.startDate ?? '',
+    frequency: sipData.frequency || 'Monthly',
+    dayOfMonth: sipData.dayOfMonth ?? (sipData.startDate ? new Date(sipData.startDate).getDate() : 1),
+    dayOfWeek: sipData.dayOfWeek ?? 'Monday',
+    startingMonth: sipData.startingMonth ?? 'Jan',
+    status: sipData.status || 'Active',
   })
-  const instalments = inv.sip?.instalments || []
+  const instalments = sipData.instalments || []
+  const isSIP = form.investmentMode === 'sip'
+
+  const nextDate = isSIP && form.startDate
+    ? nextSIPDate({ ...form, monthlyAmount: parseFloat(form.amount) || 0 })
+    : null
 
   function handleSave() {
-    const isSIP = form.investmentMode === 'sip'
     onSave({
       ...inv,
       investmentMode: form.investmentMode,
       sip: isSIP ? {
-        ...(inv.sip || {}),
-        monthlyAmount: parseFloat(form.monthlyAmount) || 0,
+        ...sipData,
+        monthlyAmount: parseFloat(form.amount) || 0,
         startDate: form.startDate,
-        frequency: 'monthly',
-        instalments: inv.sip?.instalments || [],
+        frequency: form.frequency,
+        dayOfMonth: parseInt(form.dayOfMonth) || 1,
+        dayOfWeek: form.dayOfWeek,
+        startingMonth: form.startingMonth,
+        status: form.status,
+        instalments: sipData.instalments || [],
       } : inv.sip,
     })
+  }
+
+  const sectionHead = {
+    fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase',
+    letterSpacing: '0.1em', color: 'var(--text-muted)',
+    margin: '0 0 12px', paddingBottom: 6, borderBottom: '1px solid var(--border)',
   }
 
   return (
@@ -436,7 +460,7 @@ function SIPConfigModal({ inv, onSave, onCancel }) {
       <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200 }} onClick={onCancel} />
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-        zIndex: 201, width: 'calc(100% - 48px)', maxWidth: 480,
+        zIndex: 201, width: 'calc(100% - 48px)', maxWidth: 520,
         maxHeight: 'calc(100vh - 80px)', overflowY: 'auto',
         backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 16, padding: '28px',
@@ -447,6 +471,7 @@ function SIPConfigModal({ inv, onSave, onCancel }) {
         </div>
         <p style={{ margin: '0 0 20px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{inv.name}</p>
 
+        {/* ── Mode toggle ── */}
         <div style={{ marginBottom: 16 }}>
           <span style={label}>Investment Mode</span>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -464,19 +489,88 @@ function SIPConfigModal({ inv, onSave, onCancel }) {
           </div>
         </div>
 
-        {form.investmentMode === 'sip' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-            <div>
-              <span style={label}>Monthly Amount (₹)</span>
-              <input type="number" style={inp} placeholder="e.g. 5000" value={form.monthlyAmount} onChange={e => setForm({ ...form, monthlyAmount: e.target.value })} />
+        {/* ── SIP Schedule ── */}
+        {isSIP && (
+          <>
+            <p style={sectionHead}>SIP Schedule</p>
+
+            <div style={{ marginBottom: 12 }}>
+              <span style={label}>Frequency</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {FREQUENCIES.map(f => (
+                  <button key={f} type="button" onClick={() => setForm({ ...form, frequency: f })} style={{
+                    padding: '5px 12px', borderRadius: 8, cursor: 'pointer', fontSize: '0.8rem',
+                    border: `1.5px solid ${form.frequency === f ? 'var(--accent)' : 'var(--border)'}`,
+                    backgroundColor: form.frequency === f ? 'var(--accent-faint)' : 'transparent',
+                    color: form.frequency === f ? 'var(--accent)' : 'var(--text-secondary)',
+                    fontWeight: form.frequency === f ? 600 : 400,
+                  }}>{f}</button>
+                ))}
+              </div>
             </div>
-            <div>
-              <span style={label}>SIP Start Date</span>
-              <input type="date" style={inp} value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div>
+                <span style={label}>SIP Amount (₹)</span>
+                <input type="number" style={inp} placeholder="e.g. 5000" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
+              </div>
+              <div>
+                <span style={label}>First SIP Date</span>
+                <input type="date" style={inp} value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
+              </div>
             </div>
-          </div>
+
+            {form.frequency === 'Weekly' && (
+              <div style={{ marginBottom: 12 }}>
+                <span style={label}>Day of Week</span>
+                <select style={inp} value={form.dayOfWeek} onChange={e => setForm({ ...form, dayOfWeek: e.target.value })}>
+                  {DAYS_OF_WEEK.map(d => <option key={d}>{d}</option>)}
+                </select>
+              </div>
+            )}
+
+            {(form.frequency === 'Monthly' || form.frequency === 'Quarterly') && (
+              <div style={{ display: 'grid', gridTemplateColumns: form.frequency === 'Quarterly' ? '1fr 1fr' : '1fr', gap: 10, marginBottom: 12 }}>
+                <div>
+                  <span style={label}>Day of Month (1–28)</span>
+                  <input type="number" min={1} max={28} style={inp} value={form.dayOfMonth} onChange={e => setForm({ ...form, dayOfMonth: e.target.value })} />
+                  {parseInt(form.dayOfMonth) > 28 && (
+                    <p style={{ margin: '-6px 0 6px', fontSize: '0.7rem', color: 'var(--amber)' }}>
+                      Day &gt;28 will be capped at month-end for short months.
+                    </p>
+                  )}
+                </div>
+                {form.frequency === 'Quarterly' && (
+                  <div>
+                    <span style={label}>Starting Month</span>
+                    <select style={inp} value={form.startingMonth} onChange={e => setForm({ ...form, startingMonth: e.target.value })}>
+                      {STARTING_MONTHS.map(m => <option key={m}>{m}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+              <div>
+                <span style={label}>Status</span>
+                <select style={inp} value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+                  {['Active', 'Paused', 'Completed'].map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              {nextDate && (
+                <div>
+                  <span style={label}>Next Instalment</span>
+                  <p style={{ margin: '4px 0 10px', fontSize: '0.875rem', color: 'var(--accent)', fontWeight: 600 }}>
+                    {new Date(nextDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
+        {/* ── Instalment history ── */}
         {instalments.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <p style={{ ...label, marginBottom: 8 }}>Instalment History ({instalments.length})</p>
