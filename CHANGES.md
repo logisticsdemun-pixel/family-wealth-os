@@ -171,6 +171,27 @@ Computed from the SIP start date: the next occurrence of the same day-of-month t
 
 ---
 
+## Central Data Store & Live Dashboard
+
+All app data now flows through a single React context (`AppProvider` in `app/lib/store.js`). Previously each tab loaded its own copy of data from storage on mount and re-saved independently. Now:
+
+- **Single load on unlock.** All collections (investments, gold, loans, real estate, fixed income, cash, liabilities, insurance, snapshots, price cache) are read once from the AES-decrypted memory store when the app unlocks, and shared across all tabs.
+- **Live dashboard.** Any write in any tab (adding a loan, editing a holding, changing gold prices) is immediately reflected in the Dashboard without needing to navigate away and back. The `fwos:datachanged` event bus carries the signal; the central store re-reads the updated collection.
+- **`applyImport` (backup restore) now triggers a reload.** Previously, restoring a backup did not refresh open tabs. Now `applyImport` dispatches `fwos:datachanged` after `flushAll()` completes, so the store reloads all data automatically.
+
+## SaveBar — Unsaved Changes Indicator
+
+A floating **SaveBar** appears in the bottom-right corner of the screen whenever you have uncommitted writes (i.e., you have added, edited, or deleted something since the last explicit save). It shows:
+
+- An amber pulsing dot indicating pending data.
+- An **"Unsaved changes"** label.
+- A **"Save"** button — flushes all pending AES encryption to `localStorage` and clears the indicator.
+- A **"Save to History"** button — does the same as Save, then also records a net worth snapshot with today's date (subject to the ₹1,000 delta guard).
+
+The **"Save" button in the Investments header** is now wired to the same `store.flush()` call, so clicking it clears the global indicator too.
+
+---
+
 ## Known Limitations
 
 - **Zerodha MF fuzzy matching** uses word overlap on scheme names. Schemes with very

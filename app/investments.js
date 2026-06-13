@@ -1,6 +1,6 @@
 'use client'
 import { useState, useCallback, useRef } from 'react'
-import { load, save, KEYS, flushAll } from './lib/storage'
+import { load, save, KEYS } from './lib/storage'
 import { useStore } from './lib/store'
 import { formatINR, formatPct, gainColor, firstName, MEMBERS, calculateCAGR, yearsElapsed } from './lib/format'
 import { SEED_INVESTMENTS, SEED_FIXED_INCOME } from './lib/seedData'
@@ -781,7 +781,7 @@ function AddFDForm({ onAdd, onCancel, activeMember = 'All' }) {
 const UNPRICED_BANNER_KEY = 'fwos-unpriced-dismissed'
 
 export default function Investments({ activeMember }) {
-  const { data, set } = useStore()
+  const { data, set, flush } = useStore()
   const storeSetRef = useRef(null)
   storeSetRef.current = set
 
@@ -907,7 +907,7 @@ export default function Investments({ activeMember }) {
           <button
             onClick={async () => {
               setSaveStatus('saving')
-              await flushAll()
+              await flush()
               setSaveStatus('saved')
               setTimeout(() => setSaveStatus('idle'), 2000)
             }}

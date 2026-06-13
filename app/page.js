@@ -11,6 +11,7 @@ import Loans from './loans'
 import Insurance from './insurance'
 import RealEstate from './realestate'
 import Artha from './artha'
+import SaveBar from './components/SaveBar'
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -67,6 +68,7 @@ export default function Home() {
           <Artha {...tabProps} />
         </div>
       )}
+      <SaveBar />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { load, save, KEYS } from './storage'
+import { load, save, KEYS, flushAll } from './storage'
 import {
   SEED_INVESTMENTS, SEED_FIXED_INCOME, SEED_GOLD, DEFAULT_GOLD_PRICES,
   SEED_LOANS, SEED_INSURANCE, SEED_CASH_ASSETS, SEED_LIABILITIES, SEED_REAL_ESTATE,
@@ -55,6 +55,7 @@ const AppContext = createContext(null)
 
 export function AppProvider({ children }) {
   const [data, setData] = useState(null) // null until first load
+  const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
     setData(readAll())
@@ -76,13 +77,20 @@ export function AppProvider({ children }) {
     _storeWriting = false
     const name = KEY_TO_COLLECTION[key]
     if (name) setData(prev => prev ? { ...prev, [name]: value } : prev)
+    setDirty(true)
+  }, [])
+
+  // Await pending encryption + mark clean. Call before tab close or manual snapshot.
+  const flush = useCallback(async () => {
+    await flushAll()
+    setDirty(false)
   }, [])
 
   // Force a full reload from _memoryStore (after applyImport / backup restore)
   const reloadAll = useCallback(() => setData(readAll()), [])
 
   return (
-    <AppContext.Provider value={{ data, set, reloadAll }}>
+    <AppContext.Provider value={{ data, set, reloadAll, dirty, flush }}>
       {children}
     </AppContext.Provider>
   )
