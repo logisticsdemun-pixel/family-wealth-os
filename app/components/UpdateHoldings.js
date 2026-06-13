@@ -469,8 +469,15 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
             // User kept checkbox ticked → remove the holding
             updated.splice(idx, 1)
           } else {
-            // User unticked → keep, add a note
-            updated[idx] = { ...updated[idx], note: 'Not in latest Zerodha snapshot' }
+            // User unticked → keep, clear Zerodha source flags so it isn't flagged next time
+            const { institution: _inst, ...rest } = updated[idx]
+            updated[idx] = {
+              ...rest,
+              id: crypto.randomUUID(),
+              note: parsedB.date
+                ? `Not present in Zerodha statement dated ${parsedB.date}`
+                : 'Not present in latest Zerodha statement',
+            }
           }
         }
 
@@ -827,6 +834,9 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
                                   <p style={{ margin: '1px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
                                     {inv.isMF ? `MF ${inv.mfCode || '—'}` : (inv.ticker || '—')}
                                   </p>
+                                  <p style={{ margin: '3px 0 0', fontSize: '0.67rem', color: 'var(--text-muted)' }}>
+                                    Uncheck if this holding exists in another demat account
+                                  </p>
                                 </td>
                                 <td style={{ padding: '7px 10px', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                                   {inv.isMF ? inv.type : 'Stock'}
@@ -835,9 +845,15 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
                                   {inv.units} units
                                 </td>
                                 <td style={{ padding: '7px 10px', textAlign: 'right' }}>
-                                  <span style={{ fontSize: '0.82rem', color: 'var(--loss)', fontWeight: 500 }}>
-                                    {formatINR(lastValue)}
-                                  </span>
+                                  {lastValue > 0 ? (
+                                    <span style={{ fontSize: '0.82rem', color: 'var(--loss)', fontWeight: 500 }}>
+                                      {formatINR(lastValue)}
+                                    </span>
+                                  ) : (
+                                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                      No price recorded
+                                    </span>
+                                  )}
                                 </td>
                                 <td style={{ padding: '7px 10px', textAlign: 'center' }}>
                                   <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '2px 6px', borderRadius: 4, backgroundColor: 'var(--loss-faint)', color: 'var(--loss)' }}>
