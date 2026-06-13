@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
-import { load, save, KEYS } from './lib/storage'
+import { load, save, KEYS, flushAll } from './lib/storage'
 import { formatINR, firstName, MEMBERS, computeOutstanding } from './lib/format'
 import { SEED_REAL_ESTATE, SEED_LOANS } from './lib/seedData'
 
@@ -32,7 +32,7 @@ function SectionHead({ title }) {
 }
 
 // ── Property Form Modal ────────────────────────────────────
-function PropertyForm({ initial, loans, onSave, onCancel }) {
+function PropertyForm({ initial, loans, defaultMember, onSave, onCancel }) {
   const [form, setForm] = useState(() => initial ? {
     ...initial,
     currentValue: initial.currentValue ?? '',
@@ -43,7 +43,7 @@ function PropertyForm({ initial, loans, onSave, onCancel }) {
   } : {
     name: '', address: '', type: PROPERTY_TYPES[0],
     currentValue: '', purchasePrice: '', purchaseDate: '',
-    member: MEMBERS[0], ownershipPct: 100,
+    member: defaultMember ?? MEMBERS[0], ownershipPct: 100,
     monthlyRent: '', notes: '',
   })
 
@@ -486,12 +486,20 @@ export default function RealEstate({ activeMember }) {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
         <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Real Estate</h2>
-        <button
-          onClick={() => { setShowForm(v => !v); setEditProperty(null) }}
-          style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem', color: 'var(--accent)' }}
-        >
-          {showForm ? 'Cancel' : '+ Add Property'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => flushAll()}
+            style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem' }}
+          >
+            💾 Save
+          </button>
+          <button
+            onClick={() => { setShowForm(v => !v); setEditProperty(null) }}
+            style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem', color: 'var(--accent)' }}
+          >
+            {showForm ? 'Cancel' : '+ Add Property'}
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -531,6 +539,7 @@ export default function RealEstate({ activeMember }) {
         <PropertyForm
           initial={editProperty}
           loans={loans}
+          defaultMember={activeMember !== 'All' ? activeMember : MEMBERS[0]}
           onSave={handleSave}
           onCancel={() => { setShowForm(false); setEditProperty(null) }}
         />

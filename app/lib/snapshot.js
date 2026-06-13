@@ -33,14 +33,21 @@ export function takeSnapshotFromStorage(goldPriceDefaults) {
   const liabilities = (load(KEYS.LIABILITIES, []) || []).filter(l => l.member)
   const loans = load(KEYS.LOANS, []) || []
 
+  const realEstate = load(KEYS.REAL_ESTATE, []) || []
+
   const invVal = investments.reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
   const goldVal = gold.reduce((s, g) => s + g.grams * (goldPrices[g.carat] ?? 0), 0)
   const fdVal = fixedIncome.reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
   const cashVal = cashAssets.reduce((s, a) => s + (a.value || 0), 0)
   const loanLiab = loans.reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
   const manualLiab = liabilities.reduce((s, l) => s + (l.value || 0), 0)
+  const reVal = realEstate.reduce((s, p) => {
+    const primaryPct = p.ownershipPct ?? 100
+    const coOwnerPct = (p.coOwners || []).reduce((cs, co) => cs + (co.pct || 0), 0)
+    return s + (p.currentValue || 0) * ((primaryPct + coOwnerPct) / 100)
+  }, 0)
 
-  takeSnapshot(invVal + goldVal + fdVal + cashVal - loanLiab - manualLiab)
+  takeSnapshot(invVal + goldVal + fdVal + cashVal + reVal - loanLiab - manualLiab)
 }
 
 export function getSnapshots() {
