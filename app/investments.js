@@ -608,9 +608,10 @@ function SIPConfigModal({ inv, onSave, onCancel }) {
 }
 
 // ── Add investment form ────────────────────────────────────
-function AddInvForm({ onAdd, onCancel }) {
+function AddInvForm({ onAdd, onCancel, activeMember = 'All' }) {
   const [form, setForm] = useState({
-    member: MEMBERS[0], type: 'Stock', name: '', ticker: '', mfCode: '',
+    member: activeMember !== 'All' ? activeMember : MEMBERS[0],
+    type: 'Stock', name: '', ticker: '', mfCode: '',
     units: '', buyPrice: '', buyDate: '', investmentMode: 'lumpsum',
     sipMonthlyAmount: '', sipStartDate: '',
   })
@@ -644,12 +645,14 @@ function AddInvForm({ onAdd, onCancel }) {
     <form onSubmit={handleSubmit} style={{ ...card, padding: 20, marginTop: 16 }}>
       <p style={{ ...label, marginBottom: 14, fontSize: '0.75rem' }}>ADD INVESTMENT</p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <div>
-          <span style={label}>Member</span>
-          <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
-            {MEMBERS.map(m => <option key={m}>{m}</option>)}
-          </select>
-        </div>
+        {activeMember === 'All' && (
+          <div>
+            <span style={label}>Member</span>
+            <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
+              {MEMBERS.map(m => <option key={m}>{m}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <span style={label}>Type</span>
           <select style={inp} value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
@@ -720,8 +723,8 @@ function AddInvForm({ onAdd, onCancel }) {
 }
 
 // ── Fixed Income section ───────────────────────────────────
-function AddFDForm({ onAdd, onCancel }) {
-  const [form, setForm] = useState({ member: MEMBERS[0], name: '', principal: '', rate: '', startDate: '', maturityValue: '', maturityDate: '' })
+function AddFDForm({ onAdd, onCancel, activeMember = 'All' }) {
+  const [form, setForm] = useState({ member: activeMember !== 'All' ? activeMember : MEMBERS[0], name: '', principal: '', rate: '', startDate: '', maturityValue: '', maturityDate: '' })
 
   function handleSubmit(e) {
     e.preventDefault()
@@ -732,12 +735,14 @@ function AddFDForm({ onAdd, onCancel }) {
     <form onSubmit={handleSubmit} style={{ ...card, padding: 20, marginTop: 16 }}>
       <p style={{ ...label, marginBottom: 14, fontSize: '0.75rem' }}>ADD FIXED INCOME</p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <div>
-          <span style={label}>Member</span>
-          <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
-            {MEMBERS.map(m => <option key={m}>{m}</option>)}
-          </select>
-        </div>
+        {activeMember === 'All' && (
+          <div>
+            <span style={label}>Member</span>
+            <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
+              {MEMBERS.map(m => <option key={m}>{m}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <span style={label}>Name</span>
           <input required style={inp} placeholder="e.g. HDFC FD" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
@@ -920,7 +925,7 @@ export default function Investments({ activeMember }) {
             disabled={saveStatus !== 'idle'}
             style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 80 }}
           >
-            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : '💾 Save'}
+            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
           </button>
           <button
             onClick={() => setShowUpdateHoldings(true)}
@@ -1074,6 +1079,7 @@ export default function Investments({ activeMember }) {
             <AddInvForm
               onAdd={item => { upsertInv(item); setShowAddInv(false) }}
               onCancel={() => setShowAddInv(false)}
+              activeMember={activeMember}
             />
           )}
         </>
@@ -1137,6 +1143,7 @@ export default function Investments({ activeMember }) {
             <AddFDForm
               onAdd={item => { upsertFD(item); setShowAddFD(false) }}
               onCancel={() => setShowAddFD(false)}
+              activeMember={activeMember}
             />
           )}
         </>

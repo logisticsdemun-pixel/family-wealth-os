@@ -38,6 +38,7 @@ export function save(key, value) {
     return
   }
   saveToMemory(key, value)
+  flushAll() // fire-and-forget: ensure every write reaches localStorage
 }
 
 export function exportAllData() {

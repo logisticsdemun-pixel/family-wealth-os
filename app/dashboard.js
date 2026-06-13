@@ -218,10 +218,10 @@ function EditableRow({ item, onSave, onDelete, valueLabel = 'Value', isLiability
 }
 
 // ── Add form ───────────────────────────────────────────────
-function AddForm({ onAdd, onCancel, isLiability = false }) {
+function AddForm({ onAdd, onCancel, isLiability = false, activeMember = 'All' }) {
   const [form, setForm] = useState({
     name: '', type: isLiability ? LIABILITY_TYPES[0] : ASSET_TYPES[0],
-    member: MEMBERS[0], value: '', isShared: false,
+    member: activeMember !== 'All' ? activeMember : MEMBERS[0], value: '', isShared: false,
   })
 
   function handleSubmit(e) {
@@ -243,12 +243,14 @@ function AddForm({ onAdd, onCancel, isLiability = false }) {
             {(isLiability ? LIABILITY_TYPES : ASSET_TYPES).map(t => <option key={t}>{t}</option>)}
           </select>
         </div>
-        <div>
-          <span style={label}>Member</span>
-          <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
-            {MEMBERS.map(m => <option key={m}>{m}</option>)}
-          </select>
-        </div>
+        {activeMember === 'All' && (
+          <div>
+            <span style={label}>Member</span>
+            <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
+              {MEMBERS.map(m => <option key={m}>{m}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <span style={label}>Amount (₹)</span>
           <input required type="number" style={inp} placeholder="0" value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} />
@@ -542,7 +544,7 @@ export default function Dashboard({ activeMember }) {
             No cash assets recorded. Add savings accounts, FDs, or other assets here.
           </p>
         )}
-        {showAddCash && <AddForm onAdd={addCash} onCancel={() => setShowAddCash(false)} />}
+        {showAddCash && <AddForm onAdd={addCash} onCancel={() => setShowAddCash(false)} activeMember={activeMember} />}
       </div>
 
       {/* ── Liabilities ──────────────────────────────────── */}
@@ -574,7 +576,7 @@ export default function Dashboard({ activeMember }) {
             No other liabilities. Loans are tracked in the Loans tab.
           </p>
         )}
-        {showAddLiability && <AddForm onAdd={addLiab} onCancel={() => setShowAddLiability(false)} isLiability />}
+        {showAddLiability && <AddForm onAdd={addLiab} onCancel={() => setShowAddLiability(false)} isLiability activeMember={activeMember} />}
       </div>
 
     </div>

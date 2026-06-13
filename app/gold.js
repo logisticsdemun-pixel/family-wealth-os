@@ -73,9 +73,9 @@ function PriceSettings({ prices, onChange }) {
 }
 
 // ── Add / Edit gold item form ──────────────────────────────
-function GoldForm({ initial, category, onSave, onCancel }) {
+function GoldForm({ initial, category, onSave, onCancel, activeMember = 'All' }) {
   const [form, setForm] = useState(initial ?? {
-    member: MEMBERS[0], category, name: '', grams: '', carat: 24, buyPricePerGram: '',
+    member: activeMember !== 'All' ? activeMember : MEMBERS[0], category, name: '', grams: '', carat: 24, buyPricePerGram: '',
   })
 
   function handleSubmit(e) {
@@ -94,12 +94,14 @@ function GoldForm({ initial, category, onSave, onCancel }) {
     <form onSubmit={handleSubmit} style={{ ...card, padding: 20, marginTop: 12 }}>
       <p style={{ ...label, marginBottom: 14, fontSize: '0.75rem' }}>{initial ? 'EDIT' : 'ADD'} {category.toUpperCase()} GOLD</p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <div>
-          <span style={label}>Member</span>
-          <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
-            {MEMBERS.map(m => <option key={m}>{m}</option>)}
-          </select>
-        </div>
+        {(activeMember === 'All' || !!initial?.id) && (
+          <div>
+            <span style={label}>Member</span>
+            <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
+              {MEMBERS.map(m => <option key={m}>{m}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <span style={label}>Name / Description</span>
           <input required style={inp} placeholder="Coin / Bangle / Ring…" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
@@ -277,6 +279,7 @@ export default function Gold({ activeMember }) {
           category={category}
           onSave={handleSave}
           onCancel={() => setEditItem(null)}
+          activeMember={activeMember}
         />
       ) : (
         <GoldTable
@@ -302,6 +305,7 @@ export default function Gold({ activeMember }) {
               category={category}
               onSave={handleSave}
               onCancel={() => setShowAdd(false)}
+              activeMember={activeMember}
             />
           )}
         </>

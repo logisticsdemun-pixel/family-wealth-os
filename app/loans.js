@@ -24,9 +24,9 @@ function filterByMember(arr, member) {
 }
 
 // ── Loan form ──────────────────────────────────────────────
-function LoanForm({ initial, properties, onSave, onCancel }) {
+function LoanForm({ initial, properties, onSave, onCancel, activeMember = 'All' }) {
   const [form, setForm] = useState(initial ?? {
-    lender: '', type: LOAN_TYPES[0], member: MEMBERS[0], isShared: false,
+    lender: '', type: LOAN_TYPES[0], member: activeMember !== 'All' ? activeMember : MEMBERS[0], isShared: false,
     principal: '', rate: '', months: '', emi: '', startDate: '', outstandingOverride: '',
     linkedPropertyId: null,
   })
@@ -58,12 +58,14 @@ function LoanForm({ initial, properties, onSave, onCancel }) {
             {LOAN_TYPES.map(t => <option key={t}>{t}</option>)}
           </select>
         </div>
-        <div>
-          <span style={label}>Member</span>
-          <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
-            {MEMBERS.map(m => <option key={m}>{m}</option>)}
-          </select>
-        </div>
+        {(activeMember === 'All' || !!initial?.id) && (
+          <div>
+            <span style={label}>Member</span>
+            <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
+              {MEMBERS.map(m => <option key={m}>{m}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <span style={label}>EMI (₹/month)</span>
           <input type="number" style={inp} placeholder="0" value={form.emi} onChange={e => setForm({ ...form, emi: e.target.value })} />
@@ -261,10 +263,10 @@ export default function Loans({ activeMember }) {
 
       {/* ── Add / Edit form ───────────────────────────────── */}
       {showAdd && !editLoan && (
-        <LoanForm properties={properties} onSave={handleSave} onCancel={() => setShowAdd(false)} />
+        <LoanForm properties={properties} onSave={handleSave} onCancel={() => setShowAdd(false)} activeMember={activeMember} />
       )}
       {editLoan && (
-        <LoanForm initial={editLoan} properties={properties} onSave={handleSave} onCancel={() => setEditLoan(null)} />
+        <LoanForm initial={editLoan} properties={properties} onSave={handleSave} onCancel={() => setEditLoan(null)} activeMember={activeMember} />
       )}
 
       {/* ── Loan cards ────────────────────────────────────── */}

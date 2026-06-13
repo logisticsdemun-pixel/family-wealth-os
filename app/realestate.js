@@ -32,7 +32,8 @@ function SectionHead({ title }) {
 }
 
 // ── Property Form Modal ────────────────────────────────────
-function PropertyForm({ initial, loans, defaultMember, onSave, onCancel }) {
+function PropertyForm({ initial, loans, activeMember = 'All', onSave, onCancel }) {
+  const defaultMember = activeMember !== 'All' ? activeMember : MEMBERS[0]
   const [form, setForm] = useState(() => initial ? {
     ...initial,
     currentValue: initial.currentValue ?? '',
@@ -43,7 +44,7 @@ function PropertyForm({ initial, loans, defaultMember, onSave, onCancel }) {
   } : {
     name: '', address: '', type: PROPERTY_TYPES[0],
     currentValue: '', purchasePrice: '', purchaseDate: '',
-    member: defaultMember ?? MEMBERS[0], ownershipPct: 100,
+    member: defaultMember, ownershipPct: 100,
     monthlyRent: '', notes: '',
   })
 
@@ -145,16 +146,18 @@ function PropertyForm({ initial, loans, defaultMember, onSave, onCancel }) {
           {/* ── 3. Ownership ── */}
           <SectionHead title="Ownership" />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <span style={label}>Primary Owner</span>
-              <select style={inp} value={form.member} onChange={e => {
-                const newMember = e.target.value
-                setForm({ ...form, member: newMember })
-                setCoOwners(prev => prev.filter(c => c.member !== newMember))
-              }}>
-                {MEMBERS.map(m => <option key={m}>{m}</option>)}
-              </select>
-            </div>
+            {(activeMember === 'All' || !!initial?.id) && (
+              <div>
+                <span style={label}>Primary Owner</span>
+                <select style={inp} value={form.member} onChange={e => {
+                  const newMember = e.target.value
+                  setForm({ ...form, member: newMember })
+                  setCoOwners(prev => prev.filter(c => c.member !== newMember))
+                }}>
+                  {MEMBERS.map(m => <option key={m}>{m}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <span style={label}>Ownership % (primary)</span>
               <input type="number" min="1" max="100" style={inp} placeholder="100" value={form.ownershipPct} onChange={e => setForm({ ...form, ownershipPct: e.target.value })} />
@@ -491,7 +494,7 @@ export default function RealEstate({ activeMember }) {
             onClick={() => flushAll()}
             style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem' }}
           >
-            💾 Save
+            Save
           </button>
           <button
             onClick={() => { setShowForm(v => !v); setEditProperty(null) }}
@@ -539,7 +542,7 @@ export default function RealEstate({ activeMember }) {
         <PropertyForm
           initial={editProperty}
           loans={loans}
-          defaultMember={activeMember !== 'All' ? activeMember : MEMBERS[0]}
+          activeMember={activeMember}
           onSave={handleSave}
           onCancel={() => { setShowForm(false); setEditProperty(null) }}
         />

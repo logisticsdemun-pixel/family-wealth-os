@@ -31,9 +31,9 @@ function daysUntilRenewal(dateStr) {
 }
 
 // ── Policy form ────────────────────────────────────────────
-function PolicyForm({ initial, onSave, onCancel }) {
+function PolicyForm({ initial, onSave, onCancel, activeMember = 'All' }) {
   const [form, setForm] = useState(initial ?? {
-    name: '', type: POLICY_TYPES[0], member: MEMBERS[0], insurer: '',
+    name: '', type: POLICY_TYPES[0], member: activeMember !== 'All' ? activeMember : MEMBERS[0], insurer: '',
     cover: '', premium: '', renewalDate: '',
   })
 
@@ -61,12 +61,14 @@ function PolicyForm({ initial, onSave, onCancel }) {
             {POLICY_TYPES.map(t => <option key={t}>{t}</option>)}
           </select>
         </div>
-        <div>
-          <span style={labelStyle}>Member</span>
-          <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
-            {MEMBERS.map(m => <option key={m}>{m}</option>)}
-          </select>
-        </div>
+        {(activeMember === 'All' || !!initial?.id) && (
+          <div>
+            <span style={labelStyle}>Member</span>
+            <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
+              {MEMBERS.map(m => <option key={m}>{m}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <span style={labelStyle}>Insurer</span>
           <input style={inp} placeholder="e.g. LIC, HDFC Ergo…" value={form.insurer} onChange={e => setForm({ ...form, insurer: e.target.value })} />
@@ -206,8 +208,8 @@ export default function Insurance({ activeMember }) {
       </div>
 
       {/* ── Form ──────────────────────────────────────────── */}
-      {showAdd && !editPolicy && <PolicyForm onSave={handleSave} onCancel={() => setShowAdd(false)} />}
-      {editPolicy && <PolicyForm initial={editPolicy} onSave={handleSave} onCancel={() => setEditPolicy(null)} />}
+      {showAdd && !editPolicy && <PolicyForm onSave={handleSave} onCancel={() => setShowAdd(false)} activeMember={activeMember} />}
+      {editPolicy && <PolicyForm initial={editPolicy} onSave={handleSave} onCancel={() => setEditPolicy(null)} activeMember={activeMember} />}
 
       {/* ── Table ─────────────────────────────────────────── */}
       {filtered.length === 0 ? (
