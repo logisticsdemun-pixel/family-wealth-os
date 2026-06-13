@@ -85,9 +85,12 @@ async function migrateV1() {
         try {
           const ct = await encryptStr(_cryptoKey, old) // old is a JSON string
           localStorage.setItem(V2_PREFIX + key, ct)
+          localStorage.removeItem(key) // only delete V1 after V2 write succeeds
         } catch {}
+        // if encryption failed, V1 key is preserved — data is not lost
+      } else {
+        localStorage.removeItem(key) // V2 already exists, safe to drop V1
       }
-      localStorage.removeItem(key)
     }
   }
 }
