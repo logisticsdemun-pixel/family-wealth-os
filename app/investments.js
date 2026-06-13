@@ -133,14 +133,20 @@ function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete, onSIPConfig, on
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 500 }}>{inv.name}</p>
-              {inv.investmentMode === 'sip' && (
-                <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, backgroundColor: 'var(--accent-faint)', color: 'var(--accent)', fontWeight: 700 }}>SIP</span>
-              )}
+              {inv.isMF && (() => {
+                const mode = inv.investmentMode || 'lumpsum'
+                if (mode === 'sip') {
+                  const freq = inv.sip?.frequency
+                  const freqLabel = freq ? ` · ${freq.charAt(0).toUpperCase() + freq.slice(1)}` : ''
+                  return <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, backgroundColor: 'var(--accent-faint)', color: 'var(--accent)', fontWeight: 700 }}>SIP{freqLabel}</span>
+                }
+                return <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, backgroundColor: 'var(--surface-2)', color: 'var(--text-muted)', fontWeight: 500 }}>Lumpsum</span>
+              })()}
             </div>
             <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{identifier}</p>
             {inv.investmentMode === 'sip' && inv.sip?.startDate && (
               <p style={{ margin: '2px 0 0', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                Next: {fmtShortDate(nextSIPDate(inv.sip.startDate))}
+                Next: {fmtShortDate(nextSIPDate(inv.sip))}
               </p>
             )}
           </div>
@@ -234,7 +240,7 @@ function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete, onSIPConfig, on
             <>
               {inv.isMF && (
                 <button onClick={() => onSIPConfig?.()} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.72rem', padding: '4px 6px' }} title="SIP / Lumpsum settings">
-                  {inv.investmentMode === 'sip' ? '📅' : 'SIP'}
+                  ⚙
                 </button>
               )}
               {inv.investmentMode === 'sip' && (
@@ -254,16 +260,41 @@ function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete, onSIPConfig, on
 }
 
 // ── SIP helpers ────────────────────────────────────────────
-function nextSIPDate(startDate) {
-  if (!startDate) return null
-  const dayOfMonth = new Date(startDate).getDate()
+function nextSIPDate(sip) {
+  if (!sip?.startDate) return null
+  const freq = sip.frequency || 'Monthly'
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const thisMonth = new Date(today.getFullYear(), today.getMonth(), dayOfMonth)
-  return (thisMonth < today
-    ? new Date(today.getFullYear(), today.getMonth() + 1, dayOfMonth)
-    : thisMonth
-  ).toISOString().split('T')[0]
+
+  if (freq === 'Monthly') {
+    const dayOfMonth = sip.dayOfMonth || new Date(sip.startDate).getDate()
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), dayOfMonth)
+    return (thisMonth < today
+      ? new Date(today.getFullYear(), today.getMonth() + 1, dayOfMonth)
+      : thisMonth
+    ).toISOString().split('T')[0]
+  }
+
+  if (freq === 'Daily') {
+    const next = new Date(today)
+    next.setDate(next.getDate() + 1)
+    return next.toISOString().split('T')[0]
+  }
+
+  if (freq === 'Weekly' || freq === 'Fortnightly') {
+    const days = freq === 'Weekly' ? 7 : 14
+    let next = new Date(sip.startDate)
+    while (next <= today) next = new Date(next.getTime() + days * 86400000)
+    return next.toISOString().split('T')[0]
+  }
+
+  if (freq === 'Quarterly') {
+    let next = new Date(sip.startDate)
+    while (next <= today) next.setMonth(next.getMonth() + 3)
+    return next.toISOString().split('T')[0]
+  }
+
+  return null
 }
 
 function fmtShortDate(dateStr) {
@@ -671,7 +702,17 @@ export default function Investments({ activeMember }) {
   }
 
   useEffect(() => {
-    setInvestments(load(KEYS.INVESTMENTS, SEED_INVESTMENTS))
+    const raw = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
+    let dirty = false
+    const migrated = raw.map(h => {
+      if (h.isMF && !h.investmentMode) {
+        dirty = true
+        return { ...h, investmentMode: 'lumpsum' }
+      }
+      return h
+    })
+    if (dirty) save(KEYS.INVESTMENTS, migrated)
+    setInvestments(migrated)
     setFixedIncome(load(KEYS.FIXED_INCOME, SEED_FIXED_INCOME))
   }, [])
 
@@ -874,7 +915,7 @@ export default function Investments({ activeMember }) {
         const totalMonthly = sipInvs.reduce((s, i) => s + (i.sip.monthlyAmount || 0), 0)
         const nextSIPs = sipInvs
           .filter(i => i.sip?.startDate)
-          .map(i => ({ name: i.name, date: nextSIPDate(i.sip.startDate) }))
+          .map(i => ({ name: i.name, date: nextSIPDate(i.sip) }))
           .filter(x => x.date)
           .sort((a, b) => a.date < b.date ? -1 : 1)
         return (
