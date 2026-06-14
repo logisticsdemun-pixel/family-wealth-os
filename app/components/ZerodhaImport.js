@@ -94,6 +94,14 @@ function buildDiff(fileHoldings, allInvestments, memberName) {
     return storedMember === searchName || storedMember.includes(searchName.split(' ')[0])
   })
 
+  console.log('[EXITED DEBUG] Member:', memberName)
+  console.log('[EXITED DEBUG] All investments count:', allInvestments.length)
+  console.log('[EXITED DEBUG] Member investments:', memberInvestments.map(h => ({
+    name: h.name, ticker: h.ticker, normTicker: norm(h.ticker || ''), isin: h.isin, member: h.member,
+  })))
+  console.log('[EXITED DEBUG] File symbols:', [...fileSymbolSet])
+  console.log('[EXITED DEBUG] File ISINs:', [...fileISINSet])
+
   // EXITED: in app but not found in file by ticker or ISIN
   const exited = memberInvestments.filter(h => {
     const appTicker = norm(h.ticker || '')
@@ -102,6 +110,8 @@ function buildDiff(fileHoldings, allInvestments, memberName) {
     if (appTicker && fileSymbolSet.has(appTicker)) return false
     return !!(appTicker || appISIN)
   })
+
+  console.log('[EXITED DEBUG] Exited:', exited.map(h => h.name || h.ticker))
 
   const appByTicker = new Map(
     memberInvestments.filter(h => h.ticker).map(h => [norm(h.ticker), h])
