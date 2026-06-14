@@ -42,13 +42,15 @@ export default function AppShell() {
           overflowY: 'auto',
           background: 'var(--color-background-primary)',
         }}>
-          {activePage === 'dashboard'   && <Dashboard   {...pageProps} />}
-          {activePage === 'investments' && <Investments {...pageProps} />}
-          {activePage === 'gold'        && <Gold        {...pageProps} />}
-          {activePage === 'realestate'  && <RealEstate  {...pageProps} />}
-          {activePage === 'loans'       && <Loans       {...pageProps} />}
-          {activePage === 'insurance'   && <Insurance   {...pageProps} />}
-          {activePage === 'artha'       && <Artha       {...pageProps} />}
+          <div key={activePage} className="page-content">
+            {activePage === 'dashboard'   && <Dashboard   {...pageProps} />}
+            {activePage === 'investments' && <Investments {...pageProps} />}
+            {activePage === 'gold'        && <Gold        {...pageProps} />}
+            {activePage === 'realestate'  && <RealEstate  {...pageProps} />}
+            {activePage === 'loans'       && <Loans       {...pageProps} />}
+            {activePage === 'insurance'   && <Insurance   {...pageProps} />}
+            {activePage === 'artha'       && <Artha       {...pageProps} />}
+          </div>
         </div>
       </div>
     </div>
