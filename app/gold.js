@@ -12,7 +12,7 @@ const inp = {
   border: '1px solid var(--border)', backgroundColor: 'var(--bg)',
   color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none', marginBottom: 10,
 }
-const label = {
+const lbl = {
   fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.07em',
   color: 'var(--text-muted)', margin: '0 0 4px', display: 'block',
 }
@@ -49,11 +49,11 @@ function PriceSettings({ prices, onChange }) {
 
       {open && (
         <div style={{ ...card, padding: 20, marginTop: 10 }}>
-          <p style={{ ...label, marginBottom: 14, fontSize: '0.75rem' }}>GOLD PRICE PER GRAM (CURRENT MARKET)</p>
+          <p style={{ ...lbl, marginBottom: 14, fontSize: '0.75rem' }}>GOLD PRICE PER GRAM (CURRENT MARKET)</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
             {CARATS.map(c => (
               <div key={c}>
-                <span style={label}>{c}K (₹/gram)</span>
+                <span style={lbl}>{c}K (₹/gram)</span>
                 <input
                   type="number"
                   style={inp}
@@ -76,7 +76,9 @@ function PriceSettings({ prices, onChange }) {
 // ── Add / Edit gold item form ──────────────────────────────
 function GoldForm({ initial, category, onSave, onCancel, activeMember = 'All' }) {
   const [form, setForm] = useState(initial ?? {
-    member: activeMember !== 'All' ? activeMember : MEMBERS[0], category, name: '', grams: '', carat: 24, buyPricePerGram: '',
+    member: activeMember !== 'All' ? activeMember : MEMBERS[0],
+    category: category || 'Investment',
+    name: '', grams: '', carat: 24, buyPricePerGram: '',
   })
 
   function handleSubmit(e) {
@@ -93,32 +95,41 @@ function GoldForm({ initial, category, onSave, onCancel, activeMember = 'All' })
 
   return (
     <form onSubmit={handleSubmit} style={{ ...card, padding: 20, marginTop: 12 }}>
-      <p style={{ ...label, marginBottom: 14, fontSize: '0.75rem' }}>{initial ? 'EDIT' : 'ADD'} {category.toUpperCase()} GOLD</p>
+      <p style={{ ...lbl, marginBottom: 14, fontSize: '0.75rem' }}>{initial ? 'EDIT' : 'ADD'} {(category || form.category).toUpperCase()} GOLD</p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {(activeMember === 'All' || !!initial?.id) && (
           <div>
-            <span style={label}>Member</span>
+            <span style={lbl}>Member</span>
             <select style={inp} value={form.member} onChange={e => setForm({ ...form, member: e.target.value })}>
               {MEMBERS.map(m => <option key={m}>{m}</option>)}
             </select>
           </div>
         )}
+        {!category && !initial && (
+          <div>
+            <span style={lbl}>Category</span>
+            <select style={inp} value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+              <option value="Investment">Investment Gold</option>
+              <option value="Jewellery">Jewellery</option>
+            </select>
+          </div>
+        )}
         <div>
-          <span style={label}>Name / Description</span>
+          <span style={lbl}>Name / Description</span>
           <input required style={inp} placeholder="Coin / Bangle / Ring…" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
         </div>
         <div>
-          <span style={label}>Weight (grams)</span>
+          <span style={lbl}>Weight (grams)</span>
           <input required type="number" step="any" style={inp} placeholder="0" value={form.grams} onChange={e => setForm({ ...form, grams: e.target.value })} />
         </div>
         <div>
-          <span style={label}>Carat</span>
+          <span style={lbl}>Carat</span>
           <select style={inp} value={form.carat} onChange={e => setForm({ ...form, carat: e.target.value })}>
             {CARATS.map(c => <option key={c} value={c}>{c}K</option>)}
           </select>
         </div>
         <div style={{ gridColumn: '1 / -1' }}>
-          <span style={label}>Buy Price / gram (₹) — 0 if received as gift</span>
+          <span style={lbl}>Buy Price / gram (₹) — 0 if received as gift</span>
           <input type="number" step="any" style={inp} placeholder="0" value={form.buyPricePerGram} onChange={e => setForm({ ...form, buyPricePerGram: e.target.value })} />
         </div>
       </div>
@@ -131,15 +142,18 @@ function GoldForm({ initial, category, onSave, onCancel, activeMember = 'All' })
 }
 
 // ── Gold table ─────────────────────────────────────────────
-function GoldTable({ items, prices, onEdit, onDelete, isJewellery = false }) {
+function GoldTable({ items, prices, onEdit, onDelete, goldTab }) {
   const totalBuy = items.reduce((s, g) => s + buyValue(g), 0)
   const totalCurrent = items.reduce((s, g) => s + currentValue(g, prices), 0)
   const totalGain = totalCurrent - totalBuy
+  const totalGrams = items.reduce((s, g) => s + (g.grams || 0), 0)
+
+  const emptyLabel = goldTab === 'jewellery' ? 'jewellery' : goldTab === 'investment' ? 'investment gold' : 'gold'
 
   if (items.length === 0) {
     return (
       <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', padding: '24px 0' }}>
-        No {isJewellery ? 'jewellery' : 'investment gold'} recorded. Click &ldquo;+ Add&rdquo; to begin.
+        No {emptyLabel} recorded. Click &ldquo;+ Add&rdquo; to begin.
       </p>
     )
   }
@@ -150,7 +164,7 @@ function GoldTable({ items, prices, onEdit, onDelete, isJewellery = false }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem', minWidth: 600 }}>
           <thead>
             <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-              {['Item', 'Member', 'Grams', 'Carat', 'Buy Value', 'Current Value', isJewellery ? 'Mark-up' : 'Gain / Loss', ''].map((h, i) => (
+              {['Item', 'Member', 'Grams', 'Carat', 'Buy Value', 'Current Value', goldTab === 'jewellery' ? 'Mark-up' : 'Gain / Loss', ''].map((h, i) => (
                 <th key={h || i} style={{ padding: '10px 14px', textAlign: i >= 2 ? 'right' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -173,7 +187,7 @@ function GoldTable({ items, prices, onEdit, onDelete, isJewellery = false }) {
                       <>
                         {formatINR(gl)}
                         <span style={{ fontSize: '0.72rem', marginLeft: 4 }}>
-                          ({bv > 0 ? ((gl / bv) * 100).toFixed(1) : '—'}%)
+                          ({((gl / bv) * 100).toFixed(1)}%)
                         </span>
                       </>
                     ) : '—'}
@@ -186,11 +200,16 @@ function GoldTable({ items, prices, onEdit, onDelete, isJewellery = false }) {
               )
             })}
             {/* Totals row */}
-            <tr style={{ backgroundColor: 'var(--surface-2)', fontWeight: 600, borderTop: '2px solid var(--border)' }}>
-              <td colSpan={4} style={{ padding: '10px 14px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>TOTAL</td>
-              <td style={{ padding: '10px 14px', textAlign: 'right' }}>{formatINR(totalBuy)}</td>
-              <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--gold-color)' }}>{formatINR(totalCurrent)}</td>
-              <td style={{ padding: '10px 14px', textAlign: 'right', color: gainColor(totalGain) }}>{formatINR(totalGain)}</td>
+            <tr style={{ borderTop: '1px solid var(--border)', backgroundColor: 'var(--surface-2)' }}>
+              <td style={{ padding: '10px 14px', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-primary)' }}>Total</td>
+              <td />
+              <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500 }}>{totalGrams.toFixed(3)}g</td>
+              <td />
+              <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500 }}>{formatINR(totalBuy)}</td>
+              <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: '#534AB7' }}>{formatINR(totalCurrent)}</td>
+              <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: totalGain >= 0 ? '#1D9E75' : '#D85A30' }}>
+                {totalGain >= 0 ? '+' : ''}{formatINR(totalGain)}
+              </td>
               <td />
             </tr>
           </tbody>
@@ -206,13 +225,12 @@ export default function Gold({ activeMember }) {
   const gold = data?.gold ?? []
   const goldPrices = data?.goldPrices ?? DEFAULT_GOLD_PRICES
 
-  const [subTab, setSubTab] = useState('investment')
+  const [goldTab, setGoldTab] = useState('all')
   const [saveStatus, setSaveStatus] = useState('idle')
   const [showAdd, setShowAdd] = useState(false)
   const [editItem, setEditItem] = useState(null)
 
   function saveGold(updated) { set(KEYS.GOLD, updated) }
-
   function updatePrices(prices) { set(KEYS.GOLD_PRICES, prices) }
 
   function handleSave(item) {
@@ -225,8 +243,16 @@ export default function Gold({ activeMember }) {
     setShowAdd(false)
   }
 
-  const category = subTab === 'investment' ? 'Investment' : 'Jewellery'
-  const filtered = filterByMember(gold, activeMember).filter(g => g.category === category)
+  const memberFiltered = filterByMember(gold, activeMember)
+  const category = goldTab === 'investment' ? 'Investment' : goldTab === 'jewellery' ? 'Jewellery' : null
+  const filteredItems = category
+    ? memberFiltered.filter(g => g.category === category)
+    : memberFiltered
+
+  const totalBuyValue = filteredItems.reduce((s, g) => s + buyValue(g), 0)
+  const totalCurrentValue = filteredItems.reduce((s, g) => s + currentValue(g, goldPrices), 0)
+  const totalGain = totalCurrentValue - totalBuyValue
+  const totalGainPct = totalBuyValue > 0 ? (totalGain / totalBuyValue) * 100 : 0
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
@@ -251,33 +277,73 @@ export default function Gold({ activeMember }) {
       {/* ── Price settings ────────────────────────────────── */}
       <PriceSettings prices={goldPrices} onChange={updatePrices} />
 
+      {/* ── Summary cards ─────────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+        {[
+          {
+            cardLabel: 'GOLD PURCHASE PRICE',
+            value: formatINR(totalBuyValue),
+            sub: `${filteredItems.length} item${filteredItems.length !== 1 ? 's' : ''}`,
+            color: 'var(--text-primary)',
+            subColor: 'var(--text-muted)',
+          },
+          {
+            cardLabel: 'CURRENT VALUE',
+            value: formatINR(totalCurrentValue),
+            sub: 'At current gold prices',
+            color: '#534AB7',
+            subColor: '#534AB7',
+          },
+          {
+            cardLabel: 'GAIN / LOSS',
+            value: (totalGain >= 0 ? '+' : '') + formatINR(totalGain),
+            sub: (totalGainPct >= 0 ? '+' : '') + totalGainPct.toFixed(2) + '% overall',
+            color: totalGain >= 0 ? '#1D9E75' : '#D85A30',
+            subColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
+          },
+        ].map(({ cardLabel, value, sub, color, subColor }) => (
+          <div key={cardLabel} style={{ ...card, padding: '16px 18px' }}>
+            <p style={{ ...lbl, margin: '0 0 8px' }}>{cardLabel}</p>
+            <p style={{ fontSize: 20, fontWeight: 500, color, margin: '0 0 3px' }}>{value}</p>
+            <p style={{ fontSize: 12, color: subColor, margin: 0 }}>{sub}</p>
+          </div>
+        ))}
+      </div>
+
       {/* ── Sub-tabs ──────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)' }}>
-        {[{ id: 'investment', label: 'Investment Gold' }, { id: 'jewellery', label: 'Jewellery' }].map(t => (
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+        {[
+          { id: 'all', label: 'All' },
+          { id: 'investment', label: 'Investment Gold' },
+          { id: 'jewellery', label: 'Jewellery' },
+        ].map(tab => (
           <button
-            key={t.id}
-            onClick={() => { setSubTab(t.id); setShowAdd(false); setEditItem(null) }}
+            key={tab.id}
+            onClick={() => { setGoldTab(tab.id); setShowAdd(false); setEditItem(null) }}
             style={{
-              padding: '8px 16px', border: 'none', backgroundColor: 'transparent',
-              color: subTab === t.id ? 'var(--accent)' : 'var(--text-secondary)',
-              fontWeight: subTab === t.id ? 600 : 400, fontSize: '0.875rem', cursor: 'pointer',
-              borderBottom: `2px solid ${subTab === t.id ? 'var(--accent)' : 'transparent'}`,
-              marginBottom: -1, transition: 'all 0.15s',
+              padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
+              fontSize: '0.85rem',
+              backgroundColor: goldTab === tab.id ? '#334155' : 'var(--surface-2)',
+              color: goldTab === tab.id ? 'white' : 'var(--text-secondary)',
             }}
           >
-            {t.label}
+            {tab.label}
           </button>
         ))}
       </div>
 
       {/* ── Jewellery note ────────────────────────────────── */}
-      {subTab === 'jewellery' && (
-        <div style={{
-          backgroundColor: 'var(--gold-faint)', border: '1px solid var(--gold-color)',
-          borderRadius: 10, padding: '10px 16px', marginBottom: 20, fontSize: '0.82rem', color: 'var(--text-secondary)',
+      {goldTab === 'jewellery' && (
+        <p style={{
+          fontSize: 12, color: 'var(--text-secondary)',
+          margin: '-12px 0 16px', padding: '8px 12px',
+          background: 'var(--surface-2)', borderRadius: 8,
+          borderLeft: '3px solid #BA7517',
         }}>
-          Jewellery is tracked for <strong>record-keeping and insurance purposes</strong>. Current values use market gold price and may not reflect actual resale value. Gains are not counted toward investment returns.
-        </div>
+          Jewellery values are estimated by gold weight only.
+          Craftsmanship, diamonds, and gemstone values are not included.
+          These are tracked for record and insurance purposes.
+        </p>
       )}
 
       {/* ── Table ─────────────────────────────────────────── */}
@@ -291,11 +357,11 @@ export default function Gold({ activeMember }) {
         />
       ) : (
         <GoldTable
-          items={filtered}
+          items={filteredItems}
           prices={goldPrices}
           onEdit={item => setEditItem(item)}
           onDelete={id => saveGold(gold.filter(g => g.id !== id))}
-          isJewellery={subTab === 'jewellery'}
+          goldTab={goldTab}
         />
       )}
 
@@ -306,7 +372,7 @@ export default function Gold({ activeMember }) {
             onClick={() => setShowAdd(v => !v)}
             style={{ width: '100%', padding: 14, borderRadius: 10, border: '2px dashed var(--border)', backgroundColor: 'transparent', color: 'var(--gold-color)', fontSize: '0.875rem', cursor: 'pointer' }}
           >
-            {showAdd ? 'Cancel' : `+ Add ${category} Gold`}
+            {showAdd ? 'Cancel' : `+ Add ${category ? category + ' ' : ''}Gold`}
           </button>
           {showAdd && (
             <GoldForm
