@@ -411,22 +411,39 @@ export default function ZerodhaImportWizard({ onClose }) {
               </div>
             )}
 
-            <div style={{ backgroundColor: 'var(--accent-faint)', border: '1px solid var(--accent)', borderRadius: 8, padding: '10px 12px', marginBottom: 20, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            <div style={{ backgroundColor: 'var(--accent-faint)', border: '1px solid var(--accent)', borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
               A net worth snapshot will be taken before the import.
             </div>
+
+            {/* Live summary line */}
+            {(() => {
+              const removeCount = (parsed.exited || []).filter(h => exitConfirmed[h.id ?? h.ticker] !== false).length
+              const addCount = parsed.toAdd.length
+              const updateCount = parsed.toUpdate.length
+              const unchangedCount = parsed.rows.length - addCount - updateCount
+              return (
+                <div style={{ padding: '10px 14px', background: 'var(--surface-2)', borderRadius: 8, marginBottom: 14, fontSize: 12, color: 'var(--text-secondary)' }}>
+                  {addCount > 0 && <span>Adding {addCount} · </span>}
+                  {updateCount > 0 && <span>Updating {updateCount} · </span>}
+                  {removeCount > 0 && <span style={{ color: 'var(--loss)' }}>Removing {removeCount} · </span>}
+                  {unchangedCount > 0 && <span>No change to {unchangedCount}</span>}
+                  {addCount === 0 && updateCount === 0 && removeCount === 0 && unchangedCount === 0 && <span>Nothing to change</span>}
+                </div>
+              )
+            })()}
 
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={handleImport}
                 disabled={importing}
-                style={{ padding: '9px 20px', borderRadius: 8, border: 'none', backgroundColor: importing ? 'var(--text-muted)' : 'var(--accent)', color: '#fff', fontSize: '0.875rem', fontWeight: 500, cursor: importing ? 'not-allowed' : 'pointer' }}
+                style={{ flex: 1, padding: '11px', borderRadius: 8, border: 'none', background: importing ? 'var(--text-muted)' : '#534AB7', color: '#fff', fontSize: 13, fontWeight: 500, cursor: importing ? 'not-allowed' : 'pointer' }}
               >
-                {importing ? 'Importing…' : 'Import Now'}
+                {importing ? 'Importing…' : 'Confirm import'}
               </button>
               <button
                 onClick={() => { setStep('select'); setParsed(null); setError('') }}
                 disabled={importing}
-                style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: importing ? 'not-allowed' : 'pointer' }}
+                style={{ padding: '11px 20px', borderRadius: 8, border: '0.5px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-secondary)', fontSize: 13, cursor: importing ? 'not-allowed' : 'pointer' }}
               >
                 Back
               </button>
