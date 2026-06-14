@@ -3,6 +3,7 @@
 const AUTH_KEY = 'fwos:auth'
 const V2_PREFIX = 'fwos:v2:'
 const PBKDF2_ITERATIONS = 200000
+const SESSION_KEY = 'fwos:aeskey' // sessionStorage — survives reload, cleared on tab close
 
 const ENCRYPTED_KEYS = [
   'fwos-investments', 'fwos-fixed-income', 'fwos-gold', 'fwos-gold-prices',
@@ -32,7 +33,7 @@ async function deriveKey(password, salt) {
     { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     mat,
     { name: 'AES-GCM', length: 256 },
-    false,
+    true,  // extractable so we can persist to sessionStorage for reload survival
     ['encrypt', 'decrypt']
   )
 }
@@ -65,6 +66,19 @@ async function decryptStr(key, b64) {
   const ct = buf.slice(12)
   const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct)
   return new TextDecoder().decode(pt)
+}
+
+// ── Session-key helpers (sessionStorage, per-tab) ──────────
+async function storeKeyToSession() {
+  if (!_cryptoKey) return
+  try {
+    const jwk = await crypto.subtle.exportKey('jwk', _cryptoKey)
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(jwk))
+  } catch {}
+}
+
+function clearKeyFromSession() {
+  try { sessionStorage.removeItem(SESSION_KEY) } catch {}
 }
 
 // ── Internal helpers ────────────────────────────────────────
@@ -122,6 +136,7 @@ export async function setupPassword(password) {
   localStorage.setItem(AUTH_KEY, JSON.stringify({ salt: ab2b64(salt.buffer), hash }))
   await migrateV1()
   await hydrateMemory()
+  await storeKeyToSession()
 }
 
 export async function unlockStorage(password) {
@@ -134,11 +149,13 @@ export async function unlockStorage(password) {
   _cryptoKey = await deriveKey(password, saltBuf)
   await migrateV1()
   await hydrateMemory()
+  await storeKeyToSession()
 }
 
 export function lockStorage() {
   _cryptoKey = null
   _memoryStore = {}
+  clearKeyFromSession()
 }
 
 export function loadFromMemory(key, fallback = null) {
@@ -158,6 +175,24 @@ export async function flushAll() {
   if (!_cryptoKey) return
   for (const [key, value] of Object.entries(_memoryStore)) {
     await persistOne(key, value)
+  }
+}
+
+// Attempt to restore AES key from sessionStorage and re-hydrate memory.
+// Returns true if successful (page reload auto-unlock path).
+export async function restoreFromSession() {
+  try {
+    const stored = sessionStorage.getItem(SESSION_KEY)
+    if (!stored) return false
+    const jwk = JSON.parse(stored)
+    _cryptoKey = await crypto.subtle.importKey(
+      'jwk', jwk, { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']
+    )
+    await hydrateMemory()
+    return true
+  } catch {
+    _cryptoKey = null
+    return false
   }
 }
 
@@ -184,4 +219,5 @@ export async function changePassword(oldPassword, newPassword) {
 
   localStorage.setItem(AUTH_KEY, JSON.stringify({ salt: ab2b64(newSalt.buffer), hash: newHash }))
   _cryptoKey = newKey
+  await storeKeyToSession()
 }

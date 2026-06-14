@@ -1,4 +1,4 @@
-import { setupPassword, unlockStorage, lockStorage } from './crypto'
+import { setupPassword, unlockStorage, lockStorage, restoreFromSession } from './crypto'
 
 let _unlocked = false
 
@@ -27,4 +27,16 @@ export function lock() {
 export function hasPersistedSession() {
   if (typeof window === 'undefined') return false
   return localStorage.getItem('fwos:session') === 'active'
+}
+
+// Re-derive the AES key from sessionStorage and re-hydrate the memory store.
+// Called on page reload to restore the session without a password prompt.
+export async function restoreSession() {
+  try {
+    const ok = await restoreFromSession()
+    if (ok) { _unlocked = true }
+    return ok
+  } catch {
+    return false
+  }
 }
