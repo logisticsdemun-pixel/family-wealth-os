@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { KEYS } from './lib/storage'
 import { formatINR, memberColor, memberInitials, firstName, MEMBERS, computeOutstanding } from './lib/format'
 import { DEFAULT_GOLD_PRICES } from './lib/seedData'
@@ -84,47 +84,26 @@ function fmtAxisINR(v) {
   return `₹${v}`
 }
 
-function fmtXDate(d) {
-  if (!d) return ''
-  const [, m, day] = d.split('-')
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  return `${months[parseInt(m) - 1]} ${parseInt(day)}`
-}
-
-function ChartTooltip({ active, payload, label: lbl }) {
-  if (!active || !payload?.length) return null
-  return (
-    <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
-      <p style={{ margin: '0 0 4px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{lbl}</p>
-      <p style={{ margin: 0, fontWeight: 600, color: 'var(--accent)' }}>{formatINR(payload[0].value)}</p>
-    </div>
-  )
-}
-
 // ── Allocation bar ─────────────────────────────────────────
 function AllocationBar({ segments }) {
   const total = segments.reduce((s, sg) => s + sg.value, 0)
   if (!total) return null
   return (
-    <div>
-      <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', gap: 1, marginBottom: 12 }}>
-        {segments.map((sg, i) => sg.value > 0 && (
-          <div key={i} style={{ flex: sg.value, backgroundColor: sg.color, minWidth: 2 }} />
-        ))}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {segments.map((sg, i) => sg.value > 0 && (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: sg.color, flexShrink: 0 }} />
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{sg.label}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {segments.map((sg, i) => {
+        const pct = (sg.value / total * 100)
+        return (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 90, fontSize: 11, color: 'var(--color-text-secondary)', flexShrink: 0 }}>{sg.label}</span>
+            <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--color-border-tertiary)' }}>
+              <div style={{ width: `${pct}%`, height: '100%', borderRadius: 2, background: sg.color }} />
             </div>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-              {((sg.value / total) * 100).toFixed(1)}%
+            <span style={{ width: 40, fontSize: 11, textAlign: 'right', color: 'var(--color-text-primary)', flexShrink: 0 }}>
+              {pct.toFixed(1)}%
             </span>
           </div>
-        ))}
-      </div>
+        )
+      })}
     </div>
   )
 }
@@ -294,7 +273,7 @@ export default function Dashboard({ activeMember }) {
   // ── Memoised metrics ─────────────────────────────────────
   const {
     unpricedHoldings, invVal, goldVal, jewVal, cashVal, fdVal, realVal,
-    loanLiab, manualLiab, totalAssets, totalLiab, netWorth, sharedLoans,
+    loanLiab, manualLiab, totalAssets, totalLiab, netWorth, sharedLoans, invGain,
   } = useMemo(() => {
     const invVal = investmentValue(investments, activeMember)
     const goldVal = goldValue(gold, goldPrices, activeMember)
@@ -306,12 +285,15 @@ export default function Dashboard({ activeMember }) {
     const manualLiab = manualLiabilityValue(liabilities, activeMember)
     const totalAssets = invVal + goldVal + jewVal + cashVal + fdVal + realVal
     const totalLiab = loanLiab + manualLiab
+    const invGain = filterByMember(investments, activeMember)
+      .reduce((s, i) => s + i.units * ((i.currentPrice ?? i.buyPrice) - i.buyPrice), 0)
     return {
       unpricedHoldings: filterByMember(investments, activeMember).filter(i => i.currentPrice == null).length,
       invVal, goldVal, jewVal, cashVal, fdVal, realVal,
       loanLiab, manualLiab, totalAssets, totalLiab,
       netWorth: totalAssets - totalLiab,
       sharedLoans: activeMember !== 'All' ? sharedLoanTotal(loans) : 0,
+      invGain,
     }
   }, [investments, gold, goldPrices, cashAssets, fixedIncome, loans, liabilities, realEstate, activeMember])
 
@@ -331,10 +313,10 @@ export default function Dashboard({ activeMember }) {
 
   // ── Allocation segments ──────────────────────────────────
   const allocSegments = useMemo(() => [
-    { label: 'Equity', value: invVal, color: 'var(--accent)' },
-    { label: 'Real Estate', value: realVal, color: '#8b5cf6' },
-    { label: 'Gold', value: goldVal + jewVal, color: 'var(--gold-color)' },
-    { label: 'Cash & FD', value: cashVal + fdVal, color: 'var(--gain)' },
+    { label: 'Real Estate', value: realVal,          color: '#534AB7' },
+    { label: 'Gold',        value: goldVal + jewVal,  color: '#BA7517' },
+    { label: 'Investments', value: invVal,            color: '#1D9E75' },
+    { label: 'Cash & FDs',  value: cashVal + fdVal,  color: '#378ADD' },
   ].filter(s => s.value > 0), [invVal, realVal, goldVal, jewVal, cashVal, fdVal])
 
   // ── CRUD helpers ─────────────────────────────────────────
@@ -353,18 +335,19 @@ export default function Dashboard({ activeMember }) {
   const filteredLiab = filterByMember(liabilities, activeMember)
 
   // ── Snapshot-derived changes ─────────────────────────────
-  const { dayChange, yearChange } = useMemo(() => {
-    if (!snapshots.length) return { dayChange: 0, yearChange: 0 }
-    const now = Date.now()
-    const yesterday = new Date(now - 86400000).toISOString().slice(0, 10)
-    const yearAgo   = new Date(now - 365 * 86400000).toISOString().slice(0, 10)
-    const daySnap  = [...snapshots].reverse().find(s => s.date <= yesterday)
-    const yearSnap = snapshots.find(s => s.date >= yearAgo)
-    return {
-      dayChange:  daySnap  ? netWorth - daySnap.netWorth  : 0,
-      yearChange: yearSnap ? netWorth - yearSnap.netWorth : 0,
-    }
-  }, [snapshots, netWorth])
+  const prevDayNW = snapshots[snapshots.length - 2]?.netWorth ?? netWorth
+  const dayChange = netWorth - prevDayNW
+
+  const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+  const yearAgoNW = snapshots.find(s => new Date(s.date) >= oneYearAgo)?.netWorth ?? netWorth
+  const yearChange = netWorth - yearAgoNW
+
+  // ── Counts for metric card subtitles ─────────────────────
+  const invCount  = filterByMember(investments, activeMember).length
+  const reCount   = filterByMember(realEstate,  activeMember).length
+  const goldCount = filterByMember(gold,         activeMember).length
+  const cashCount = filterByMember(cashAssets,   activeMember).length
+                  + filterByMember(fixedIncome,  activeMember).length
 
   const nwLabel = activeMember === 'All' ? 'Net Worth' : `${firstName(activeMember)} Net Worth`
 
@@ -383,7 +366,7 @@ export default function Dashboard({ activeMember }) {
         display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
         border: '0.5px solid var(--color-border-tertiary)',
         borderRadius: 'var(--border-radius-lg)',
-        overflow: 'hidden', marginBottom: 16,
+        overflow: 'hidden', marginBottom: 12,
         background: 'var(--color-border-tertiary)',
         gap: '0.5px',
       }}>
@@ -422,19 +405,48 @@ export default function Dashboard({ activeMember }) {
         </div>
       </div>
 
-      {/* ── METRIC ROW — 4 cards ─────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+      {/* ── METRIC ROW — joined card group ───────────────── */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--border-radius-lg)',
+        overflow: 'hidden', marginBottom: 24,
+        background: 'var(--color-border-tertiary)',
+        gap: '0.5px',
+      }}>
         {[
-          { label: 'INVESTMENTS',  value: invVal,          color: 'var(--accent)' },
-          { label: 'REAL ESTATE',  value: realVal,         color: '#8b5cf6' },
-          { label: 'GOLD',         value: goldVal + jewVal, color: 'var(--gold-color)' },
-          { label: 'CASH & FDS',   value: cashVal + fdVal, color: 'var(--gain)' },
+          {
+            lbl: 'INVESTMENTS', icon: 'ti-trending-up', val: invVal,
+            sub: invGain !== 0
+              ? `${invGain >= 0 ? '+' : '-'}${fmtAxisINR(Math.abs(invGain))} gain`
+              : `${invCount} holding${invCount === 1 ? '' : 's'}`,
+            subColor: invGain >= 0 ? '#1D9E75' : '#D85A30',
+          },
+          {
+            lbl: 'REAL ESTATE', icon: 'ti-building-estate', val: realVal,
+            sub: `${reCount} propert${reCount === 1 ? 'y' : 'ies'}`,
+            subColor: 'var(--color-text-secondary)',
+          },
+          {
+            lbl: 'GOLD', icon: 'ti-coin', val: goldVal + jewVal,
+            sub: `${goldCount} item${goldCount === 1 ? '' : 's'}`,
+            subColor: 'var(--color-text-secondary)',
+          },
+          {
+            lbl: 'CASH & FDS', icon: 'ti-wallet', val: cashVal + fdVal,
+            sub: `${cashCount} account${cashCount === 1 ? '' : 's'}`,
+            subColor: 'var(--color-text-secondary)',
+          },
         ].map(m => (
-          <div key={m.label} style={{ ...card, padding: '16px 20px' }}>
-            <p style={label}>{m.label}</p>
-            <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: m.color, letterSpacing: '-0.5px' }}>
-              {formatINR(m.value)}
+          <div key={m.lbl} style={{ background: 'var(--color-background-primary)', padding: '16px 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+              <i className={`ti ${m.icon}`} style={{ fontSize: 13, color: 'var(--color-text-secondary)' }} />
+              <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-secondary)' }}>{m.lbl}</span>
+            </div>
+            <p style={{ margin: '0 0 5px', fontSize: 18, fontWeight: 500, letterSpacing: '-0.5px', color: 'var(--color-text-primary)' }}>
+              {formatINR(m.val)}
             </p>
+            <p style={{ margin: 0, fontSize: 11, color: m.subColor }}>{m.sub}</p>
           </div>
         ))}
       </div>
@@ -455,40 +467,42 @@ export default function Dashboard({ activeMember }) {
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
           {/* Net worth history chart */}
-          {snapshots.length >= 2 && (
-            <div style={{ ...card, padding: '20px 24px' }}>
-              <p style={{ ...label, marginBottom: 16, fontSize: '0.72rem' }}>NET WORTH HISTORY</p>
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={snapshots.slice(-90)} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={fmtXDate}
-                    tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                    tickLine={false}
-                    axisLine={false}
-                    interval="preserveStartEnd"
+          <div style={{ ...card, padding: '20px 24px' }}>
+            <p style={{ ...label, marginBottom: 12, fontSize: '0.72rem' }}>NET WORTH HISTORY</p>
+            {snapshots.length >= 2 ? (
+              <ResponsiveContainer width="100%" height={120}>
+                <AreaChart data={snapshots.slice(-90)} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#534AB7" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#534AB7" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <Area type="monotone" dataKey="netWorth"
+                    stroke="#534AB7" strokeWidth={1.5}
+                    fill="url(#nwGrad)" dot={false} />
+                  <XAxis dataKey="date" hide />
+                  <YAxis hide domain={['auto', 'auto']} />
+                  <Tooltip
+                    formatter={(v) => [formatINR(v), 'Net Worth']}
+                    labelFormatter={(l) => new Date(l).toLocaleDateString('en-IN')}
+                    contentStyle={{
+                      background: 'var(--color-background-primary)',
+                      border: '0.5px solid var(--color-border-tertiary)',
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
                   />
-                  <YAxis
-                    tickFormatter={fmtAxisINR}
-                    tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                    tickLine={false}
-                    axisLine={false}
-                    width={64}
-                  />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Line
-                    type="monotone"
-                    dataKey="netWorth"
-                    stroke="var(--accent)"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4, fill: 'var(--accent)' }}
-                  />
-                </LineChart>
+                </AreaChart>
               </ResponsiveContainer>
-            </div>
-          )}
+            ) : (
+              <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-secondary)', textAlign: 'center' }}>
+                  Net worth history builds up as you save data over time.
+                </p>
+              </div>
+            )}
+          </div>
 
           {/* Member breakdown table (All view only) */}
           {activeMember === 'All' && (
@@ -497,27 +511,27 @@ export default function Dashboard({ activeMember }) {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                    <tr style={{ borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
                       {['Member', 'Investments', 'Real Estate', 'Gold', 'Cash & FDs', 'Liabilities', 'Net Worth'].map(h => (
                         <th key={h} style={{ padding: '10px 16px', textAlign: h === 'Member' ? 'left' : 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.75rem' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {memberRows.map(row => (
-                      <tr key={row.member} style={{ borderBottom: '1px solid var(--border)' }}>
+                    {memberRows.map((row, ri) => (
+                      <tr key={row.member} style={{ borderBottom: ri < memberRows.length - 1 ? '0.5px solid var(--color-border-tertiary)' : 'none' }}>
                         <td style={{ padding: '12px 16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Avatar name={row.member} size={26} />
+                            <Avatar name={row.member} size={24} />
                             <span style={{ fontWeight: 500 }}>{firstName(row.member)}</span>
                           </div>
                         </td>
                         {[row.inv, row.re, row.gld, row.csh, row.liab].map((v, i) => (
-                          <td key={i} style={{ padding: '12px 16px', textAlign: 'right', color: i === 4 ? 'var(--loss)' : 'var(--text-primary)' }}>
-                            {formatINR(v)}
+                          <td key={i} style={{ padding: '12px 16px', textAlign: 'right', color: v === 0 ? 'var(--text-muted)' : (i === 4 ? 'var(--loss)' : 'var(--text-primary)') }}>
+                            {v === 0 ? '—' : formatINR(v)}
                           </td>
                         ))}
-                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: row.net >= 0 ? 'var(--text-primary)' : 'var(--loss)' }}>
+                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: row.net >= 0 ? 'var(--text-primary)' : 'var(--loss)' }}>
                           {formatINR(row.net)}
                         </td>
                       </tr>
@@ -545,7 +559,7 @@ export default function Dashboard({ activeMember }) {
             <div style={{ ...card, padding: '18px 20px' }}>
               <p style={{ ...label, marginBottom: 10, fontSize: '0.72rem' }}>BY MEMBER</p>
               {memberRows.map((row, i) => (
-                <div key={row.member} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: i < memberRows.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                <div key={row.member} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: i < memberRows.length - 1 ? '0.5px solid var(--color-border-tertiary)' : 'none' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <Avatar name={row.member} size={22} />
                     <span style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 500 }}>
