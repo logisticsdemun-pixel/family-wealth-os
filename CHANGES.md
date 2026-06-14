@@ -1,5 +1,79 @@
 # Grey Diary — Changes
 
+## Import Reload Bug + Session Persistence
+
+### What was causing the page reload on upload
+
+`handleImport` in `ZerodhaImportWizard` called `window.location.reload()` after
+committing the import. This was unnecessary: `applyImport()` already writes the
+updated investments to `_memoryStore`, encrypts them to `localStorage` via
+`flushAll()`, and dispatches the `fwos:datachanged` event. The store's
+`handleExternalChange` listener picks that up, calls `readAll()`, and updates all
+React state — no reload required. The explicit reload was therefore redundant and
+was the direct cause of the symptom.
+
+### What was causing session loss on reload
+
+The page reload (triggered by the import) fired the `beforeunload` event, which
+called `lock()`. `lock()` cleared both the in-memory `_unlocked` flag and the
+`fwos:session` flag in `localStorage`. On the reloaded page, `isSessionUnlocked()`
+returned `false` (module variable reset) and `hasPersistedSession()` also returned
+`false` (just cleared by `lock()`), so `AuthShell` rendered `PasswordGate` and the
+user had to re-authenticate.
+
+Even on a voluntary manual refresh (Ctrl+R), the same chain fired: `beforeunload →
+lock() → session cleared → password required`.
+
+### How both are now fixed
+
+**Fix 1 — No reload on import** (`app/components/ZerodhaImport.js`): replaced
+`window.location.reload()` with `onClose()`. The store updates automatically via the
+`fwos:datachanged` event already dispatched by `applyImport`.
+
+**Fix 2 — AES key survives page reloads** (`app/lib/crypto.js`, `app/lib/auth.js`,
+`app/components/AuthShell.js`):
+
+- `deriveKey()` now derives the AES-GCM key with `extractable: true`.
+- After every successful unlock (password entry or password setup), the key is
+  exported as JWK and stored in `sessionStorage` under `fwos:aeskey`.
+- On page load, `AuthShell` runs an async `init()` that first checks the module-level
+  flag (covers fast refresh / same JS context), then calls `restoreSession()` which
+  imports the JWK from `sessionStorage`, re-derives `_cryptoKey`, and re-hydrates
+  `_memoryStore` — exactly what happens after typing the password, but without
+  requiring the user to type it again.
+- The `beforeunload → lock()` handler is removed. Locking is now explicit only (lock
+  button). The browser clears `sessionStorage` automatically when the tab is closed,
+  so the AES key never outlives the tab that created it.
+
+### Security implications of the session persistence approach
+
+| Scenario | Before | After |
+|---|---|---|
+| Tab switch / fast refresh | ✓ No password | ✓ No password |
+| Page reload (Ctrl+R) | ✗ Password required | ✓ No password |
+| Open new tab to same URL | ✗ Password required | ✗ Password required |
+| Close tab, reopen | ✗ Password required | ✗ Password required |
+| Explicit lock button | ✗ Password required | ✗ Password required |
+| Browser restart | ✗ Password required | ✗ Password required |
+
+The AES key now lives in `sessionStorage`. Security properties:
+- **Per-tab isolation.** Each tab has its own `sessionStorage`. Opening the app in a
+  new tab always requires the password, even if another tab is already unlocked.
+- **Cleared on tab close.** The browser wipes `sessionStorage` when the tab (or
+  window) is closed, so the key does not survive to a new browser session.
+- **Same-origin only.** `sessionStorage` is not accessible cross-origin or from other
+  tabs on the same origin.
+- **Data still encrypted at rest.** The `localStorage` ciphertext is AES-256-GCM
+  encrypted. The `sessionStorage` key is the only way to decrypt it within a live
+  tab.
+
+Trade-off: if someone gains physical access to a device where the browser is open
+with the app tab visible, they can reload the page and the app auto-unlocks. This is
+acceptable for a personal family device where the device itself is the security
+boundary. If stricter security is needed, the lock button is always available.
+
+---
+
 ## Session Bug: Root Cause and Fix
 
 **Root cause.** The app kept showing the password screen after switching Chrome tabs
