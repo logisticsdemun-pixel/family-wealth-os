@@ -63,11 +63,7 @@ function manualLiabilityValue(liabilities, member) {
 }
 function realEstateValue(properties, member) {
   if (member === 'All') {
-    return properties.reduce((s, p) => {
-      const primaryPct = p.ownershipPct ?? 100
-      const coOwnerPct = (p.coOwners || []).reduce((cs, co) => cs + (co.pct || 0), 0)
-      return s + (p.currentValue || 0) * ((primaryPct + coOwnerPct) / 100)
-    }, 0)
+    return properties.reduce((s, p) => s + (p.currentValue || 0), 0)
   }
   return properties.reduce((s, p) => {
     if (p.member === member) return s + (p.currentValue || 0) * ((p.ownershipPct ?? 100) / 100)

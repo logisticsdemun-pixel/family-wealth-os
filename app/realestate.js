@@ -61,6 +61,19 @@ function PropertyForm({ initial, loans, activeMember = 'All', onSave, onCancel }
 
   function handleSubmit(e) {
     e.preventDefault()
+    if (coOwners.length > 0) {
+      const primaryPct = parseFloat(form.ownershipPct) || 0
+      const coTotal = coOwners.reduce((s, co) => s + (parseFloat(co.pct) || 0), 0)
+      const grandTotal = primaryPct + coTotal
+      if (Math.abs(grandTotal - 100) > 0.5) {
+        alert(`Ownership percentages must add up to 100% (currently ${grandTotal}%)`)
+        return
+      }
+      if (coOwners.some(co => !co.member)) {
+        alert('Please select a member for each co-owner')
+        return
+      }
+    }
     const property = {
       ...form,
       id: form.id ?? crypto.randomUUID(),
@@ -70,6 +83,7 @@ function PropertyForm({ initial, loans, activeMember = 'All', onSave, onCancel }
       monthlyRent: parseFloat(form.monthlyRent) || 0,
       coOwners: coOwners.filter(c => c.member && c.pct > 0),
     }
+    console.log('Saving ownershipPct:', parseFloat(form.ownershipPct))
     onSave(property, Array.from(linkedLoanIds))
   }
 
@@ -160,7 +174,18 @@ function PropertyForm({ initial, loans, activeMember = 'All', onSave, onCancel }
             )}
             <div>
               <span style={label}>Ownership % (primary)</span>
-              <input type="number" min="1" max="100" style={inp} placeholder="100" value={form.ownershipPct} onChange={e => setForm({ ...form, ownershipPct: e.target.value })} />
+              <input
+                type="number" min="1" max="100" style={inp} placeholder="100"
+                value={form.ownershipPct}
+                onChange={e => {
+                  const val = e.target.value
+                  const parsed = parseFloat(val)
+                  setForm({ ...form, ownershipPct: val })
+                  if (coOwners.length === 1 && !isNaN(parsed) && parsed >= 1 && parsed <= 99) {
+                    setCoOwners([{ ...coOwners[0], pct: 100 - parsed }])
+                  }
+                }}
+              />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <span style={label}>Co-owners (family members)</span>
@@ -186,9 +211,13 @@ function PropertyForm({ initial, loans, activeMember = 'All', onSave, onCancel }
                     placeholder="% share"
                     value={co.pct}
                     onChange={e => {
+                      const val = parseFloat(e.target.value) || 0
                       const updated = [...coOwners]
-                      updated[i] = { ...co, pct: parseFloat(e.target.value) || 0 }
+                      updated[i] = { ...co, pct: val }
                       setCoOwners(updated)
+                      if (coOwners.length === 1 && val >= 1 && val <= 99) {
+                        setForm(prev => ({ ...prev, ownershipPct: 100 - val }))
+                      }
                     }}
                   />
                   <button
@@ -203,11 +232,34 @@ function PropertyForm({ initial, loans, activeMember = 'All', onSave, onCancel }
                   type="button"
                   onClick={() => {
                     const available = MEMBERS.filter(m => m !== form.member && !coOwners.some(c => c.member === m))
-                    setCoOwners([...coOwners, { member: available[0], pct: 0 }])
+                    if (coOwners.length === 0) {
+                      setCoOwners([{ member: available[0] || '', pct: 50 }])
+                      setForm(prev => ({ ...prev, ownershipPct: 50 }))
+                    } else {
+                      setCoOwners([...coOwners, { member: available[0] || '', pct: 0 }])
+                    }
                   }}
                   style={{ ...btnGhost, fontSize: '0.8rem', padding: '5px 12px', color: 'var(--accent)', borderColor: 'var(--accent)', marginBottom: 4 }}
                 >+ Add Co-owner</button>
               )}
+              {coOwners.length > 0 && (() => {
+                const primaryPct = parseFloat(form.ownershipPct) || 0
+                const coTotal = coOwners.reduce((s, co) => s + (co.pct || 0), 0)
+                const total = primaryPct + coTotal
+                const isValid = Math.abs(total - 100) < 0.5
+                return (
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '8px 0', marginTop: 4, fontSize: 12,
+                    borderTop: '0.5px solid var(--border)',
+                  }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Total ownership</span>
+                    <span style={{ fontWeight: 500, color: isValid ? 'var(--gain)' : 'var(--loss)' }}>
+                      {total}% {isValid ? '✓' : '— must be 100%'}
+                    </span>
+                  </div>
+                )
+              })()}
             </div>
           </div>
 
@@ -282,6 +334,7 @@ function PropertyCard({ property, linkedLoans, onEdit, onDelete }) {
     : null
   const totalLinkedOutstanding = linkedLoans.reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
   const netEquity = property.currentValue - totalLinkedOutstanding
+  const isShared = (property.coOwners || []).length > 0
 
   return (
     <div style={{ ...card, padding: 24, marginBottom: 16 }}>
@@ -314,10 +367,19 @@ function PropertyCard({ property, linkedLoans, onEdit, onDelete }) {
             ))}
           </div>
           <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            {firstName(property.member)}
+            <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 4 }}>
+              {isShared ? 'Co-owner' : 'Primary Owner'}:
+            </span>
+            {firstName(property.member)}{isShared ? ` (${property.ownershipPct ?? 100}%)` : ''}
             {property.address ? ` · ${property.address}` : ''}
             {property.purchaseDate ? ` · since ${property.purchaseDate.slice(0, 4)}` : ''}
           </p>
+          {isShared && property.coOwners.map((co, idx) => (
+            <p key={idx} style={{ margin: '2px 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 4 }}>Co-owner:</span>
+              {firstName(co.member)} ({co.pct}%)
+            </p>
+          ))}
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           <button onClick={onEdit} style={{ ...btnGhost, padding: '5px 12px', fontSize: '0.78rem' }}>Edit</button>
