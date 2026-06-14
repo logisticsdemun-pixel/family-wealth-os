@@ -48,6 +48,7 @@
   --color-text-primary:         var(--text-primary);
   --color-text-secondary:       var(--text-secondary);
   --border-radius-md:           8px;
+  --border-radius-lg:           12px;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 }
 

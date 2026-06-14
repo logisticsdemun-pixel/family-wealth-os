@@ -91,11 +91,11 @@ function fmtXDate(d) {
   return `${months[parseInt(m) - 1]} ${parseInt(day)}`
 }
 
-function ChartTooltip({ active, payload, label }) {
+function ChartTooltip({ active, payload, label: lbl }) {
   if (!active || !payload?.length) return null
   return (
     <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
-      <p style={{ margin: '0 0 4px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{label}</p>
+      <p style={{ margin: '0 0 4px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{lbl}</p>
       <p style={{ margin: 0, fontWeight: 600, color: 'var(--accent)' }}>{formatINR(payload[0].value)}</p>
     </div>
   )
@@ -112,12 +112,15 @@ function AllocationBar({ segments }) {
           <div key={i} style={{ flex: sg.value, backgroundColor: sg.color, minWidth: 2 }} />
         ))}
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {segments.map((sg, i) => sg.value > 0 && (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: sg.color, flexShrink: 0 }} />
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              {sg.label} <strong style={{ color: 'var(--text-primary)' }}>{((sg.value / total) * 100).toFixed(1)}%</strong>
+          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: sg.color, flexShrink: 0 }} />
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{sg.label}</span>
+            </div>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              {((sg.value / total) * 100).toFixed(1)}%
             </span>
           </div>
         ))}
@@ -316,7 +319,7 @@ export default function Dashboard({ activeMember }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (data) takeSnapshot(netWorth) }, [!!data])
 
-  // ── Member breakdown (shown when All) ────────────────────
+  // ── Member breakdown rows ────────────────────────────────
   const memberRows = useMemo(() => MEMBERS.map(m => {
     const inv = investmentValue(investments, m)
     const re = realEstateValue(realEstate, m)
@@ -349,167 +352,228 @@ export default function Dashboard({ activeMember }) {
   const filteredCash = filterByMember(cashAssets, activeMember)
   const filteredLiab = filterByMember(liabilities, activeMember)
 
-  return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px' }}>
+  // ── Snapshot-derived changes ─────────────────────────────
+  const { dayChange, yearChange } = useMemo(() => {
+    if (!snapshots.length) return { dayChange: 0, yearChange: 0 }
+    const now = Date.now()
+    const yesterday = new Date(now - 86400000).toISOString().slice(0, 10)
+    const yearAgo   = new Date(now - 365 * 86400000).toISOString().slice(0, 10)
+    const daySnap  = [...snapshots].reverse().find(s => s.date <= yesterday)
+    const yearSnap = snapshots.find(s => s.date >= yearAgo)
+    return {
+      dayChange:  daySnap  ? netWorth - daySnap.netWorth  : 0,
+      yearChange: yearSnap ? netWorth - yearSnap.netWorth : 0,
+    }
+  }, [snapshots, netWorth])
 
-      {/* ── Hero net worth ───────────────────────────────── */}
-      <div style={{ ...card, padding: '36px 32px', marginBottom: 24, textAlign: 'center' }}>
-        <p style={{ ...label, marginBottom: 8, fontSize: '0.75rem' }}>
-          {activeMember === 'All' ? 'FAMILY NET WORTH' : `${activeMember.split(' ')[0].toUpperCase()} NET WORTH`}
-        </p>
-        <div style={{ fontSize: '2.8rem', fontWeight: 700, color: netWorth >= 0 ? 'var(--text-primary)' : 'var(--loss)', letterSpacing: '-1.5px', lineHeight: 1.1 }}>
-          {formatINR(netWorth)}
+  const nwLabel = activeMember === 'All' ? 'Net Worth' : `${firstName(activeMember)} Net Worth`
+
+  return (
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px' }}>
+
+      {/* Unpriced holdings warning */}
+      {unpricedHoldings > 0 && (
+        <div style={{ backgroundColor: 'var(--amber-faint)', border: '1px solid var(--amber)', borderRadius: 8, padding: '8px 16px', marginBottom: 16, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          {unpricedHoldings} holding{unpricedHoldings > 1 ? 's' : ''} valued at cost — refresh prices for live values
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 32, marginTop: 16 }}>
-          <div>
-            <p style={{ ...label, textAlign: 'center' }}>Assets</p>
-            <p style={{ margin: 0, color: 'var(--gain)', fontWeight: 600 }}>{formatINR(totalAssets)}</p>
-          </div>
-          <div style={{ width: 1, backgroundColor: 'var(--border)' }} />
-          <div>
-            <p style={{ ...label, textAlign: 'center' }}>Liabilities</p>
-            <p style={{ margin: 0, color: 'var(--loss)', fontWeight: 600 }}>{formatINR(totalLiab)}</p>
-          </div>
-        </div>
-        {unpricedHoldings > 0 && (
-          <p style={{ margin: '12px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            {unpricedHoldings} holding{unpricedHoldings > 1 ? 's' : ''} valued at cost basis — refresh prices for live values
+      )}
+
+      {/* ── HERO ROW — joined card group ─────────────────── */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--border-radius-lg)',
+        overflow: 'hidden', marginBottom: 16,
+        background: 'var(--color-border-tertiary)',
+        gap: '0.5px',
+      }}>
+        {/* Net Worth */}
+        <div style={{ background: 'var(--color-background-primary)', padding: '24px 24px 20px' }}>
+          <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>{nwLabel}</p>
+          <p style={{ margin: '0 0 12px', fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px', color: netWorth >= 0 ? 'var(--color-text-primary)' : 'var(--loss)' }}>
+            {formatINR(netWorth)}
           </p>
-        )}
+          <div style={{ display: 'flex', gap: 16 }}>
+            {[{ lbl: '1 Day', v: dayChange }, { lbl: '1 Year', v: yearChange }].map(({ lbl, v }) => (
+              <div key={lbl}>
+                <p style={{ margin: '0 0 2px', fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{lbl}</p>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: v >= 0 ? '#1D9E75' : '#D85A30' }}>
+                  {v >= 0 ? '+' : ''}{formatINR(v)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Assets */}
+        <div style={{ background: 'var(--color-background-primary)', padding: '24px 24px 20px' }}>
+          <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>Total Assets</p>
+          <p style={{ margin: 0, fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px', color: '#1D9E75' }}>
+            {formatINR(totalAssets)}
+          </p>
+        </div>
+
+        {/* Liabilities */}
+        <div style={{ background: 'var(--color-background-primary)', padding: '24px 24px 20px' }}>
+          <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>Total Liabilities</p>
+          <p style={{ margin: 0, fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px', color: '#D85A30' }}>
+            {formatINR(totalLiab)}
+          </p>
+        </div>
       </div>
 
-      {/* ── Net worth history chart ──────────────────────── */}
-      {snapshots.length >= 2 && (
-        <div style={{ ...card, padding: '20px 24px', marginBottom: 24 }}>
-          <p style={{ ...label, marginBottom: 16, fontSize: '0.72rem' }}>NET WORTH HISTORY</p>
-          <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={snapshots.slice(-90)} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis
-                dataKey="date"
-                tickFormatter={fmtXDate}
-                tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                tickLine={false}
-                axisLine={false}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                tickFormatter={fmtAxisINR}
-                tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                tickLine={false}
-                axisLine={false}
-                width={64}
-              />
-              <Tooltip content={<ChartTooltip />} />
-              <Line
-                type="monotone"
-                dataKey="netWorth"
-                stroke="var(--accent)"
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 4, fill: 'var(--accent)' }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {/* ── Single-member shared loan note ──────────────── */}
-      {activeMember !== 'All' && sharedLoans > 0 && (
-        <div style={{
-          backgroundColor: 'var(--amber-faint)', border: '1px solid var(--amber)',
-          borderRadius: 10, padding: '12px 16px', marginBottom: 24, fontSize: '0.82rem', color: 'var(--text-secondary)',
-        }}>
-          <strong style={{ color: 'var(--text-primary)' }}>Note:</strong> Shared family liabilities (home loan etc.) totalling{' '}
-          <strong>{formatINR(sharedLoans)}</strong> are not included in {firstName(activeMember)}&apos;s personal net worth.
-          View the full picture under <em>All Members</em>.
-        </div>
-      )}
-
-      {/* ── 4 Metric cards ──────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 24 }}>
+      {/* ── METRIC ROW — 4 cards ─────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
         {[
-          { label: 'Investments', value: invVal, color: 'var(--accent)' },
-          { label: 'Real Estate', value: realVal, color: '#8b5cf6' },
-          { label: 'Gold', value: goldVal + jewVal, color: 'var(--gold-color)' },
-          { label: 'Cash & FDs', value: cashVal + fdVal, color: 'var(--gain)' },
-          { label: 'Liabilities', value: totalLiab, color: 'var(--loss)' },
+          { label: 'INVESTMENTS',  value: invVal,          color: 'var(--accent)' },
+          { label: 'REAL ESTATE',  value: realVal,         color: '#8b5cf6' },
+          { label: 'GOLD',         value: goldVal + jewVal, color: 'var(--gold-color)' },
+          { label: 'CASH & FDS',   value: cashVal + fdVal, color: 'var(--gain)' },
         ].map(m => (
-          <div key={m.label} style={{ ...card, padding: '20px 24px' }}>
+          <div key={m.label} style={{ ...card, padding: '16px 20px' }}>
             <p style={label}>{m.label}</p>
-            <p style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700, color: m.color, letterSpacing: '-0.5px' }}>
+            <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: m.color, letterSpacing: '-0.5px' }}>
               {formatINR(m.value)}
             </p>
           </div>
         ))}
       </div>
 
-      {/* ── Member breakdown (All only) ──────────────────── */}
-      {activeMember === 'All' && (
-        <div style={{ ...card, padding: '0 0 4px', marginBottom: 24, overflow: 'hidden' }}>
-          <p style={{ ...label, padding: '18px 20px 0', fontSize: '0.72rem' }}>MEMBER BREAKDOWN</p>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Member', 'Investments', 'Real Estate', 'Gold', 'Cash & FDs', 'Liabilities', 'Net Worth'].map(h => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: h === 'Member' ? 'left' : 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.75rem' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {memberRows.map(row => (
-                  <tr key={row.member} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Avatar name={row.member} size={26} />
-                        <span style={{ fontWeight: 500 }}>{firstName(row.member)}</span>
-                      </div>
-                    </td>
-                    {[row.inv, row.re, row.gld, row.csh, row.liab].map((v, i) => (
-                      <td key={i} style={{ padding: '12px 16px', textAlign: 'right', color: i === 4 ? 'var(--loss)' : 'var(--text-primary)' }}>
-                        {formatINR(v)}
-                      </td>
-                    ))}
-                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: row.net >= 0 ? 'var(--text-primary)' : 'var(--loss)' }}>
-                      {formatINR(row.net)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* Shared loan note */}
+      {activeMember !== 'All' && sharedLoans > 0 && (
+        <div style={{ backgroundColor: 'var(--amber-faint)', border: '1px solid var(--amber)', borderRadius: 10, padding: '12px 16px', marginBottom: 20, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+          <strong style={{ color: 'var(--text-primary)' }}>Note:</strong> Shared family liabilities totalling{' '}
+          <strong>{formatINR(sharedLoans)}</strong> are excluded from {firstName(activeMember)}&apos;s personal view.
+          Switch to <em>All Members</em> to see the full picture.
         </div>
       )}
 
-      {/* ── Asset allocation ─────────────────────────────── */}
-      {allocSegments.length > 0 && (
-        <div style={{ ...card, padding: '20px 24px', marginBottom: 24 }}>
-          <p style={{ ...label, marginBottom: 14, fontSize: '0.72rem' }}>ASSET ALLOCATION</p>
-          <AllocationBar segments={allocSegments} />
+      {/* ── BOTTOM ROW ───────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', marginBottom: 28 }}>
+
+        {/* LEFT — chart + member breakdown table */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+          {/* Net worth history chart */}
+          {snapshots.length >= 2 && (
+            <div style={{ ...card, padding: '20px 24px' }}>
+              <p style={{ ...label, marginBottom: 16, fontSize: '0.72rem' }}>NET WORTH HISTORY</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={snapshots.slice(-90)} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={fmtXDate}
+                    tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                    tickLine={false}
+                    axisLine={false}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis
+                    tickFormatter={fmtAxisINR}
+                    tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={64}
+                  />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Line
+                    type="monotone"
+                    dataKey="netWorth"
+                    stroke="var(--accent)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4, fill: 'var(--accent)' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Member breakdown table (All view only) */}
+          {activeMember === 'All' && (
+            <div style={{ ...card, padding: '0 0 4px', overflow: 'hidden' }}>
+              <p style={{ ...label, padding: '16px 20px 0', fontSize: '0.72rem' }}>MEMBER BREAKDOWN</p>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                      {['Member', 'Investments', 'Real Estate', 'Gold', 'Cash & FDs', 'Liabilities', 'Net Worth'].map(h => (
+                        <th key={h} style={{ padding: '10px 16px', textAlign: h === 'Member' ? 'left' : 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.75rem' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {memberRows.map(row => (
+                      <tr key={row.member} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '12px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Avatar name={row.member} size={26} />
+                            <span style={{ fontWeight: 500 }}>{firstName(row.member)}</span>
+                          </div>
+                        </td>
+                        {[row.inv, row.re, row.gld, row.csh, row.liab].map((v, i) => (
+                          <td key={i} style={{ padding: '12px 16px', textAlign: 'right', color: i === 4 ? 'var(--loss)' : 'var(--text-primary)' }}>
+                            {formatINR(v)}
+                          </td>
+                        ))}
+                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 700, color: row.net >= 0 ? 'var(--text-primary)' : 'var(--loss)' }}>
+                          {formatINR(row.net)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* RIGHT — allocation bars + member list */}
+        <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Asset allocation */}
+          {allocSegments.length > 0 && (
+            <div style={{ ...card, padding: '18px 20px' }}>
+              <p style={{ ...label, marginBottom: 14, fontSize: '0.72rem' }}>ALLOCATION</p>
+              <AllocationBar segments={allocSegments} />
+            </div>
+          )}
+
+          {/* Member net worth list */}
+          {activeMember === 'All' && (
+            <div style={{ ...card, padding: '18px 20px' }}>
+              <p style={{ ...label, marginBottom: 10, fontSize: '0.72rem' }}>BY MEMBER</p>
+              {memberRows.map((row, i) => (
+                <div key={row.member} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: i < memberRows.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <Avatar name={row.member} size={22} />
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                      {firstName(row.member)}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: row.net >= 0 ? 'var(--text-primary)' : 'var(--loss)' }}>
+                    {fmtAxisINR(row.net)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ── Cash & Other Assets ──────────────────────────── */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>Cash &amp; Other Assets</h3>
-          <button
-            onClick={() => setShowAddCash(v => !v)}
-            style={{ ...btnGhost, padding: '6px 12px', fontSize: '0.8rem' }}
-          >
+          <button onClick={() => setShowAddCash(v => !v)} style={{ ...btnGhost, padding: '6px 12px', fontSize: '0.8rem' }}>
             {showAddCash ? 'Cancel' : '+ Add'}
           </button>
         </div>
         {filteredCash.length > 0 ? (
           <div style={{ ...card, padding: '0 20px' }}>
             {filteredCash.map(item => (
-              <EditableRow
-                key={item.id}
-                item={item}
-                onSave={updateCash}
-                onDelete={() => deleteCash(item.id)}
-              />
+              <EditableRow key={item.id} item={item} onSave={updateCash} onDelete={() => deleteCash(item.id)} />
             ))}
           </div>
         ) : !showAddCash && (
@@ -520,28 +584,18 @@ export default function Dashboard({ activeMember }) {
         {showAddCash && <AddForm onAdd={addCash} onCancel={() => setShowAddCash(false)} activeMember={activeMember} />}
       </div>
 
-      {/* ── Liabilities ──────────────────────────────────── */}
+      {/* ── Other Liabilities ────────────────────────────── */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>Other Liabilities</h3>
-          <button
-            onClick={() => setShowAddLiability(v => !v)}
-            style={{ ...btnGhost, padding: '6px 12px', fontSize: '0.8rem' }}
-          >
+          <button onClick={() => setShowAddLiability(v => !v)} style={{ ...btnGhost, padding: '6px 12px', fontSize: '0.8rem' }}>
             {showAddLiability ? 'Cancel' : '+ Add'}
           </button>
         </div>
         {filteredLiab.length > 0 ? (
           <div style={{ ...card, padding: '0 20px' }}>
             {filteredLiab.map(item => (
-              <EditableRow
-                key={item.id}
-                item={item}
-                onSave={updateLiab}
-                onDelete={() => deleteLiab(item.id)}
-                valueLabel="Outstanding"
-                isLiability
-              />
+              <EditableRow key={item.id} item={item} onSave={updateLiab} onDelete={() => deleteLiab(item.id)} valueLabel="Outstanding" isLiability />
             ))}
           </div>
         ) : !showAddLiability && (
