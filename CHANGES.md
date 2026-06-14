@@ -192,6 +192,91 @@ The **"Save" button in the Investments header** is now wired to the same `store.
 
 ---
 
+---
+
+## Layout Redesign — Sidebar Navigation
+
+The app's top navigation bar has been replaced with a **permanent left sidebar** and a minimal **top bar**. This is a visual restructure only — no data logic, store hooks, or filtering was changed.
+
+### New layout structure
+
+```
+┌──────────────┬───────────────────────────────────────────┐
+│   Sidebar    │  TopBar (greeting · Save · icons · avatar)│
+│   200px      ├───────────────────────────────────────────┤
+│              │  MemberFilter (All · Aseem · Poonam · …)  │
+│  Nav items   ├───────────────────────────────────────────┤
+│  with live   │                                           │
+│  values      │   Active page content (scrollable)        │
+│              │                                           │
+│  ──────────  │                                           │
+│  Goals       │                                           │
+│  ARTHA       │                                           │
+│  Beneficiary │                                           │
+│  ──────────  │                                           │
+│  Family info │                                           │
+└──────────────┴───────────────────────────────────────────┘
+```
+
+### How navigation works
+
+Navigation is **client-side state only** — no URL routing, no page reloads. `AppShell` (`app/components/AppShell.js`) owns two state variables:
+
+- `activePage` — which tab is shown (`'dashboard'`, `'investments'`, `'gold'`, `'realestate'`, `'loans'`, `'insurance'`, `'artha'`)
+- `activeMember` — current member filter (`'All'` or a full name like `'Aseem Saxena'`)
+
+Clicking a sidebar item calls `setActivePage(id)`. All seven page components are imported at the top of `AppShell` and rendered with `{activePage === 'x' && <X />}`. The `key={activePage}` wrapper triggers a `fadeIn` CSS animation (0.15 s) on every navigation.
+
+### Sidebar live values
+
+The sidebar reads directly from the store via selector hooks and shows compact totals next to each nav item:
+
+| Nav item | Value displayed |
+|---|---|
+| Net Worth | investments + fixed income + gold + real estate + cash − loans − liabilities |
+| Investments | portfolio value (units × current price) + fixed income principals |
+| Real Estate | sum of `currentValue × ownershipPct` across all properties |
+| Gold | grams × current gold price per carat |
+| Loans | total outstanding across all loans + manual liabilities (shown in red) |
+
+These numbers re-render the instant any write is made anywhere in the app — no save required for the sidebar display.
+
+### How to add a new page or tab
+
+1. Create the page component, e.g. `app/mypages/Pension.js`
+2. Add a row to `NAV_ITEMS` in `app/components/Sidebar.js`:
+   ```js
+   { id: 'pension', label: 'Pension', icon: 'ti-piggy-bank' }
+   ```
+3. Import the component in `app/components/AppShell.js` and add a conditional render:
+   ```js
+   import Pension from './mypages/Pension'
+   // ...inside the page-content div:
+   {activePage === 'pension' && <Pension {...pageProps} />}
+   ```
+4. Pass `activeMember` via `pageProps` if the page supports per-member filtering.
+
+### Components removed or renamed
+
+| Before | After | Notes |
+|---|---|---|
+| `app/components/Nav.js` | deleted | Replaced by Sidebar + TopBar |
+| Top nav bar in `page.js` | `AppShell` in `app/components/AppShell.js` | Shell now owns `activePage` + `activeMember` |
+| `app/page.js` (full layout) | 4-line wrapper: renders `<AppShell />` | All layout logic moved to AppShell |
+
+### Dashboard redesign (Phase 2)
+
+The dashboard was restructured to a Kubera-style three-row layout:
+
+- **Hero row** — joined card group (3 equal columns, 0.5 px dividers, single outer border): Net Worth with 1-day and 1-year change indicators · Total Assets · Total Liabilities
+- **Metric row** — joined card group (4 equal columns): Investments (with unrealised gain) · Real Estate · Gold · Cash & FDs — each with a Tabler icon and a count/gain subtitle
+- **Bottom row left** — net worth history AreaChart (purple gradient, h = 120 px, last 90 snapshots) with placeholder text when fewer than 2 snapshots exist; member breakdown table (All view only)
+- **Bottom row right** (220 px fixed) — allocation bars (label 90 px + bar 4 px + percentage 40 px) for Real Estate / Gold / Investments / Cash & FDs; member net worth list with avatars
+
+**Snapshot change calculation.** 1-day change uses the second-to-last snapshot (`snapshots[n-2]`). 1-year change finds the first snapshot whose date is on or after one year ago. Both fall back to the current net worth (showing ±0) when insufficient history exists.
+
+---
+
 ## Known Limitations
 
 - **Zerodha MF fuzzy matching** uses word overlap on scheme names. Schemes with very
