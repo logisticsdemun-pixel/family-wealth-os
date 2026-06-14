@@ -6,6 +6,7 @@ import { formatINR, memberColor, memberInitials, firstName, MEMBERS, computeOuts
 import { DEFAULT_GOLD_PRICES } from './lib/seedData'
 import { takeSnapshot } from './lib/snapshot'
 import { useStore } from './lib/store'
+import { computeMemberMetrics } from './lib/metrics'
 
 const ASSET_TYPES = ['Cash & Savings', 'Fixed Deposit', 'EPF / PPF', 'Real Estate', 'Crypto', 'Other']
 const LIABILITY_TYPES = ['Credit Card', 'Personal Loan', 'Education Loan', 'Other Debt']
@@ -266,36 +267,25 @@ export default function Dashboard({ activeMember }) {
   const [showAddCash, setShowAddCash] = useState(false)
   const [showAddLiability, setShowAddLiability] = useState(false)
 
-  // ── Memoised metrics ─────────────────────────────────────
-  const {
-    unpricedHoldings, invVal, goldVal, jewVal, cashVal, fdVal, realVal,
-    loanLiab, manualLiab, totalAssets, totalLiab, netWorth, sharedLoans, invGain,
-  } = useMemo(() => {
-    const invVal = investmentValue(investments, activeMember)
-    const goldVal = goldValue(gold, goldPrices, activeMember)
-    const jewVal = jewelleryValue(gold, goldPrices, activeMember)
-    const cashVal = cashValue(cashAssets, activeMember)
-    const fdVal = fdValue(fixedIncome, activeMember)
-    const realVal = realEstateValue(realEstate, activeMember)
-    const loanLiab = loanLiabilities(loans, activeMember)
-    const manualLiab = manualLiabilityValue(liabilities, activeMember)
-    const totalAssets = invVal + goldVal + jewVal + cashVal + fdVal + realVal
-    const totalLiab = loanLiab + manualLiab
-    const invGain = filterByMember(investments, activeMember)
-      .reduce((s, i) => s + i.units * ((i.currentPrice ?? i.buyPrice) - i.buyPrice), 0)
+  // ── Shared metrics (identical logic to sidebar) ──────────
+  const viewMetrics = useMemo(
+    () => computeMemberMetrics(data, activeMember),
+    [data, activeMember]
+  )
+
+  // ── Auxiliary values not in shared metrics ────────────────
+  const { unpricedHoldings, invGain, sharedLoans } = useMemo(() => {
+    const memberInv = filterByMember(investments, activeMember)
     return {
-      unpricedHoldings: filterByMember(investments, activeMember).filter(i => i.currentPrice == null).length,
-      invVal, goldVal, jewVal, cashVal, fdVal, realVal,
-      loanLiab, manualLiab, totalAssets, totalLiab,
-      netWorth: totalAssets - totalLiab,
+      unpricedHoldings: memberInv.filter(i => i.currentPrice == null).length,
+      invGain: memberInv.reduce((s, i) => s + i.units * ((i.currentPrice ?? i.buyPrice) - i.buyPrice), 0),
       sharedLoans: activeMember !== 'All' ? sharedLoanTotal(loans) : 0,
-      invGain,
     }
-  }, [investments, gold, goldPrices, cashAssets, fixedIncome, loans, liabilities, realEstate, activeMember])
+  }, [investments, loans, activeMember])
 
   // ── Snapshot on first data load ──────────────────────────
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (data) takeSnapshot(netWorth) }, [!!data])
+  useEffect(() => { if (data) takeSnapshot(viewMetrics.netWorth) }, [!!data])
 
   // ── Member breakdown rows ────────────────────────────────
   const memberRows = useMemo(() => MEMBERS.map(m => {
@@ -309,11 +299,11 @@ export default function Dashboard({ activeMember }) {
 
   // ── Allocation segments ──────────────────────────────────
   const allocSegments = useMemo(() => [
-    { label: 'Real Estate', value: realVal,          color: '#534AB7' },
-    { label: 'Gold',        value: goldVal + jewVal,  color: '#BA7517' },
-    { label: 'Investments', value: invVal,            color: '#1D9E75' },
-    { label: 'Cash & FDs',  value: cashVal + fdVal,  color: '#378ADD' },
-  ].filter(s => s.value > 0), [invVal, realVal, goldVal, jewVal, cashVal, fdVal])
+    { label: 'Real Estate', value: viewMetrics.realEstate,  color: '#534AB7' },
+    { label: 'Gold',        value: viewMetrics.gold,         color: '#BA7517' },
+    { label: 'Investments', value: viewMetrics.investments,  color: '#1D9E75' },
+    { label: 'Cash & FDs',  value: viewMetrics.cash,         color: '#378ADD' },
+  ].filter(s => s.value > 0), [viewMetrics])
 
   // ── CRUD helpers ─────────────────────────────────────────
   function saveCash(updated) { set(KEYS.CASH_ASSETS, updated) }
@@ -331,12 +321,12 @@ export default function Dashboard({ activeMember }) {
   const filteredLiab = filterByMember(liabilities, activeMember)
 
   // ── Snapshot-derived changes ─────────────────────────────
-  const prevDayNW = snapshots[snapshots.length - 2]?.netWorth ?? netWorth
-  const dayChange = netWorth - prevDayNW
+  const prevDayNW = snapshots[snapshots.length - 2]?.netWorth ?? viewMetrics.netWorth
+  const dayChange = viewMetrics.netWorth - prevDayNW
 
   const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-  const yearAgoNW = snapshots.find(s => new Date(s.date) >= oneYearAgo)?.netWorth ?? netWorth
-  const yearChange = netWorth - yearAgoNW
+  const yearAgoNW = snapshots.find(s => new Date(s.date) >= oneYearAgo)?.netWorth ?? viewMetrics.netWorth
+  const yearChange = viewMetrics.netWorth - yearAgoNW
 
   // ── Counts for metric card subtitles ─────────────────────
   const invCount  = filterByMember(investments, activeMember).length
@@ -369,8 +359,8 @@ export default function Dashboard({ activeMember }) {
         {/* Net Worth */}
         <div style={{ background: 'var(--color-background-primary)', padding: '24px 24px 20px' }}>
           <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>{nwLabel}</p>
-          <p style={{ margin: '0 0 12px', fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px', color: netWorth >= 0 ? 'var(--color-text-primary)' : 'var(--loss)' }}>
-            {formatINR(netWorth)}
+          <p style={{ margin: '0 0 12px', fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px', color: viewMetrics.netWorth >= 0 ? 'var(--color-text-primary)' : 'var(--loss)' }}>
+            {formatINR(viewMetrics.netWorth)}
           </p>
           <div style={{ display: 'flex', gap: 16 }}>
             {[{ lbl: '1 Day', v: dayChange }, { lbl: '1 Year', v: yearChange }].map(({ lbl, v }) => (
@@ -388,7 +378,7 @@ export default function Dashboard({ activeMember }) {
         <div style={{ background: 'var(--color-background-primary)', padding: '24px 24px 20px' }}>
           <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>Total Assets</p>
           <p style={{ margin: 0, fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px', color: '#1D9E75' }}>
-            {formatINR(totalAssets)}
+            {formatINR(viewMetrics.totalAssets)}
           </p>
         </div>
 
@@ -396,7 +386,7 @@ export default function Dashboard({ activeMember }) {
         <div style={{ background: 'var(--color-background-primary)', padding: '24px 24px 20px' }}>
           <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>Total Liabilities</p>
           <p style={{ margin: 0, fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px', color: '#D85A30' }}>
-            {formatINR(totalLiab)}
+            {formatINR(viewMetrics.liabilities)}
           </p>
         </div>
       </div>
@@ -412,24 +402,24 @@ export default function Dashboard({ activeMember }) {
       }}>
         {[
           {
-            lbl: 'INVESTMENTS', icon: 'ti-trending-up', val: invVal,
+            lbl: 'INVESTMENTS', icon: 'ti-trending-up', val: viewMetrics.investments,
             sub: invGain !== 0
               ? `${invGain >= 0 ? '+' : '-'}${fmtAxisINR(Math.abs(invGain))} gain`
               : `${invCount} holding${invCount === 1 ? '' : 's'}`,
             subColor: invGain >= 0 ? '#1D9E75' : '#D85A30',
           },
           {
-            lbl: 'REAL ESTATE', icon: 'ti-building-estate', val: realVal,
+            lbl: 'REAL ESTATE', icon: 'ti-building-estate', val: viewMetrics.realEstate,
             sub: `${reCount} propert${reCount === 1 ? 'y' : 'ies'}`,
             subColor: 'var(--color-text-secondary)',
           },
           {
-            lbl: 'GOLD', icon: 'ti-coin', val: goldVal + jewVal,
+            lbl: 'GOLD', icon: 'ti-coin', val: viewMetrics.gold,
             sub: `${goldCount} item${goldCount === 1 ? '' : 's'}`,
             subColor: 'var(--color-text-secondary)',
           },
           {
-            lbl: 'CASH & FDS', icon: 'ti-wallet', val: cashVal + fdVal,
+            lbl: 'CASH & FDS', icon: 'ti-wallet', val: viewMetrics.cash,
             sub: `${cashCount} account${cashCount === 1 ? '' : 's'}`,
             subColor: 'var(--color-text-secondary)',
           },

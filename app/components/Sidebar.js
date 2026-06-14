@@ -1,7 +1,7 @@
 'use client'
-import { useInvestments, useFixedIncome, useGold, useGoldPrices,
-         useLoans, useRealEstate, useCashAssets, useLiabilities } from '../lib/store'
-import { computeOutstanding } from '../lib/format'
+import { useMemo } from 'react'
+import { useStore } from '../lib/store'
+import { computeAllMetrics, formatShort } from '../lib/metrics'
 
 const NAV_ITEMS = [
   { id: 'dashboard',   label: 'Net Worth',   icon: 'ti-chart-donut',    key: 'netWorth' },
@@ -18,40 +18,9 @@ const BOTTOM_ITEMS = [
   { id: 'beneficiary', label: 'Beneficiary', icon: 'ti-users' },
 ]
 
-function formatShort(n) {
-  if (!n && n !== 0) return ''
-  const abs = Math.abs(n)
-  if (abs >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`
-  if (abs >= 100000)   return `₹${(n / 100000).toFixed(1)}L`
-  if (abs >= 1000)     return `₹${(n / 1000).toFixed(0)}K`
-  return `₹${Math.round(n)}`
-}
-
 export default function Sidebar({ activePage, onNavigate }) {
-  const investments = useInvestments()
-  const fixedIncome = useFixedIncome()
-  const gold        = useGold()
-  const goldPrices  = useGoldPrices()
-  const loans       = useLoans()
-  const realEstate  = useRealEstate()
-  const cashAssets  = useCashAssets()
-  const liabilities = useLiabilities()
-
-  const invTotal  = investments.reduce((s, h) => s + (h.units || 0) * (h.currentPrice || h.buyPrice || 0), 0)
-                  + fixedIncome.reduce((s, fd) => s + (fd.principal || fd.currentValue || fd.amount || 0), 0)
-  const goldTotal = gold.reduce((s, g) => s + (g.grams || 0) * (goldPrices[g.carat] || 0), 0)
-  const reTotal   = realEstate.reduce((s, p) => s + (p.currentValue || 0) * ((p.ownershipPct || 100) / 100), 0)
-  const cashTotal = cashAssets.reduce((s, a) => s + (a.value || 0), 0)
-  const debtTotal = loans.reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
-                  + liabilities.reduce((s, l) => s + (l.value || 0), 0)
-
-  const totals = {
-    investments: invTotal,
-    realEstate:  reTotal,
-    gold:        goldTotal,
-    liabilities: debtTotal,
-    netWorth:    invTotal + goldTotal + reTotal + cashTotal - debtTotal,
-  }
+  const { data } = useStore()
+  const metrics = useMemo(() => computeAllMetrics(data), [data])
 
   const itemStyle = (id) => ({
     display: 'flex',
@@ -125,9 +94,9 @@ export default function Sidebar({ activePage, onNavigate }) {
             {item.key && (
               <span style={{
                 fontSize: 11,
-                color: item.isDebt && debtTotal > 0 ? '#D85A30' : 'var(--color-text-secondary)',
+                color: item.isDebt && metrics.liabilities > 0 ? '#D85A30' : 'var(--color-text-secondary)',
               }}>
-                {formatShort(totals[item.key])}
+                {formatShort(metrics[item.key])}
               </span>
             )}
           </div>
