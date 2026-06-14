@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { id: 'dashboard',   label: 'Net Worth',   icon: 'ti-chart-donut',    key: 'netWorth' },
   { id: 'investments', label: 'Investments', icon: 'ti-briefcase',       key: 'investments' },
   { id: 'realestate',  label: 'Real Estate', icon: 'ti-building-estate', key: 'realEstate' },
-  { id: 'gold',        label: 'Gold',        icon: 'ti-currency-dollar', key: 'gold' },
+  { id: 'gold',        label: 'Gold',        icon: 'ti-coin',            key: 'gold' },
   { id: 'loans',       label: 'Loans',       icon: 'ti-credit-card',     key: 'liabilities', isDebt: true },
   { id: 'insurance',   label: 'Insurance',   icon: 'ti-shield' },
 ]
@@ -49,19 +49,9 @@ export default function Sidebar({ activePage, onNavigate }) {
         borderBottom: '0.5px solid var(--color-border-tertiary)',
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
         flexShrink: 0,
       }}>
-        <div style={{
-          width: 22, height: 22,
-          background: '#534AB7',
-          borderRadius: 5,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <i className="ti ti-chart-pie" style={{ fontSize: 12, color: '#fff' }} aria-hidden="true" />
-        </div>
-        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', letterSpacing: '-0.3px' }}>
           Grey Diary
         </span>
       </div>

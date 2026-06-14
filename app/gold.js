@@ -28,51 +28,6 @@ function buyValue(item) { return item.grams * (item.buyPricePerGram || 0) }
 function currentValue(item, prices) { return item.grams * (prices[item.carat] || 0) }
 function gain(item, prices) { return currentValue(item, prices) - buyValue(item) }
 
-// ── Price settings panel ───────────────────────────────────
-function PriceSettings({ prices, onChange }) {
-  const [local, setLocal] = useState({ ...prices })
-  const [open, setOpen] = useState(false)
-
-  function save() { onChange(local); setOpen(false) }
-
-  return (
-    <div style={{ marginBottom: 20 }}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 6 }}
-      >
-        ⚙ Gold Price Settings
-        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-          24K {formatINR(prices[24])}/g · 22K {formatINR(prices[22])}/g · 18K {formatINR(prices[18])}/g
-        </span>
-      </button>
-
-      {open && (
-        <div style={{ ...card, padding: 20, marginTop: 10 }}>
-          <p style={{ ...lbl, marginBottom: 14, fontSize: '0.75rem' }}>GOLD PRICE PER GRAM (CURRENT MARKET)</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-            {CARATS.map(c => (
-              <div key={c}>
-                <span style={lbl}>{c}K (₹/gram)</span>
-                <input
-                  type="number"
-                  style={inp}
-                  value={local[c]}
-                  onChange={e => setLocal({ ...local, [c]: parseFloat(e.target.value) || 0 })}
-                />
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-            <button onClick={save} style={btnPrimary}>Apply</button>
-            <button onClick={() => setOpen(false)} style={btnGhost}>Cancel</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Add / Edit gold item form ──────────────────────────────
 function GoldForm({ initial, category, onSave, onCancel, activeMember = 'All' }) {
   const [form, setForm] = useState(initial ?? {
@@ -229,9 +184,13 @@ export default function Gold({ activeMember }) {
   const [saveStatus, setSaveStatus] = useState('idle')
   const [showAdd, setShowAdd] = useState(false)
   const [editItem, setEditItem] = useState(null)
+  const [showPrices, setShowPrices] = useState(false)
+  const [localPrices, setLocalPrices] = useState(null)
 
   function saveGold(updated) { set(KEYS.GOLD, updated) }
   function updatePrices(prices) { set(KEYS.GOLD_PRICES, prices) }
+  function openPrices() { setLocalPrices({ ...goldPrices }); setShowPrices(true) }
+  function savePrices() { if (localPrices) updatePrices(localPrices); setShowPrices(false); setLocalPrices(null) }
 
   function handleSave(item) {
     if (item.id && gold.find(g => g.id === item.id)) {
@@ -258,24 +217,60 @@ export default function Gold({ activeMember }) {
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
 
       {/* ── Header ────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Gold</h2>
-        <button
-          onClick={async () => {
-            setSaveStatus('saving')
-            await flush()
-            setSaveStatus('saved')
-            setTimeout(() => setSaveStatus('idle'), 2000)
-          }}
-          disabled={saveStatus !== 'idle'}
-          style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 72 }}
-        >
-          {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: showPrices ? 12 : 20, flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Gold</h2>
+          <p style={{ margin: '3px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            Track investment and jewellery gold
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            onClick={showPrices ? () => setShowPrices(false) : openPrices}
+            style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            Today's Gold Price
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+              {formatINR(goldPrices[24])}/g
+            </span>
+          </button>
+          <button
+            onClick={async () => {
+              setSaveStatus('saving')
+              await flush()
+              setSaveStatus('saved')
+              setTimeout(() => setSaveStatus('idle'), 2000)
+            }}
+            disabled={saveStatus !== 'idle'}
+            style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 72 }}
+          >
+            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
       </div>
 
-      {/* ── Price settings ────────────────────────────────── */}
-      <PriceSettings prices={goldPrices} onChange={updatePrices} />
+      {/* ── Compact price panel ───────────────────────────── */}
+      {showPrices && (
+        <div style={{ ...card, padding: '16px 20px', marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+            {CARATS.map(c => (
+              <div key={c}>
+                <span style={lbl}>{c}K (₹/gram)</span>
+                <input
+                  type="number"
+                  style={inp}
+                  value={(localPrices ?? goldPrices)[c]}
+                  onChange={e => setLocalPrices({ ...(localPrices ?? goldPrices), [c]: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button onClick={savePrices} style={btnPrimary}>Done</button>
+            <button onClick={() => setShowPrices(false)} style={btnGhost}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* ── Summary cards ─────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
@@ -302,10 +297,10 @@ export default function Gold({ activeMember }) {
             subColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
           },
         ].map(({ cardLabel, value, sub, color, subColor }) => (
-          <div key={cardLabel} style={{ ...card, padding: '16px 18px' }}>
-            <p style={{ ...lbl, margin: '0 0 8px' }}>{cardLabel}</p>
-            <p style={{ fontSize: 20, fontWeight: 500, color, margin: '0 0 3px' }}>{value}</p>
-            <p style={{ fontSize: 12, color: subColor, margin: 0 }}>{sub}</p>
+          <div key={cardLabel} style={{ backgroundColor: 'var(--color-background-secondary)', borderRadius: 'var(--border-radius-lg)', border: '0.5px solid var(--color-border-tertiary)', padding: '20px 24px' }}>
+            <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', margin: '0 0 8px', display: 'block' }}>{cardLabel}</p>
+            <p style={{ fontSize: 22, fontWeight: 700, color, margin: '0 0 3px' }}>{value}</p>
+            <p style={{ fontSize: 13, color: subColor, margin: 0 }}>{sub}</p>
           </div>
         ))}
       </div>
