@@ -7,53 +7,65 @@ import { MEMBERS, formatINR, firstName } from '../lib/format'
 import { takeSnapshotFromStorage } from '../lib/snapshot'
 import { SEED_INVESTMENTS } from '../lib/seedData'
 
-function parseNum(val) {
-  if (val == null || val === '') return null
-  const n = parseFloat(String(val).replace(/[,₹\s%]/g, ''))
-  return isNaN(n) ? null : n
-}
-
-function parseZerodhaXLSX(file) {
+function parseZerodhaHoldings(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = ev => {
       try {
         const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' })
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
 
-        const headerIdx = data.findIndex(row =>
-          row.some(cell => String(cell).toLowerCase().includes('instrument'))
+        const sheet = wb.Sheets['Combined']
+        if (!sheet) throw new Error(
+          'Combined sheet not found. Please upload the Zerodha Holdings Statement (not a P&L or tax report).'
         )
-        if (headerIdx === -1) throw new Error('Column "Instrument" not found. Please use the Holdings export from Zerodha Kite.')
 
-        const headers = data[headerIdx].map(h => String(h).toLowerCase().trim())
-        const col = name => headers.findIndex(h => h.includes(name))
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null })
 
-        const iInstrument = col('instrument')
-        const iQty = col('qty')
-        const iAvgCost = col('avg cost')
-        const iLTP = col('ltp')
+        // Header row: first row whose first non-null cell is exactly 'Symbol'
+        let headerRowIndex = -1
+        for (let i = 0; i < rows.length; i++) {
+          const firstNonNull = rows[i].find(c => c !== null && c !== undefined)
+          if (firstNonNull === 'Symbol') { headerRowIndex = i; break }
+        }
+        if (headerRowIndex === -1) throw new Error(
+          'Could not find data in this file. Please use the Holdings Statement from Zerodha Console.'
+        )
 
-        if (iQty === -1) throw new Error('Column "Qty" not found. Is this a Zerodha Holdings export?')
-        if (iAvgCost === -1) throw new Error('Column "Avg cost" not found. Is this a Zerodha Holdings export?')
+        const headers = rows[headerRowIndex]
+        const colIdx = {}
+        headers.forEach((h, i) => {
+          if (h === 'Symbol')                 colIdx.symbol = i
+          if (h === 'ISIN')                   colIdx.isin = i
+          if (h === 'Sector')                 colIdx.sector = i
+          if (h === 'Instrument Type')        colIdx.instrumentType = i
+          if (h === 'Quantity Available')     colIdx.qty = i
+          if (h === 'Average Price')          colIdx.avgPrice = i
+          if (h === 'Previous Closing Price') colIdx.closingPrice = i
+        })
 
-        const rows = []
-        for (let i = headerIdx + 1; i < data.length; i++) {
-          const cols = data[i]
-          const instrument = String(cols[iInstrument] ?? '').trim()
-          if (!instrument || instrument.toLowerCase() === 'total' || /^-+$/.test(instrument)) continue
+        const holdings = []
+        for (let i = headerRowIndex + 1; i < rows.length; i++) {
+          const row = rows[i]
+          if (!row || row[colIdx.symbol] == null) continue
 
-          const qty = parseNum(cols[iQty])
-          const avgCost = parseNum(cols[iAvgCost])
-          if (!qty || !avgCost || qty <= 0 || avgCost <= 0) continue
+          const symbol    = String(row[colIdx.symbol]).trim()
+          const isin      = String(row[colIdx.isin] ?? '').trim()
+          const sector    = String(row[colIdx.sector] ?? '').trim()
+          const instrType = String(row[colIdx.instrumentType] ?? '').trim()
+          const qty       = parseFloat(row[colIdx.qty]) || 0
+          const avgPrice  = parseFloat(row[colIdx.avgPrice]) || 0
+          const lastPrice = parseFloat(row[colIdx.closingPrice]) || 0
 
-          const rawLTP = iLTP !== -1 ? parseNum(cols[iLTP]) : null
-          rows.push({ instrument: instrument.toUpperCase(), qty, avgCost, ltp: rawLTP && rawLTP > 0 ? rawLTP : null })
+          if (!symbol || qty <= 0) continue
+
+          const isStock = sector !== '-' && sector !== ''
+          const isMF    = instrType !== '-' && instrType !== ''
+
+          holdings.push({ symbol, isin, isStock, isMF, units: qty, buyPrice: avgPrice, currentPrice: lastPrice })
         }
 
-        if (rows.length === 0) throw new Error('No valid holdings found in the file')
-        resolve(rows)
+        if (holdings.length === 0) throw new Error('No valid holdings found in this file')
+        resolve(holdings)
       } catch (err) {
         reject(err)
       }
@@ -63,58 +75,83 @@ function parseZerodhaXLSX(file) {
   })
 }
 
-function tickerMatch(inv, base) {
-  if (!inv.ticker) return false
-  const t = inv.ticker.toUpperCase()
-  return t === `${base}.NS` || t === `${base}.BO` || t === base
-}
-
-function normaliseTicker(t) {
+function norm(t) {
   if (!t) return ''
-  return t.toUpperCase().replace(/\.NS$/, '').replace(/\.BO$/, '').trim()
+  return String(t).toUpperCase()
+    .replace(/\.NS$/, '')
+    .replace(/\.BO$/, '')
+    .replace(/\.BSE$/, '')
+    .trim()
 }
 
-function buildDiff(rows, allInvestments, member) {
-  const fileTickerSet = new Set(
-    rows.map(r => normaliseTicker(r.instrument)).filter(Boolean)
-  )
+function buildDiff(fileHoldings, allInvestments, memberName) {
+  const fileSymbolSet = new Set(fileHoldings.map(h => norm(h.symbol)).filter(Boolean))
+  const fileISINSet   = new Set(fileHoldings.map(h => (h.isin || '').toUpperCase()).filter(Boolean))
 
-  const memberStocks = allInvestments.filter(h => !h.isMF && h.member === member)
-
-  const exited = memberStocks.filter(h => {
-    const t = normaliseTicker(h.ticker || '')
-    return t && !fileTickerSet.has(t)
+  const memberInvestments = allInvestments.filter(h => {
+    const storedMember = String(h.member || '').toLowerCase()
+    const searchName   = memberName.toLowerCase()
+    return storedMember === searchName || storedMember.includes(searchName.split(' ')[0])
   })
 
-  const toAdd = []
-  const toUpdate = []
-  for (const row of rows) {
-    const match = allInvestments.find(inv => !inv.isMF && inv.member === member && tickerMatch(inv, row.instrument))
-    if (match) toUpdate.push({ existing: match, row })
-    else toAdd.push(row)
+  // EXITED: in app but not found in file by ticker or ISIN
+  const exited = memberInvestments.filter(h => {
+    const appTicker = norm(h.ticker || '')
+    const appISIN   = (h.isin || '').toUpperCase()
+    if (appISIN && fileISINSet.has(appISIN)) return false
+    if (appTicker && fileSymbolSet.has(appTicker)) return false
+    return !!(appTicker || appISIN)
+  })
+
+  const appByTicker = new Map(
+    memberInvestments.filter(h => h.ticker).map(h => [norm(h.ticker), h])
+  )
+  const appByISIN = new Map(
+    memberInvestments.filter(h => h.isin).map(h => [(h.isin || '').toUpperCase(), h])
+  )
+
+  const adds      = []
+  const updates   = []
+  const unchanged = []
+
+  for (const fh of fileHoldings) {
+    const fSymbol  = norm(fh.symbol)
+    const fISIN    = (fh.isin || '').toUpperCase()
+    const existing = (fISIN && appByISIN.get(fISIN)) || (fSymbol && appByTicker.get(fSymbol))
+
+    if (!existing) { adds.push(fh); continue }
+
+    const unitsChanged = Math.abs((existing.units || 0) - fh.units) > 0.001
+    const priceChanged = Math.abs((existing.buyPrice || 0) - fh.buyPrice) > 0.01
+
+    if (unitsChanged || priceChanged) {
+      updates.push({ existing, incoming: fh, changes: {
+        units:    unitsChanged ? { from: existing.units, to: fh.units } : null,
+        buyPrice: priceChanged ? { from: existing.buyPrice, to: fh.buyPrice } : null,
+      }})
+    } else {
+      unchanged.push(fh)
+    }
   }
 
-  return { toAdd, toUpdate, exited }
+  return { adds, updates, unchanged, exited }
 }
 
 export default function ZerodhaImportWizard({ onClose }) {
   const { data } = useStore()
   const allInvestments = data?.investments ?? SEED_INVESTMENTS
 
-  const [step, setStep] = useState('select')
-  const [member, setMember] = useState(MEMBERS[0])
-  const [parsed, setParsed] = useState(null)
+  const [step, setStep]                   = useState('select')
+  const [member, setMember]               = useState(MEMBERS[0])
+  const [parsed, setParsed]               = useState(null)
   const [exitConfirmed, setExitConfirmed] = useState({})
-  const [error, setError] = useState('')
-  const [importing, setImporting] = useState(false)
+  const [error, setError]                 = useState('')
+  const [importing, setImporting]         = useState(false)
   const fileRef = useRef(null)
 
-  // Reset exit checkboxes whenever a new file is parsed (default all pre-ticked)
   useEffect(() => {
     if (!parsed?.exited) return
-    setExitConfirmed(
-      Object.fromEntries(parsed.exited.map(h => [h.id ?? h.ticker, true]))
-    )
+    setExitConfirmed(Object.fromEntries(parsed.exited.map(h => [h.id ?? h.ticker, true])))
   }, [parsed])
 
   async function handleFile(e) {
@@ -123,7 +160,7 @@ export default function ZerodhaImportWizard({ onClose }) {
     setError('')
     e.target.value = ''
     try {
-      const rows = await parseZerodhaXLSX(file)
+      const rows = await parseZerodhaHoldings(file)
       const diff = buildDiff(rows, allInvestments, member)
       setParsed({ rows, ...diff })
       setStep('review')
@@ -136,54 +173,52 @@ export default function ZerodhaImportWizard({ onClose }) {
     setImporting(true)
     try {
       takeSnapshotFromStorage()
-      const cache = { ...(data?.priceCache ?? {}) }
+      const cache   = { ...(data?.priceCache ?? {}) }
       const updated = [...allInvestments]
-      const now = Date.now()
+      const now     = Date.now()
 
-      for (const row of parsed.rows) {
-        const idx = updated.findIndex(inv => !inv.isMF && inv.member === member && tickerMatch(inv, row.instrument))
-
-        if (idx !== -1) {
-          const prev = updated[idx]
-          updated[idx] = {
-            ...prev,
-            units: row.qty,
-            buyPrice: row.avgCost,
-            currentPrice: row.ltp != null ? row.ltp : prev.currentPrice,
-            flags: row.ltp != null ? (prev.flags || []).filter(f => f !== 'manual') : (prev.flags || []),
-          }
-          if (row.ltp != null) cache[`stock:${prev.ticker}`] = { fetchedAt: now, status: 'ok' }
-        } else {
-          const ticker = `${row.instrument}.NS`
-          updated.push({
-            id: crypto.randomUUID(),
-            name: row.instrument,
-            ticker,
-            member,
-            type: 'Stock',
-            isMF: false,
-            mfCode: null,
-            units: row.qty,
-            buyPrice: row.avgCost,
-            currentPrice: row.ltp,
-            buyDate: '',
-            flags: [],
-          })
-          if (row.ltp != null) cache[`stock:${ticker}`] = { fetchedAt: now, status: 'ok' }
+      for (const { existing, incoming } of parsed.updates) {
+        const idx = updated.findIndex(inv => inv.id === existing.id)
+        if (idx === -1) continue
+        const prev     = updated[idx]
+        const hasPrice = incoming.currentPrice > 0
+        updated[idx] = {
+          ...prev,
+          units:        incoming.units,
+          buyPrice:     incoming.buyPrice,
+          currentPrice: hasPrice ? incoming.currentPrice : prev.currentPrice,
+          flags:        hasPrice ? (prev.flags || []).filter(f => f !== 'manual') : (prev.flags || []),
         }
+        if (hasPrice && prev.ticker) cache[`stock:${prev.ticker}`] = { fetchedAt: now, status: 'ok' }
       }
 
-      // ── Handle exited positions ──────────────────────────────
+      for (const fh of parsed.adds) {
+        const ticker   = fh.isStock ? `${fh.symbol}.NS` : null
+        const hasPrice = fh.currentPrice > 0
+        updated.push({
+          id:           crypto.randomUUID(),
+          name:         fh.symbol,
+          ticker,
+          mfCode:       null,
+          member,
+          type:         fh.isMF ? 'Mutual Fund' : 'Stock',
+          isMF:         fh.isMF,
+          units:        fh.units,
+          buyPrice:     fh.buyPrice,
+          currentPrice: hasPrice ? fh.currentPrice : null,
+          buyDate:      '',
+          flags:        fh.isMF ? ['VERIFY_AMFI'] : [],
+        })
+        if (ticker && hasPrice) cache[`stock:${ticker}`] = { fetchedAt: now, status: 'ok' }
+      }
+
       const exitedConfirmedIds = new Set(
         (parsed.exited || [])
           .filter(h => exitConfirmed[h.id ?? h.ticker] !== false)
           .map(h => h.id)
       )
-
-      // Remove confirmed exits
       let finalUpdated = updated.filter(inv => !exitedConfirmedIds.has(inv.id))
 
-      // Add note to kept positions (unchecked = user chose to keep)
       for (const h of (parsed.exited || [])) {
         if (exitConfirmed[h.id ?? h.ticker] === false) {
           const idx = finalUpdated.findIndex(inv => inv.id === h.id)
@@ -215,6 +250,9 @@ export default function ZerodhaImportWizard({ onClose }) {
     color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none',
   }
 
+  const updateIncomingSet = parsed ? new Set(parsed.updates.map(u => u.incoming)) : new Set()
+  const unchangedSet      = parsed ? new Set(parsed.unchanged) : new Set()
+
   return (
     <>
       <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200 }} onClick={importing ? undefined : onClose} />
@@ -233,8 +271,8 @@ export default function ZerodhaImportWizard({ onClose }) {
             </h3>
             <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {step === 'select'
-                ? 'Upload your Zerodha Holdings export (.xlsx)'
-                : `${parsed.rows.length} holding${parsed.rows.length !== 1 ? 's' : ''} — ${parsed.toAdd.length} new, ${parsed.toUpdate.length} updated${parsed.exited?.length ? `, ${parsed.exited.length} may have exited` : ''} for ${firstName(member)}`
+                ? 'Upload your Zerodha Holdings Statement (.xlsx)'
+                : `${parsed.rows.length} holding${parsed.rows.length !== 1 ? 's' : ''} — ${parsed.adds.length} new, ${parsed.updates.length} updated${parsed.exited?.length ? `, ${parsed.exited.length} may have exited` : ''} for ${firstName(member)}`
               }
             </p>
           </div>
@@ -258,9 +296,9 @@ export default function ZerodhaImportWizard({ onClose }) {
               onClick={() => fileRef.current?.click()}
             >
               <div style={{ fontSize: '2rem', marginBottom: 8 }}>📈</div>
-              <p style={{ margin: '0 0 4px', fontWeight: 500, color: 'var(--text-primary)' }}>Click to select the Holdings file (.xlsx)</p>
+              <p style={{ margin: '0 0 4px', fontWeight: 500, color: 'var(--text-primary)' }}>Click to select the Holdings Statement (.xlsx)</p>
               <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Zerodha Kite → Portfolio → Holdings → Download
+                Zerodha Console → Reports → Holdings → Download
               </p>
               <input ref={fileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={handleFile} />
             </div>
@@ -273,8 +311,8 @@ export default function ZerodhaImportWizard({ onClose }) {
 
             <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 10, padding: '12px 14px', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
               <strong style={{ color: 'var(--text-secondary)' }}>What gets imported:</strong>{' '}
-              Holdings matched by ticker are updated (qty + avg cost + LTP). New tickers are added with a{' '}
-              <code style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>.NS</code> suffix — edit manually in Investments if the stock is on BSE.
+              Holdings matched by ticker or ISIN are updated (qty + avg price). New holdings are added.
+              Stocks missing from the file are flagged as potential exits.
             </div>
           </>
         )}
@@ -302,11 +340,11 @@ export default function ZerodhaImportWizard({ onClose }) {
                 </div>
 
                 {parsed.exited.map(h => {
-                  const key = h.id ?? h.ticker
-                  const isChecked = exitConfirmed[key] !== false
+                  const key        = h.id ?? h.ticker
+                  const isChecked  = exitConfirmed[key] !== false
                   const currentVal = h.currentPrice && h.units ? h.units * h.currentPrice : null
-                  const gain = currentVal && h.buyPrice && h.units ? currentVal - h.units * h.buyPrice : null
-                  const gainPct = gain != null && h.buyPrice && h.units
+                  const gain       = currentVal && h.buyPrice && h.units ? currentVal - h.units * h.buyPrice : null
+                  const gainPct    = gain != null && h.buyPrice && h.units
                     ? (gain / (h.units * h.buyPrice)) * 100 : null
 
                   return (
@@ -370,29 +408,32 @@ export default function ZerodhaImportWizard({ onClose }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                   <thead>
                     <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                      {['Instrument', 'Qty', 'Avg Cost', 'LTP', 'Action'].map((h, i) => (
+                      {['Symbol', 'Qty', 'Avg Price', 'Mkt Price', 'Action'].map((h, i) => (
                         <th key={h} style={{ padding: '8px 12px', textAlign: i >= 1 && i <= 3 ? 'right' : i === 4 ? 'center' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', whiteSpace: 'nowrap', position: 'sticky', top: 0, backgroundColor: 'var(--surface-2)' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {parsed.rows.map((row, i) => {
-                      const isNew = !parsed.toUpdate.some(u => u.row === row)
+                      const isUpdate    = updateIncomingSet.has(row)
+                      const isUnchanged = unchangedSet.has(row)
+                      const action      = isUpdate ? 'Update' : isUnchanged ? 'Unchanged' : 'New'
+                      const badgeStyle  = isUpdate
+                        ? { backgroundColor: 'var(--amber-faint)', color: 'var(--amber)' }
+                        : isUnchanged
+                        ? { backgroundColor: 'var(--surface-2)', color: 'var(--text-muted)' }
+                        : { backgroundColor: 'var(--gain-faint)', color: 'var(--gain)' }
                       return (
                         <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td style={{ padding: '8px 12px', fontWeight: 500, fontFamily: 'monospace', fontSize: '0.8rem' }}>{row.instrument}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'right' }}>{row.qty}</td>
-                          <td style={{ padding: '8px 12px', textAlign: 'right' }}>{formatINR(row.avgCost)}</td>
+                          <td style={{ padding: '8px 12px', fontWeight: 500, fontFamily: 'monospace', fontSize: '0.8rem' }}>{row.symbol}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right' }}>{row.units}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right' }}>{formatINR(row.buyPrice)}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-muted)' }}>
-                            {row.ltp != null ? formatINR(row.ltp) : '—'}
+                            {row.currentPrice > 0 ? formatINR(row.currentPrice) : '—'}
                           </td>
                           <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                            <span style={{
-                              fontSize: '0.7rem', fontWeight: 600, padding: '2px 7px', borderRadius: 4,
-                              backgroundColor: isNew ? 'var(--gain-faint)' : 'var(--amber-faint)',
-                              color: isNew ? 'var(--gain)' : 'var(--amber)',
-                            }}>
-                              {isNew ? 'New' : 'Update'}
+                            <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '2px 7px', borderRadius: 4, ...badgeStyle }}>
+                              {action}
                             </span>
                           </td>
                         </tr>
@@ -415,10 +456,10 @@ export default function ZerodhaImportWizard({ onClose }) {
 
             {/* Live summary line */}
             {(() => {
-              const removeCount = (parsed.exited || []).filter(h => exitConfirmed[h.id ?? h.ticker] !== false).length
-              const addCount = parsed.toAdd.length
-              const updateCount = parsed.toUpdate.length
-              const unchangedCount = parsed.rows.length - addCount - updateCount
+              const removeCount    = (parsed.exited || []).filter(h => exitConfirmed[h.id ?? h.ticker] !== false).length
+              const addCount       = parsed.adds.length
+              const updateCount    = parsed.updates.length
+              const unchangedCount = parsed.unchanged.length
               return (
                 <div style={{ padding: '10px 14px', background: 'var(--surface-2)', borderRadius: 8, marginBottom: 14, fontSize: 12, color: 'var(--text-secondary)' }}>
                   {addCount > 0 && <span>Adding {addCount} · </span>}
