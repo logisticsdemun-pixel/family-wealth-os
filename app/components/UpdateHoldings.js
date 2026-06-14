@@ -124,16 +124,6 @@ function mapInstrType(raw) {
   return { isMF: false, type: 'Stock' }
 }
 
-// A holding is Zerodha-sourced if it was imported via this tool
-// (deterministic ID pattern) or has institution = 'Zerodha'
-function isZerodhaSourced(inv, member) {
-  if (inv.member !== member) return false
-  if (inv.institution === 'Zerodha') return true
-  const mSlug = slugify(member)
-  const id = String(inv.id ?? '')
-  return id.startsWith(mSlug + '|') && id.endsWith('|na')
-}
-
 function parseZerodhaStatement(wb) {
   const sheetKeys = Object.keys(wb.Sheets)
   const combinedKey = sheetKeys.find(k => k.trim().toLowerCase() === 'combined')
@@ -265,21 +255,55 @@ function buildZerodhaStatementDiff(rows, member, existing) {
   })
 }
 
-// Find Zerodha-sourced holdings for this member that are NOT in the file
-function findExitedHoldings(existing, diffRows, member) {
-  const fileIds    = new Set(diffRows.map(d => d.detId))
-  const fileISINs  = new Set(diffRows.map(d => d.row.isin).filter(Boolean))
-  const fileTick   = new Set(diffRows.filter(d => d.isStock).map(d => (d.ticker || '').toUpperCase()))
-  const fileCodes  = new Set(diffRows.filter(d => !d.isStock && d.amfiCode).map(d => d.amfiCode))
+// Find ALL holdings for this member that are NOT in the file
+function findExitedHoldings(allInvestments, diffRows, memberName) {
+  function norm(t) {
+    if (!t) return ''
+    return String(t).toUpperCase()
+      .replace(/\.NS$/, '')
+      .replace(/\.BO$/, '')
+      .trim()
+  }
 
-  return existing
+  // Tickers and ISINs present in the uploaded file
+  const fileTickerSet = new Set(
+    diffRows.map(r => norm(r.ticker || r.row?.symbol || '')).filter(Boolean)
+  )
+  const fileISINSet = new Set(
+    diffRows.map(r => (r.row?.isin || '').toUpperCase()).filter(Boolean)
+  )
+
+  const memberLower = (memberName || '').toLowerCase()
+  const memberFirst = memberLower.split(' ')[0]
+
+  // All tradeable investments for this member — no source/institution filter
+  const memberInvestments = allInvestments.filter(inv => {
+    const invMember = String(
+      inv.member || inv.memberId || inv.owner || ''
+    ).toLowerCase()
+    const memberMatch =
+      invMember === memberLower ||
+      invMember.includes(memberFirst) ||
+      memberLower.includes(invMember.split(' ')[0])
+    if (!memberMatch) return false
+
+    const type = String(
+      inv.assetClass || inv.type || inv.instrumentType || ''
+    ).toLowerCase()
+    const excluded = [
+      'gold', 'real estate', 'property', 'fixed deposit',
+      'cash', 'insurance', 'ppf', 'epf', 'nps', 'fd',
+    ]
+    return !excluded.some(e => type.includes(e))
+  })
+
+  return memberInvestments
     .filter(inv => {
-      if (!isZerodhaSourced(inv, member)) return false
-      if (fileIds.has(inv.id)) return false
-      if (inv.isin && fileISINs.has(inv.isin)) return false
-      if (!inv.isMF && inv.ticker && fileTick.has(inv.ticker.toUpperCase())) return false
-      if (inv.isMF && inv.mfCode && fileCodes.has(inv.mfCode)) return false
-      return true
+      const appTicker = norm(inv.ticker || inv.symbol || '')
+      const appISIN = (inv.isin || '').toUpperCase()
+      if (appISIN && fileISINSet.has(appISIN)) return false
+      if (appTicker && fileTickerSet.has(appTicker)) return false
+      return !!(appTicker || appISIN)
     })
     .map(inv => ({ inv, lastValue: inv.units * (inv.currentPrice ?? inv.buyPrice) }))
 }
@@ -369,6 +393,7 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
   }
 
   async function handleFile(e) {
+    console.log('[UpdateHoldings] handleFile called, tab:', activeTab)
     const file = e.target.files?.[0]
     if (!file) return
     setError('')
@@ -386,6 +411,14 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
         const { rows: rawRows, warning, date } = parseZerodhaStatement(wb)
         const diffRows = buildZerodhaStatementDiff(rawRows, member, existing)
         const exited   = findExitedHoldings(existing, diffRows, member)
+        console.log('[UpdateHoldings] exited found:', exited.length,
+          exited.map(({ inv: h }) => h.name || h.ticker || h.symbol))
+        console.log('[UpdateHoldings] memberInvestments count from existing:',
+          (existing || []).filter(inv => {
+            const m = String(inv.member || inv.memberId || '').toLowerCase()
+            return m.includes((member || '').toLowerCase().split(' ')[0])
+          }).length
+        )
         setParsedB({ rows: diffRows, exited, warning, date })
         // Pre-select ADD + UPDATE rows; leave UNCHANGED deselected
         setSelectedB(new Set(diffRows.filter(d => d.action !== 'UNCHANGED').map(d => d.row.isin)))
@@ -516,7 +549,7 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
         await applyImport({ [KEYS.INVESTMENTS]: updated })
       }
 
-      window.location.reload()
+      onClose()
     } catch (err) {
       setError(err.message || 'Import failed.')
       setImporting(false)
