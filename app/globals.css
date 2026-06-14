@@ -40,6 +40,17 @@
   --amber-faint:    #451a03;
 }
 
+/* ── Design token aliases (used by AppShell components) ── */
+:root {
+  --color-background-primary:   var(--bg);
+  --color-background-secondary: var(--surface);
+  --color-border-tertiary:      var(--border);
+  --color-text-primary:         var(--text-primary);
+  --color-text-secondary:       var(--text-secondary);
+  --border-radius-md:           8px;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
 /* ── Reset & base ──────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; padding: 0; }

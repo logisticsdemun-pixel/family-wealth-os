@@ -1,78 +1,44 @@
 'use client'
-import { memberColor } from '../lib/format'
 
-const ALL_MEMBERS = ['Aseem Saxena', 'Poonam Saxena', 'Devashish Saxena', 'Shivansh Saxena']
+const MEMBERS = [
+  { id: 'All',              label: 'All' },
+  { id: 'Aseem Saxena',     label: 'Aseem' },
+  { id: 'Poonam Saxena',    label: 'Poonam' },
+  { id: 'Devashish Saxena', label: 'Devashish' },
+  { id: 'Shivansh Saxena',  label: 'Shivansh' },
+]
 
-export default function MemberFilter({ activeMember, onMemberChange }) {
+export default function MemberFilter({ selected, onChange }) {
   return (
     <div style={{
-      backgroundColor: 'var(--surface)',
-      borderBottom: '1px solid var(--border)',
-      padding: '10px 24px',
       display: 'flex',
-      gap: 8,
-      overflowX: 'auto',
-      scrollbarWidth: 'none',
-      msOverflowStyle: 'none',
+      alignItems: 'center',
+      gap: 6,
+      padding: '8px 24px',
+      borderBottom: '0.5px solid var(--color-border-tertiary)',
+      flexShrink: 0,
+      background: 'var(--color-background-primary)',
     }}>
-      {/* All Members pill */}
-      <button
-        onClick={() => onMemberChange('All')}
-        style={{
-          padding: '5px 14px',
-          borderRadius: 20,
-          border: '1.5px solid',
-          borderColor: activeMember === 'All' ? 'var(--accent)' : 'var(--border)',
-          backgroundColor: activeMember === 'All' ? 'var(--accent-faint)' : 'transparent',
-          color: activeMember === 'All' ? 'var(--accent-text)' : 'var(--text-secondary)',
-          fontSize: '0.82rem',
-          fontWeight: activeMember === 'All' ? 600 : 400,
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
-          transition: 'all 0.15s',
-        }}
-      >
-        All Members
-      </button>
-
-      {ALL_MEMBERS.map(member => {
-        const isActive = activeMember === member
-        const color = memberColor(member)
-        const firstName = member.split(' ')[0]
-        return (
-          <button
-            key={member}
-            onClick={() => onMemberChange(member)}
-            style={{
-              padding: '5px 14px',
-              borderRadius: 20,
-              border: '1.5px solid',
-              borderColor: isActive ? color : 'var(--border)',
-              backgroundColor: isActive ? `${color}18` : 'transparent',
-              color: isActive ? color : 'var(--text-secondary)',
-              fontSize: '0.82rem',
-              fontWeight: isActive ? 600 : 400,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              transition: 'all 0.15s',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            {/* Avatar dot */}
-            <span style={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              backgroundColor: color,
-              display: 'inline-block',
-              flexShrink: 0,
-            }} />
-            {firstName}
-          </button>
-        )
-      })}
+      <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginRight: 4 }}>View</span>
+      {MEMBERS.map(m => (
+        <button
+          key={m.id}
+          onClick={() => onChange(m.id)}
+          style={{
+            padding: '4px 12px',
+            borderRadius: 20,
+            border: '0.5px solid',
+            borderColor: selected === m.id ? '#534AB7' : 'var(--color-border-tertiary)',
+            background: selected === m.id ? '#534AB7' : 'transparent',
+            color: selected === m.id ? '#fff' : 'var(--color-text-secondary)',
+            fontSize: 11,
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}
+        >
+          {m.label}
+        </button>
+      ))}
     </div>
   )
 }

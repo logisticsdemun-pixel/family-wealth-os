@@ -1,7 +1,11 @@
 'use client'
 import { useRef, useState } from 'react'
+import { useStore } from '../lib/store'
+import { useLock } from './AuthShell'
+import { useTheme } from '../lib/theme'
 import { exportAllData, applyImport, load, KEYS } from '../lib/storage'
 import { changePassword } from '../lib/crypto'
+import { takeSnapshotFromStorage } from '../lib/snapshot'
 import ExcelImportWizard from './ExcelImport'
 import ZerodhaImportWizard from './ZerodhaImport'
 
@@ -82,7 +86,6 @@ function BackupRestoreDialog({ data, onClose }) {
         <p style={{ margin: '0 0 18px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
           Review what will change. The page will reload after restore.
         </p>
-
         {diff.length > 0 && (
           <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
@@ -99,13 +102,7 @@ function BackupRestoreDialog({ data, onClose }) {
                     <td style={{ padding: '9px 12px', color: 'var(--text-primary)' }}>{label}</td>
                     <td style={{ padding: '9px 12px', textAlign: 'right', color: 'var(--text-secondary)' }}>{currCount}</td>
                     <td style={{ padding: '9px 4px', textAlign: 'center', fontSize: '0.85rem', color: changed ? 'var(--amber)' : 'var(--border)' }}>→</td>
-                    <td style={{
-                      padding: '9px 12px', textAlign: 'right',
-                      fontWeight: changed ? 700 : 400,
-                      color: changed
-                        ? impCount > currCount ? 'var(--gain)' : 'var(--loss)'
-                        : 'var(--text-muted)',
-                    }}>
+                    <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: changed ? 700 : 400, color: changed ? (impCount > currCount ? 'var(--gain)' : 'var(--loss)') : 'var(--text-muted)' }}>
                       {impCount}
                     </td>
                   </tr>
@@ -114,24 +111,14 @@ function BackupRestoreDialog({ data, onClose }) {
             </table>
           </div>
         )}
-
         <div style={{ backgroundColor: 'var(--amber-faint)', border: '1px solid var(--amber)', borderRadius: 8, padding: '10px 12px', marginBottom: 20, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
           ⚠ <strong style={{ color: 'var(--text-primary)' }}>Warning:</strong> This overwrites all current data and cannot be undone.
         </div>
-
         <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={handleRestore}
-            disabled={restoring}
-            style={{ padding: '9px 20px', borderRadius: 8, border: 'none', backgroundColor: restoring ? 'var(--text-muted)' : 'var(--accent)', color: '#fff', fontSize: '0.875rem', fontWeight: 500, cursor: restoring ? 'not-allowed' : 'pointer' }}
-          >
+          <button onClick={handleRestore} disabled={restoring} style={{ padding: '9px 20px', borderRadius: 8, border: 'none', backgroundColor: restoring ? 'var(--text-muted)' : 'var(--accent)', color: '#fff', fontSize: '0.875rem', fontWeight: 500, cursor: restoring ? 'not-allowed' : 'pointer' }}>
             {restoring ? 'Restoring…' : 'Restore Now'}
           </button>
-          <button
-            onClick={onClose}
-            disabled={restoring}
-            style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: restoring ? 'not-allowed' : 'pointer' }}
-          >
+          <button onClick={onClose} disabled={restoring} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: restoring ? 'not-allowed' : 'pointer' }}>
             Cancel
           </button>
         </div>
@@ -152,69 +139,34 @@ function ChangePasswordDialog({ onClose }) {
     e.preventDefault()
     if (newPw.length < 6) { setError('New password must be at least 6 characters.'); return }
     if (newPw !== confirmPw) { setError('New passwords do not match.'); return }
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
     try {
       await changePassword(oldPw, newPw)
       setSuccess(true)
       setTimeout(onClose, 1500)
     } catch (err) {
       setError(err.message === 'WRONG_PASSWORD' ? 'Current password is incorrect.' : 'Failed to change password. Please try again.')
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   const labelStyle = { fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', margin: '0 0 4px', display: 'block' }
 
   return (
     <>
-      <div
-        style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 200 }}
-        onClick={onClose}
-      />
-      <div style={{
-        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-        zIndex: 201, width: '100%', maxWidth: 360,
-        backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: 16, padding: '32px 28px',
-      }}>
+      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 200 }} onClick={onClose} />
+      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 201, width: '100%', maxWidth: 360, backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '32px 28px' }}>
         <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 600 }}>Change Password</h3>
-
         {success ? (
-          <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--gain)', fontWeight: 500 }}>
-            Password changed successfully.
-          </div>
+          <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--gain)', fontWeight: 500 }}>Password changed successfully.</div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <div>
-              <span style={labelStyle}>Current Password</span>
-              <input type="password" value={oldPw} onChange={e => { setOldPw(e.target.value); setError('') }} autoFocus disabled={loading} style={inp} />
-            </div>
-            <div>
-              <span style={labelStyle}>New Password</span>
-              <input type="password" value={newPw} onChange={e => { setNewPw(e.target.value); setError('') }} disabled={loading} style={inp} />
-            </div>
-            <div>
-              <span style={labelStyle}>Confirm New Password</span>
-              <input type="password" value={confirmPw} onChange={e => { setConfirmPw(e.target.value); setError('') }} disabled={loading} style={inp} />
-            </div>
+            <div><span style={labelStyle}>Current Password</span><input type="password" value={oldPw} onChange={e => { setOldPw(e.target.value); setError('') }} autoFocus disabled={loading} style={inp} /></div>
+            <div><span style={labelStyle}>New Password</span><input type="password" value={newPw} onChange={e => { setNewPw(e.target.value); setError('') }} disabled={loading} style={inp} /></div>
+            <div><span style={labelStyle}>Confirm New Password</span><input type="password" value={confirmPw} onChange={e => { setConfirmPw(e.target.value); setError('') }} disabled={loading} style={inp} /></div>
             {error && <p style={{ color: 'var(--loss)', fontSize: '0.8rem', margin: '-4px 0 10px' }}>{error}</p>}
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button
-                type="submit"
-                disabled={loading}
-                style={{ padding: '9px 16px', borderRadius: 8, border: 'none', backgroundColor: loading ? 'var(--text-muted)' : 'var(--accent)', color: '#fff', fontSize: '0.875rem', fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer' }}
-              >
-                {loading ? 'Saving…' : 'Change Password'}
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: 'pointer' }}
-              >
-                Cancel
-              </button>
+              <button type="submit" disabled={loading} style={{ padding: '9px 16px', borderRadius: 8, border: 'none', backgroundColor: loading ? 'var(--text-muted)' : 'var(--accent)', color: '#fff', fontSize: '0.875rem', fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer' }}>{loading ? 'Saving…' : 'Change Password'}</button>
+              <button type="button" onClick={onClose} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: 'pointer' }}>Cancel</button>
             </div>
           </form>
         )}
@@ -223,7 +175,12 @@ function ChangePasswordDialog({ onClose }) {
   )
 }
 
-export default function TopBar({ theme, onThemeToggle, onLock }) {
+export default function TopBar({ activeMember }) {
+  const { dirty, flush } = useStore()
+  const handleLock = useLock()
+  const { theme, toggleTheme } = useTheme()
+
+  const [saved, setSaved] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showChangePw, setShowChangePw] = useState(false)
   const [showExcelImport, setShowExcelImport] = useState(false)
@@ -231,6 +188,17 @@ export default function TopBar({ theme, onThemeToggle, onLock }) {
   const [importError, setImportError] = useState(null)
   const [importData, setImportData] = useState(null)
   const fileRef = useRef(null)
+
+  const greetingName = activeMember === 'All'
+    ? 'Devashish'
+    : activeMember.split(' ')[0]
+
+  async function handleSave() {
+    setSaved(true)
+    await flush()
+    takeSnapshotFromStorage()
+    setTimeout(() => setSaved(false), 3000)
+  }
 
   function handleImportFile(e) {
     const file = e.target.files?.[0]
@@ -241,8 +209,7 @@ export default function TopBar({ theme, onThemeToggle, onLock }) {
         const data = JSON.parse(ev.target.result)
         const err = validateBackup(data)
         if (err) { setImportError(err); return }
-        setImportData(data)
-        setImportError(null)
+        setImportData(data); setImportError(null)
       } catch {
         setImportError('Could not parse file. Please select a valid .json backup.')
       }
@@ -252,86 +219,96 @@ export default function TopBar({ theme, onThemeToggle, onLock }) {
   }
 
   const iconBtn = {
-    width: 36, height: 36, borderRadius: 8, border: '1px solid var(--border)',
-    backgroundColor: 'var(--bg)', color: 'var(--text-secondary)', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
+    width: 32, height: 32, borderRadius: 7,
+    border: 'none', background: 'transparent',
+    color: 'var(--color-text-secondary)',
+    cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   }
 
   return (
     <>
-      <header style={{
-        backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)',
-        position: 'sticky', top: 0, zIndex: 50, flexShrink: 0,
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 24px', height: 52,
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        flexShrink: 0,
+        background: 'var(--color-background-primary)',
       }}>
-        <div style={{ height: 52, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 24px', gap: 8 }}>
+        <span style={{ fontSize: 16, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+          Hello, {greetingName}
+        </span>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {/* Save & update — visible when dirty */}
+          {dirty && !saved && (
+            <button onClick={handleSave} style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '5px 12px', borderRadius: 20,
+              border: '0.5px solid #AFA9EC', background: 'transparent',
+              fontSize: 11, fontWeight: 500, color: '#534AB7', cursor: 'pointer',
+              marginRight: 8,
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF9F27', display: 'inline-block', flexShrink: 0 }} />
+              Save & update
+            </button>
+          )}
+          {saved && (
+            <span style={{ fontSize: 11, color: '#1D9E75', fontWeight: 500, marginRight: 8 }}>
+              ✓ Dashboard updated
+            </span>
+          )}
+
           {/* Theme toggle */}
-          <button onClick={onThemeToggle} title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} style={iconBtn}>
-            {theme === 'light' ? '🌙' : '☀️'}
+          <button onClick={toggleTheme} title={theme === 'light' ? 'Dark mode' : 'Light mode'} style={iconBtn}>
+            <i className={`ti ${theme === 'light' ? 'ti-moon' : 'ti-sun'}`} style={{ fontSize: 16 }} aria-hidden="true" />
           </button>
+
+          {/* Export backup */}
+          <button onClick={exportAllData} title="Export backup" style={iconBtn}>
+            <i className="ti ti-download" style={{ fontSize: 16 }} aria-hidden="true" />
+          </button>
+
+          {/* Restore backup (JSON file) */}
+          <button onClick={() => fileRef.current?.click()} title="Restore backup" style={iconBtn}>
+            <i className="ti ti-upload" style={{ fontSize: 16 }} aria-hidden="true" />
+          </button>
+          <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
 
           {/* Lock */}
-          <button onClick={onLock} title="Lock app" style={iconBtn}>
-            🔒
+          <button onClick={handleLock} title="Lock app" style={iconBtn}>
+            <i className="ti ti-lock" style={{ fontSize: 16 }} aria-hidden="true" />
           </button>
 
-          {/* Settings menu */}
-          <div style={{ position: 'relative' }}>
-            <button onClick={() => setShowMenu(v => !v)} title="Settings" style={iconBtn}>⋯</button>
+          {/* Avatar / settings menu */}
+          <div style={{ position: 'relative', marginLeft: 4 }}>
+            <div
+              onClick={() => setShowMenu(v => !v)}
+              title="Settings"
+              style={{
+                width: 30, height: 30, borderRadius: '50%',
+                background: '#EAF3DE',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: 500, color: '#3B6D11', cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >DS</div>
 
             {showMenu && (
               <>
                 <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowMenu(false)} />
                 <div style={{
-                  position: 'absolute', top: 44, right: 0,
+                  position: 'absolute', top: 38, right: 0,
                   backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
                   borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
                   padding: 8, minWidth: 220, zIndex: 100,
                 }}>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Backup & Restore</p>
-
-                  <button
-                    onClick={() => { exportAllData(); setShowMenu(false) }}
-                    style={{ ...menuBtnStyle, color: 'var(--accent)', fontWeight: 500 }}
-                  >
-                    ↓ Export Backup
-                  </button>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
-                    Download encrypted data as JSON
-                  </p>
-
-                  <button
-                    onClick={() => { fileRef.current?.click(); setShowMenu(false) }}
-                    style={menuBtnStyle}
-                  >
-                    ↑ Restore from Backup
-                  </button>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
-                    Import a previously exported file
-                  </p>
-                  <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
-
-                  <button
-                    onClick={() => { setShowExcelImport(true); setShowMenu(false) }}
-                    style={menuBtnStyle}
-                  >
-                    📊 Import from Excel
-                  </button>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
-                    Wizard for .xlsx files (with diff preview)
-                  </p>
-
-                  <button
-                    onClick={() => { setShowZerodhaImport(true); setShowMenu(false) }}
-                    style={menuBtnStyle}
-                  >
-                    📈 Import from Zerodha
-                  </button>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
-                    Zerodha Kite holdings .xlsx (with diff preview)
-                  </p>
-
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Import Holdings</p>
+                  <button onClick={() => { setShowExcelImport(true); setShowMenu(false) }} style={menuBtnStyle}>📊 Import from Excel</button>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>Wizard for .xlsx files</p>
+                  <button onClick={() => { setShowZerodhaImport(true); setShowMenu(false) }} style={menuBtnStyle}>📈 Import from Zerodha</button>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>Zerodha Kite holdings .xlsx</p>
                   <div style={{ height: 1, backgroundColor: 'var(--border)', margin: '6px 0' }} />
-
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Account</p>
                   <button onClick={() => { setShowChangePw(true); setShowMenu(false) }} style={menuBtnStyle}>🔑 Change Password</button>
                 </div>
@@ -339,18 +316,18 @@ export default function TopBar({ theme, onThemeToggle, onLock }) {
             )}
           </div>
         </div>
+      </div>
 
-        {importError && (
-          <div style={{ backgroundColor: 'var(--loss-faint)', borderTop: '1px solid var(--border)', padding: '8px 24px', fontSize: '0.8rem', color: 'var(--loss)', display: 'flex', justifyContent: 'space-between' }}>
-            <span>{importError}</span>
-            <button onClick={() => setImportError(null)} style={{ background: 'none', border: 'none', color: 'var(--loss)', cursor: 'pointer' }}>✕</button>
-          </div>
-        )}
-      </header>
+      {importError && (
+        <div style={{ backgroundColor: 'var(--loss-faint)', borderBottom: '1px solid var(--border)', padding: '8px 24px', fontSize: '0.8rem', color: 'var(--loss)', display: 'flex', justifyContent: 'space-between' }}>
+          <span>{importError}</span>
+          <button onClick={() => setImportError(null)} style={{ background: 'none', border: 'none', color: 'var(--loss)', cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
 
-      {showChangePw && <ChangePasswordDialog onClose={() => setShowChangePw(false)} />}
-      {importData && <BackupRestoreDialog data={importData} onClose={() => setImportData(null)} />}
-      {showExcelImport && <ExcelImportWizard onClose={() => setShowExcelImport(false)} />}
+      {showChangePw   && <ChangePasswordDialog onClose={() => setShowChangePw(false)} />}
+      {importData     && <BackupRestoreDialog data={importData} onClose={() => setImportData(null)} />}
+      {showExcelImport   && <ExcelImportWizard onClose={() => setShowExcelImport(false)} />}
       {showZerodhaImport && <ZerodhaImportWizard onClose={() => setShowZerodhaImport(false)} />}
     </>
   )
