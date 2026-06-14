@@ -4,6 +4,7 @@ import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS, computeOutstanding } from './lib/format'
 import { useStore } from './lib/store'
 import MetricCards from './components/MetricCards'
+import PageLayout from './components/PageLayout'
 
 const PROPERTY_TYPES = ['Residential', 'Commercial', 'Land', 'Other']
 
@@ -84,7 +85,6 @@ function PropertyForm({ initial, loans, activeMember = 'All', onSave, onCancel }
       monthlyRent: parseFloat(form.monthlyRent) || 0,
       coOwners: coOwners.filter(c => c.member && c.pct > 0),
     }
-    console.log('Saving ownershipPct:', parseFloat(form.ownershipPct))
     onSave(property, Array.from(linkedLoanIds))
   }
 
@@ -542,12 +542,12 @@ export default function RealEstate({ activeMember }) {
   }, [loans])
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: '28px 24px' }}>
+    <PageLayout>
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
-        <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Real Estate</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+        <h2 style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>Real Estate</h2>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
           <button
             onClick={async () => {
               setSaveStatus('saving')
@@ -623,6 +623,6 @@ export default function RealEstate({ activeMember }) {
           onCancel={() => { setShowForm(false); setEditProperty(null) }}
         />
       )}
-    </div>
+    </PageLayout>
   )
 }

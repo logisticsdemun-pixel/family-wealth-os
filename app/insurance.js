@@ -4,6 +4,7 @@ import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS } from './lib/format'
 import { useStore } from './lib/store'
 import MetricCards from './components/MetricCards'
+import PageLayout from './components/PageLayout'
 
 const POLICY_TYPES = ['Term Life', 'Health', 'Vehicle', 'Endowment', 'ULIP', 'Critical Illness', 'Other']
 
@@ -103,7 +104,7 @@ function PolicyRow({ policy, onEdit, onDelete }) {
 
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }}>
-      <td style={{ padding: '12px 14px' }}>
+      <td style={{ padding: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 500, fontSize: '0.875rem' }}>{policy.name}</span>
           {renewalSoon && (
@@ -119,7 +120,7 @@ function PolicyRow({ policy, onEdit, onDelete }) {
         </div>
         {policy.insurer && <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>{policy.insurer}</p>}
       </td>
-      <td style={{ padding: '12px 14px' }}>
+      <td style={{ padding: '12px' }}>
         <span style={{
           fontSize: '0.72rem', padding: '3px 8px', borderRadius: 10, fontWeight: 500,
           backgroundColor: typeColor(policy.type).bg, color: typeColor(policy.type).text,
@@ -127,13 +128,13 @@ function PolicyRow({ policy, onEdit, onDelete }) {
           {policy.type}
         </span>
       </td>
-      <td style={{ padding: '12px 14px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{firstName(policy.member)}</td>
-      <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 600, fontSize: '0.875rem' }}>{policy.cover ? formatINR(policy.cover) : '—'}</td>
-      <td style={{ padding: '12px 14px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{policy.premium ? formatINR(policy.premium) : '—'}</td>
-      <td style={{ padding: '12px 14px', textAlign: 'right', fontSize: '0.82rem', color: renewalSoon || renewalPast ? 'var(--amber)' : 'var(--text-secondary)' }}>
+      <td style={{ padding: '12px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{firstName(policy.member)}</td>
+      <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600, fontSize: '0.875rem' }}>{policy.cover ? formatINR(policy.cover) : '—'}</td>
+      <td style={{ padding: '12px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{policy.premium ? formatINR(policy.premium) : '—'}</td>
+      <td style={{ padding: '12px', textAlign: 'right', fontSize: '0.82rem', color: renewalSoon || renewalPast ? 'var(--amber)' : 'var(--text-secondary)' }}>
         {policy.renewalDate || '—'}
       </td>
-      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+      <td style={{ padding: '12px', textAlign: 'right' }}>
         <button onClick={onEdit} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.78rem', marginRight: 8 }}>Edit</button>
         <button onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--loss)', cursor: 'pointer', fontSize: '0.78rem' }}>✕</button>
       </td>
@@ -177,12 +178,12 @@ export default function Insurance({ activeMember }) {
   const healthCover = filtered.filter(p => p.type === 'Health' || p.type === 'Critical Illness').reduce((s, p) => s + (p.cover || 0), 0)
   const annualPremium = filtered.reduce((s, p) => s + (p.premium || 0), 0)
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
+    <PageLayout>
 
       {/* ── Header ────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
-        <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Insurance</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+        <h2 style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>Insurance</h2>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
           <button
             onClick={async () => {
               setSaveStatus('saving')
@@ -246,7 +247,7 @@ export default function Insurance({ activeMember }) {
               <thead>
                 <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
                   {['Policy', 'Type', 'Member', 'Cover', 'Premium/yr', 'Renewal', ''].map((h, i) => (
-                    <th key={h || i} style={{ padding: '10px 14px', textAlign: i >= 3 ? 'right' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+                    <th key={h || i} style={{ padding: '8px 12px', textAlign: i >= 3 ? 'right' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -264,6 +265,6 @@ export default function Insurance({ activeMember }) {
           </div>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

@@ -5,6 +5,7 @@ import { formatINR, gainColor, firstName, MEMBERS } from './lib/format'
 import { DEFAULT_GOLD_PRICES } from './lib/seedData'
 import { useStore } from './lib/store'
 import MetricCards from './components/MetricCards'
+import PageLayout from './components/PageLayout'
 
 const CARATS = [24, 22, 18]
 
@@ -121,7 +122,7 @@ function GoldTable({ items, prices, onEdit, onDelete, goldTab }) {
           <thead>
             <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
               {['Item', 'Member', 'Grams', 'Carat', 'Buy Value', 'Current Value', goldTab === 'jewellery' ? 'Mark-up' : 'Gain / Loss', ''].map((h, i) => (
-                <th key={h || i} style={{ padding: '10px 14px', textAlign: i >= 2 ? 'right' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={h || i} style={{ padding: '8px 12px', textAlign: i >= 2 ? 'right' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -132,13 +133,13 @@ function GoldTable({ items, prices, onEdit, onDelete, goldTab }) {
               const gl = gain(g, prices)
               return (
                 <tr key={g.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '12px 14px', fontWeight: 500 }}>{g.name}</td>
-                  <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>{firstName(g.member)}</td>
-                  <td style={{ padding: '12px 14px', textAlign: 'right' }}>{g.grams}g</td>
-                  <td style={{ padding: '12px 14px', textAlign: 'right', color: 'var(--gold-color)', fontWeight: 500 }}>{g.carat}K</td>
-                  <td style={{ padding: '12px 14px', textAlign: 'right' }}>{bv > 0 ? formatINR(bv) : <span style={{ color: 'var(--text-muted)' }}>Gift</span>}</td>
-                  <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 600, color: 'var(--gold-color)' }}>{formatINR(cv)}</td>
-                  <td style={{ padding: '12px 14px', textAlign: 'right', color: gainColor(gl) }}>
+                  <td style={{ padding: '12px', fontWeight: 500 }}>{g.name}</td>
+                  <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{firstName(g.member)}</td>
+                  <td style={{ padding: '12px', textAlign: 'right' }}>{g.grams}g</td>
+                  <td style={{ padding: '12px', textAlign: 'right', color: 'var(--gold-color)', fontWeight: 500 }}>{g.carat}K</td>
+                  <td style={{ padding: '12px', textAlign: 'right' }}>{bv > 0 ? formatINR(bv) : <span style={{ color: 'var(--text-muted)' }}>Gift</span>}</td>
+                  <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600, color: 'var(--gold-color)' }}>{formatINR(cv)}</td>
+                  <td style={{ padding: '12px', textAlign: 'right', color: gainColor(gl) }}>
                     {bv > 0 ? (
                       <>
                         {formatINR(gl)}
@@ -148,7 +149,7 @@ function GoldTable({ items, prices, onEdit, onDelete, goldTab }) {
                       </>
                     ) : '—'}
                   </td>
-                  <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                  <td style={{ padding: '12px', textAlign: 'right' }}>
                     <button onClick={() => onEdit(g)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.78rem', marginRight: 8 }}>Edit</button>
                     <button onClick={() => onDelete(g.id)} style={{ background: 'none', border: 'none', color: 'var(--loss)', cursor: 'pointer', fontSize: '0.78rem' }}>✕</button>
                   </td>
@@ -157,13 +158,13 @@ function GoldTable({ items, prices, onEdit, onDelete, goldTab }) {
             })}
             {/* Totals row */}
             <tr style={{ borderTop: '1px solid var(--border)', backgroundColor: 'var(--surface-2)' }}>
-              <td style={{ padding: '10px 14px', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-primary)' }}>Total</td>
+              <td style={{ padding: '8px 12px', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-primary)' }}>Total</td>
               <td />
-              <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500 }}>{totalGrams.toFixed(3)}g</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500 }}>{totalGrams.toFixed(3)}g</td>
               <td />
-              <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500 }}>{formatINR(totalBuy)}</td>
-              <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: '#534AB7' }}>{formatINR(totalCurrent)}</td>
-              <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: totalGain >= 0 ? '#1D9E75' : '#D85A30' }}>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500 }}>{formatINR(totalBuy)}</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: '#534AB7' }}>{formatINR(totalCurrent)}</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: totalGain >= 0 ? '#1D9E75' : '#D85A30' }}>
                 {totalGain >= 0 ? '+' : ''}{formatINR(totalGain)}
               </td>
               <td />
@@ -215,17 +216,17 @@ export default function Gold({ activeMember }) {
   const totalGainPct = totalBuyValue > 0 ? (totalGain / totalBuyValue) * 100 : 0
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
+    <PageLayout>
 
       {/* ── Header ────────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: showPrices ? 12 : 20, flexWrap: 'wrap', gap: 10 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Gold</h2>
+          <h2 style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>Gold</h2>
           <p style={{ margin: '3px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             Track investment and jewellery gold
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
           <button
             onClick={showPrices ? () => setShowPrices(false) : openPrices}
             style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 6 }}
@@ -372,6 +373,6 @@ export default function Gold({ activeMember }) {
           )}
         </>
       )}
-    </div>
+    </PageLayout>
   )
 }

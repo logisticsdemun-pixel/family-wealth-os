@@ -7,6 +7,7 @@ import { SEED_INVESTMENTS, SEED_FIXED_INCOME } from './lib/seedData'
 import { takeSnapshotFromStorage } from './lib/snapshot'
 import UpdateHoldingsModal from './components/UpdateHoldings'
 import MetricCards from './components/MetricCards'
+import PageLayout from './components/PageLayout'
 
 const INV_TYPES = ['Stock', 'Mutual Fund', 'Short Term Fund', 'ETF', 'Fixed Income']
 
@@ -131,7 +132,7 @@ function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete, onSIPConfig, on
   }
 
   const td = (content, align = 'left', style = {}) => (
-    <td style={{ padding: '12px 14px', textAlign: align, verticalAlign: 'middle', ...style }}>
+    <td style={{ padding: '12px', textAlign: align, verticalAlign: 'middle', ...style }}>
       {content}
     </td>
   )
@@ -903,19 +904,19 @@ export default function Investments({ activeMember }) {
   ]
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '28px 24px' }}>
+    <PageLayout>
 
       {/* ── Header ────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Investments</h2>
+          <h2 style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>Investments</h2>
           {lastUpdated && (
             <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
               Prices updated at {lastUpdated}
             </p>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
           <button
             onClick={async () => {
               setSaveStatus('saving')
@@ -985,22 +986,20 @@ export default function Investments({ activeMember }) {
       {subTab !== 'fi' && <SummaryCards items={displayed} />}
 
       {/* ── Sub-tabs ──────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
         {SUB_TABS.map(t => (
           <button
             key={t.id}
             onClick={() => setSubTab(t.id)}
             style={{
-              padding: '8px 16px',
+              padding: '6px 14px',
+              borderRadius: 20,
               border: 'none',
-              backgroundColor: 'transparent',
-              color: subTab === t.id ? 'var(--accent)' : 'var(--text-secondary)',
-              fontWeight: subTab === t.id ? 600 : 400,
-              fontSize: '0.875rem',
               cursor: 'pointer',
-              borderBottom: `2px solid ${subTab === t.id ? 'var(--accent)' : 'transparent'}`,
-              marginBottom: -1,
-              transition: 'all 0.15s',
+              fontSize: '0.85rem',
+              backgroundColor: subTab === t.id ? '#334155' : 'var(--color-background-secondary)',
+              color: subTab === t.id ? 'white' : 'var(--color-text-secondary)',
+              transition: 'background-color 0.15s ease',
             }}
           >
             {t.label}
@@ -1038,7 +1037,7 @@ export default function Investments({ activeMember }) {
                 <thead>
                   <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
                     {['Name', 'Member', 'Units', 'Buy Price', 'Invested', 'Current', 'Gain / Loss', ''].map((h, i) => (
-                      <th key={h || i} style={{ padding: '10px 14px', textAlign: i >= 3 ? 'right' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h || i} style={{ padding: '8px 12px', textAlign: i >= 3 ? 'right' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1095,7 +1094,7 @@ export default function Investments({ activeMember }) {
                 <thead>
                   <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
                     {['Name', 'Member', 'Principal', 'Rate', 'Maturity Value', 'Maturity Date', ''].map((h, i) => (
-                      <th key={h || i} style={{ padding: '10px 14px', textAlign: i >= 2 ? 'right' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h || i} style={{ padding: '8px 12px', textAlign: i >= 2 ? 'right' : 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1170,7 +1169,7 @@ export default function Investments({ activeMember }) {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
-    </div>
+    </PageLayout>
   )
 }
 
@@ -1218,16 +1217,16 @@ function FDRow({ fd, onUpdate, onDelete }) {
 
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }}>
-      <td style={{ padding: '12px 14px', fontWeight: 500 }}>{fd.name}</td>
-      <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>{firstName(fd.member)}</td>
-      <td style={{ padding: '12px 14px', textAlign: 'right' }}>{formatINR(fd.principal)}</td>
-      <td style={{ padding: '12px 14px', textAlign: 'right', color: 'var(--gain)' }}>{fd.rate}%</td>
-      <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 600, color: 'var(--accent)' }}>
+      <td style={{ padding: '12px', fontWeight: 500 }}>{fd.name}</td>
+      <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>{firstName(fd.member)}</td>
+      <td style={{ padding: '12px', textAlign: 'right' }}>{formatINR(fd.principal)}</td>
+      <td style={{ padding: '12px', textAlign: 'right', color: 'var(--gain)' }}>{fd.rate}%</td>
+      <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600, color: 'var(--accent)' }}>
         {formatINR(accrued)}
         {isAccrued && <span style={{ fontSize: '0.65rem', marginLeft: 4, color: 'var(--text-muted)' }}>est.</span>}
       </td>
-      <td style={{ padding: '12px 14px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{fd.maturityDate || '—'}</td>
-      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+      <td style={{ padding: '12px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{fd.maturityDate || '—'}</td>
+      <td style={{ padding: '12px', textAlign: 'right' }}>
         <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.78rem', marginRight: 8 }}>Edit</button>
         <button onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--loss)', cursor: 'pointer', fontSize: '0.78rem' }}>✕</button>
       </td>

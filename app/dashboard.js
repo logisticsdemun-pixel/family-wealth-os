@@ -7,6 +7,7 @@ import { DEFAULT_GOLD_PRICES } from './lib/seedData'
 import { takeSnapshot } from './lib/snapshot'
 import { useStore } from './lib/store'
 import { computeMemberMetrics } from './lib/metrics'
+import PageLayout from './components/PageLayout'
 
 const ASSET_TYPES = ['Cash & Savings', 'Fixed Deposit', 'EPF / PPF', 'Real Estate', 'Crypto', 'Other']
 const LIABILITY_TYPES = ['Credit Card', 'Personal Loan', 'Education Loan', 'Other Debt']
@@ -343,7 +344,7 @@ export default function Dashboard({ activeMember }) {
   const nwLabel = activeMember === 'All' ? 'Net Worth' : `${firstName(activeMember)} Net Worth`
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px' }}>
+    <PageLayout maxWidth={1100}>
 
       {/* Unpriced holdings warning */}
       {unpricedHoldings > 0 && (
@@ -627,6 +628,6 @@ export default function Dashboard({ activeMember }) {
         {showAddLiability && <AddForm onAdd={addLiab} onCancel={() => setShowAddLiability(false)} isLiability activeMember={activeMember} />}
       </div>
 
-    </div>
+    </PageLayout>
   )
 }

@@ -4,6 +4,7 @@ import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS, computeOutstanding, loanMonthsRemaining, totalInterestPaid, monthsElapsed } from './lib/format'
 import { useStore } from './lib/store'
 import MetricCards from './components/MetricCards'
+import PageLayout from './components/PageLayout'
 
 const LOAN_TYPES = ['Home Loan', 'Car Loan', 'Personal Loan', 'Education Loan', 'Business Loan', 'Other']
 
@@ -235,12 +236,12 @@ export default function Loans({ activeMember }) {
   const totalPrincipal = filtered.reduce((s, l) => s + (l.principal || 0), 0)
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: '28px 24px' }}>
+    <PageLayout>
 
       {/* ── Header ────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
-        <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 700 }}>Loans</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+        <h2 style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>Loans</h2>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
           <button
             onClick={async () => {
               setSaveStatus('saving')
@@ -309,6 +310,6 @@ export default function Loans({ activeMember }) {
           />
         ))
       )}
-    </div>
+    </PageLayout>
   )
 }
