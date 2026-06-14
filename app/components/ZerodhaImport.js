@@ -243,7 +243,7 @@ export default function ZerodhaImportWizard({ onClose }) {
       }
 
       await applyImport({ [KEYS.INVESTMENTS]: finalUpdated, [KEYS.PRICE_CACHE]: cache })
-      window.location.reload()
+      onClose()
     } catch (err) {
       setError(err.message || 'Import failed. Please try again.')
       setImporting(false)
