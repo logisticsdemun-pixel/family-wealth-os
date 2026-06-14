@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { load, applyImport, KEYS } from '../lib/storage'
 import { MEMBERS, formatINR, firstName } from '../lib/format'
@@ -105,9 +105,18 @@ export default function ZerodhaImportWizard({ onClose }) {
   const [step, setStep] = useState('select')
   const [member, setMember] = useState(MEMBERS[0])
   const [parsed, setParsed] = useState(null)
+  const [exitConfirmed, setExitConfirmed] = useState({})
   const [error, setError] = useState('')
   const [importing, setImporting] = useState(false)
   const fileRef = useRef(null)
+
+  // Reset exit checkboxes whenever a new file is parsed (default all pre-ticked)
+  useEffect(() => {
+    if (!parsed?.exited) return
+    setExitConfirmed(
+      Object.fromEntries(parsed.exited.map(h => [h.id ?? h.ticker, true]))
+    )
+  }, [parsed])
 
   async function handleFile(e) {
     const file = e.target.files?.[0]
@@ -203,7 +212,7 @@ export default function ZerodhaImportWizard({ onClose }) {
             <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {step === 'select'
                 ? 'Upload your Zerodha Holdings export (.xlsx)'
-                : `${parsed.rows.length} holding${parsed.rows.length !== 1 ? 's' : ''} — ${parsed.toAdd.length} new, ${parsed.toUpdate.length} updated for ${firstName(member)}`
+                : `${parsed.rows.length} holding${parsed.rows.length !== 1 ? 's' : ''} — ${parsed.toAdd.length} new, ${parsed.toUpdate.length} updated${parsed.exited?.length ? `, ${parsed.exited.length} may have exited` : ''} for ${firstName(member)}`
               }
             </p>
           </div>
@@ -251,6 +260,89 @@ export default function ZerodhaImportWizard({ onClose }) {
         {/* ── Review step ──────────────────────────────────────── */}
         {step === 'review' && parsed && (
           <>
+            {/* ── EXITED SECTION ── */}
+            {parsed.exited && parsed.exited.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{
+                  padding: '12px 16px',
+                  background: '#FAEEDA',
+                  borderLeft: '3px solid #EF9F27',
+                  borderRadius: '0 8px 8px 0',
+                  marginBottom: 10,
+                }}>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: '#633806', margin: '0 0 4px' }}>
+                    {parsed.exited.length} position{parsed.exited.length > 1 ? 's' : ''} not found in this statement
+                  </p>
+                  <p style={{ fontSize: 12, color: '#854F0B', margin: 0, lineHeight: 1.5 }}>
+                    These stocks are in your portfolio but missing from this Zerodha file.
+                    Tick = remove from portfolio. Untick = keep (e.g. held in another account).
+                  </p>
+                </div>
+
+                {parsed.exited.map(h => {
+                  const key = h.id ?? h.ticker
+                  const isChecked = exitConfirmed[key] !== false
+                  const currentVal = h.currentPrice && h.units ? h.units * h.currentPrice : null
+                  const gain = currentVal && h.buyPrice && h.units ? currentVal - h.units * h.buyPrice : null
+                  const gainPct = gain != null && h.buyPrice && h.units
+                    ? (gain / (h.units * h.buyPrice)) * 100 : null
+
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => setExitConfirmed(prev => ({ ...prev, [key]: !prev[key] }))}
+                      style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 12,
+                        padding: '12px 14px', borderRadius: 8, marginBottom: 6, cursor: 'pointer',
+                        border: `0.5px solid ${isChecked ? '#F09595' : 'var(--border)'}`,
+                        background: isChecked ? '#FFF5F5' : 'var(--bg)',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={e => { e.stopPropagation(); setExitConfirmed(prev => ({ ...prev, [key]: e.target.checked })) }}
+                        style={{ marginTop: 3, cursor: 'pointer', flexShrink: 0 }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div>
+                            <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{h.name}</p>
+                            <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-muted)' }}>
+                              {h.ticker} · {h.units} units · Invested {formatINR((h.units || 0) * (h.buyPrice || 0))}
+                            </p>
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            {currentVal != null && (
+                              <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
+                                {formatINR(currentVal)}
+                              </p>
+                            )}
+                            {gainPct != null && (
+                              <p style={{ margin: '2px 0 0', fontSize: 11, color: gainPct >= 0 ? 'var(--gain)' : 'var(--loss)' }}>
+                                {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(2)}%
+                              </p>
+                            )}
+                            {currentVal == null && (
+                              <p style={{ margin: 0, fontSize: 11, color: 'var(--text-muted)' }}>No price recorded</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <span style={{
+                        fontSize: 11, padding: '2px 8px', borderRadius: 6, flexShrink: 0, alignSelf: 'center',
+                        background: isChecked ? '#FCEBEB' : 'var(--surface-2)',
+                        color: isChecked ? '#A32D2D' : 'var(--text-muted)',
+                        border: `0.5px solid ${isChecked ? '#F09595' : 'var(--border)'}`,
+                      }}>
+                        {isChecked ? 'Will be removed' : 'Will be kept'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
             <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
               <div style={{ maxHeight: 320, overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
