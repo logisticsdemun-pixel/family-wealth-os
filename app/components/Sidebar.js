@@ -41,9 +41,9 @@ export default function Sidebar({ activePage, onNavigate }) {
                   + fixedIncome.reduce((s, fd) => s + (fd.principal || fd.currentValue || fd.amount || 0), 0)
   const goldTotal = gold.reduce((s, g) => s + (g.grams || 0) * (goldPrices[g.carat] || 0), 0)
   const reTotal   = realEstate.reduce((s, p) => s + (p.currentValue || 0) * ((p.ownershipPct || 100) / 100), 0)
-  const cashTotal = cashAssets.reduce((s, a) => s + (a.balance || 0), 0)
+  const cashTotal = cashAssets.reduce((s, a) => s + (a.value || 0), 0)
   const debtTotal = loans.reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
-                  + liabilities.reduce((s, l) => s + (l.amount || 0), 0)
+                  + liabilities.reduce((s, l) => s + (l.value || 0), 0)
 
   const totals = {
     investments: invTotal,
