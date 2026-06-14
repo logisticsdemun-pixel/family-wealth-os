@@ -397,7 +397,6 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
   }
 
   async function handleFile(e) {
-    console.log('[UpdateHoldings] handleFile called, tab:', activeTab)
     const file = e.target.files?.[0]
     if (!file) return
     setError('')
@@ -415,14 +414,6 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
         const { rows: rawRows, warning, date } = parseZerodhaStatement(wb)
         const diffRows = buildZerodhaStatementDiff(rawRows, member, existing)
         const exited   = findExitedHoldings(existing, diffRows, member)
-        console.log('[UpdateHoldings] exited found:', exited.length,
-          exited.map(({ inv: h }) => h.name || h.ticker || h.symbol))
-        console.log('[UpdateHoldings] memberInvestments count from existing:',
-          (existing || []).filter(inv => {
-            const m = String(inv.member || inv.memberId || '').toLowerCase()
-            return m.includes((member || '').toLowerCase().split(' ')[0])
-          }).length
-        )
         setParsedB({ rows: diffRows, exited, warning, date })
         // Pre-select ADD + UPDATE rows; leave UNCHANGED deselected
         setSelectedB(new Set(diffRows.filter(d => d.action !== 'UNCHANGED').map(d => d.row.isin)))
