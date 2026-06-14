@@ -93,7 +93,7 @@ export default function Sidebar({ activePage, onNavigate }) {
           <i className="ti ti-chart-pie" style={{ fontSize: 12, color: '#fff' }} aria-hidden="true" />
         </div>
         <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-          Family Wealth OS
+          Grey Diary
         </span>
       </div>
 
