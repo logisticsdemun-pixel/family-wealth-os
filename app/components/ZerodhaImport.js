@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
-import { load, applyImport, KEYS } from '../lib/storage'
+import { applyImport, KEYS } from '../lib/storage'
+import { useStore } from '../lib/store'
 import { MEMBERS, formatINR, firstName } from '../lib/format'
 import { takeSnapshotFromStorage } from '../lib/snapshot'
 import { SEED_INVESTMENTS } from '../lib/seedData'
@@ -73,18 +74,13 @@ function normaliseTicker(t) {
   return t.toUpperCase().replace(/\.NS$/, '').replace(/\.BO$/, '').trim()
 }
 
-function buildDiff(rows, member) {
-  const existing = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
-
-  // Build set of tickers present in the uploaded file
+function buildDiff(rows, allInvestments, member) {
   const fileTickerSet = new Set(
     rows.map(r => normaliseTicker(r.instrument)).filter(Boolean)
   )
 
-  // All stocks for this member (MFs have no ticker, cannot exit via holdings file)
-  const memberStocks = existing.filter(h => !h.isMF && h.member === member)
+  const memberStocks = allInvestments.filter(h => !h.isMF && h.member === member)
 
-  // Stocks in app NOT found in the file → potential exits
   const exited = memberStocks.filter(h => {
     const t = normaliseTicker(h.ticker || '')
     return t && !fileTickerSet.has(t)
@@ -93,7 +89,7 @@ function buildDiff(rows, member) {
   const toAdd = []
   const toUpdate = []
   for (const row of rows) {
-    const match = existing.find(inv => !inv.isMF && inv.member === member && tickerMatch(inv, row.instrument))
+    const match = allInvestments.find(inv => !inv.isMF && inv.member === member && tickerMatch(inv, row.instrument))
     if (match) toUpdate.push({ existing: match, row })
     else toAdd.push(row)
   }
@@ -102,6 +98,9 @@ function buildDiff(rows, member) {
 }
 
 export default function ZerodhaImportWizard({ onClose }) {
+  const { data } = useStore()
+  const allInvestments = data?.investments ?? SEED_INVESTMENTS
+
   const [step, setStep] = useState('select')
   const [member, setMember] = useState(MEMBERS[0])
   const [parsed, setParsed] = useState(null)
@@ -125,7 +124,7 @@ export default function ZerodhaImportWizard({ onClose }) {
     e.target.value = ''
     try {
       const rows = await parseZerodhaXLSX(file)
-      const diff = buildDiff(rows, member)
+      const diff = buildDiff(rows, allInvestments, member)
       setParsed({ rows, ...diff })
       setStep('review')
     } catch (err) {
@@ -137,9 +136,8 @@ export default function ZerodhaImportWizard({ onClose }) {
     setImporting(true)
     try {
       takeSnapshotFromStorage()
-      const existing = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
-      const cache = { ...load(KEYS.PRICE_CACHE, {}) }
-      const updated = [...existing]
+      const cache = { ...(data?.priceCache ?? {}) }
+      const updated = [...allInvestments]
       const now = Date.now()
 
       for (const row of parsed.rows) {
