@@ -175,7 +175,31 @@ export default function ZerodhaImportWizard({ onClose }) {
         }
       }
 
-      await applyImport({ [KEYS.INVESTMENTS]: updated, [KEYS.PRICE_CACHE]: cache })
+      // ── Handle exited positions ──────────────────────────────
+      const exitedConfirmedIds = new Set(
+        (parsed.exited || [])
+          .filter(h => exitConfirmed[h.id ?? h.ticker] !== false)
+          .map(h => h.id)
+      )
+
+      // Remove confirmed exits
+      let finalUpdated = updated.filter(inv => !exitedConfirmedIds.has(inv.id))
+
+      // Add note to kept positions (unchecked = user chose to keep)
+      for (const h of (parsed.exited || [])) {
+        if (exitConfirmed[h.id ?? h.ticker] === false) {
+          const idx = finalUpdated.findIndex(inv => inv.id === h.id)
+          if (idx !== -1) {
+            const noteText = `Not in Zerodha statement ${new Date().toLocaleDateString('en-IN')} — kept manually`
+            finalUpdated[idx] = {
+              ...finalUpdated[idx],
+              notes: [finalUpdated[idx].notes, noteText].filter(Boolean).join(' | '),
+            }
+          }
+        }
+      }
+
+      await applyImport({ [KEYS.INVESTMENTS]: finalUpdated, [KEYS.PRICE_CACHE]: cache })
       window.location.reload()
     } catch (err) {
       setError(err.message || 'Import failed. Please try again.')
