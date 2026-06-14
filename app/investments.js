@@ -6,6 +6,7 @@ import { formatINR, formatPct, gainColor, firstName, MEMBERS, calculateCAGR, yea
 import { SEED_INVESTMENTS, SEED_FIXED_INCOME } from './lib/seedData'
 import { takeSnapshotFromStorage } from './lib/snapshot'
 import UpdateHoldingsModal from './components/UpdateHoldings'
+import MetricCards from './components/MetricCards'
 
 const INV_TYPES = ['Stock', 'Mutual Fund', 'Short Term Fund', 'ETF', 'Fixed Income']
 
@@ -51,18 +52,29 @@ function SummaryCards({ items }) {
   const gainPct = invested > 0 ? (gain / invested) * 100 : 0
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
-      {[
-        { label: 'INVESTED', value: formatINR(invested), color: 'var(--text-primary)' },
-        { label: 'CURRENT VALUE', value: formatINR(current), color: 'var(--accent)' },
-        { label: 'GAIN / LOSS', value: `${formatINR(gain)}  ${formatPct(gainPct)}`, color: gainColor(gain) },
-      ].map(c => (
-        <div key={c.label} style={{ ...card, padding: '16px 20px' }}>
-          <p style={label}>{c.label}</p>
-          <p style={{ margin: 0, fontWeight: 700, fontSize: '1.05rem', color: c.color }}>{c.value}</p>
-        </div>
-      ))}
-    </div>
+    <MetricCards cards={[
+      {
+        label: 'INVESTED',
+        value: formatINR(invested),
+        sub: null,
+        valueColor: 'var(--color-text-primary)',
+        subColor: null,
+      },
+      {
+        label: 'CURRENT VALUE',
+        value: formatINR(current),
+        sub: null,
+        valueColor: '#534AB7',
+        subColor: null,
+      },
+      {
+        label: 'GAIN / LOSS',
+        value: (gain >= 0 ? '+' : '') + formatINR(gain),
+        sub: (gainPct >= 0 ? '+' : '') + gainPct.toFixed(2) + '%',
+        valueColor: gain >= 0 ? '#1D9E75' : '#D85A30',
+        subColor: gain >= 0 ? '#1D9E75' : '#D85A30',
+      },
+    ]} />
   )
 }
 

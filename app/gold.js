@@ -4,6 +4,7 @@ import { KEYS } from './lib/storage'
 import { formatINR, gainColor, firstName, MEMBERS } from './lib/format'
 import { DEFAULT_GOLD_PRICES } from './lib/seedData'
 import { useStore } from './lib/store'
+import MetricCards from './components/MetricCards'
 
 const CARATS = [24, 22, 18]
 
@@ -273,37 +274,29 @@ export default function Gold({ activeMember }) {
       )}
 
       {/* ── Summary cards ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
-        {[
-          {
-            cardLabel: 'GOLD PURCHASE PRICE',
-            value: formatINR(totalBuyValue),
-            sub: `${filteredItems.length} item${filteredItems.length !== 1 ? 's' : ''}`,
-            color: 'var(--text-primary)',
-            subColor: 'var(--text-muted)',
-          },
-          {
-            cardLabel: 'CURRENT VALUE',
-            value: formatINR(totalCurrentValue),
-            sub: 'At current gold prices',
-            color: '#534AB7',
-            subColor: '#534AB7',
-          },
-          {
-            cardLabel: 'GAIN / LOSS',
-            value: (totalGain >= 0 ? '+' : '') + formatINR(totalGain),
-            sub: (totalGainPct >= 0 ? '+' : '') + totalGainPct.toFixed(2) + '% overall',
-            color: totalGain >= 0 ? '#1D9E75' : '#D85A30',
-            subColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
-          },
-        ].map(({ cardLabel, value, sub, color, subColor }) => (
-          <div key={cardLabel} style={{ backgroundColor: 'var(--color-background-secondary)', borderRadius: 'var(--border-radius-lg)', border: '0.5px solid var(--color-border-tertiary)', padding: '20px 24px' }}>
-            <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', margin: '0 0 8px', display: 'block' }}>{cardLabel}</p>
-            <p style={{ fontSize: 22, fontWeight: 700, color, margin: '0 0 3px' }}>{value}</p>
-            <p style={{ fontSize: 13, color: subColor, margin: 0 }}>{sub}</p>
-          </div>
-        ))}
-      </div>
+      <MetricCards cards={[
+        {
+          label: 'GOLD PURCHASE PRICE',
+          value: formatINR(totalBuyValue),
+          sub: `${filteredItems.length} item${filteredItems.length !== 1 ? 's' : ''}`,
+          valueColor: 'var(--color-text-primary)',
+          subColor: 'var(--color-text-secondary)',
+        },
+        {
+          label: 'CURRENT VALUE',
+          value: formatINR(totalCurrentValue),
+          sub: 'At current gold prices',
+          valueColor: '#534AB7',
+          subColor: 'var(--color-text-secondary)',
+        },
+        {
+          label: 'GAIN / LOSS',
+          value: (totalGain >= 0 ? '+' : '') + formatINR(totalGain),
+          sub: (totalGainPct >= 0 ? '+' : '') + totalGainPct.toFixed(2) + '% overall',
+          valueColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
+          subColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
+        },
+      ]} />
 
       {/* ── Sub-tabs ──────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>

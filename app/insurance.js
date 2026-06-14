@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS } from './lib/format'
 import { useStore } from './lib/store'
+import MetricCards from './components/MetricCards'
 
 const POLICY_TYPES = ['Term Life', 'Health', 'Vehicle', 'Endowment', 'ULIP', 'Critical Illness', 'Other']
 
@@ -175,8 +176,6 @@ export default function Insurance({ activeMember }) {
   const lifeCover = filtered.filter(p => p.type === 'Term Life' || p.type === 'Endowment' || p.type === 'ULIP').reduce((s, p) => s + (p.cover || 0), 0)
   const healthCover = filtered.filter(p => p.type === 'Health' || p.type === 'Critical Illness').reduce((s, p) => s + (p.cover || 0), 0)
   const annualPremium = filtered.reduce((s, p) => s + (p.premium || 0), 0)
-  const renewalsSoon = filtered.filter(p => { const d = daysUntilRenewal(p.renewalDate); return d !== null && d >= 0 && d <= 30 }).length
-
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 24px' }}>
 
@@ -206,19 +205,29 @@ export default function Insurance({ activeMember }) {
       </div>
 
       {/* ── Summary cards ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-        {[
-          { label: 'LIFE COVER', value: formatINR(lifeCover), color: 'var(--accent)' },
-          { label: 'HEALTH COVER', value: formatINR(healthCover), color: 'var(--gain)' },
-          { label: 'ANNUAL PREMIUM', value: formatINR(annualPremium), color: 'var(--text-primary)' },
-          ...(renewalsSoon > 0 ? [{ label: 'RENEWALS DUE SOON', value: `${renewalsSoon} polic${renewalsSoon > 1 ? 'ies' : 'y'}`, color: 'var(--amber)' }] : []),
-        ].map(c => (
-          <div key={c.label} style={{ ...card, padding: '16px 20px' }}>
-            <p style={labelStyle}>{c.label}</p>
-            <p style={{ margin: 0, fontWeight: 700, fontSize: '1.05rem', color: c.color }}>{c.value}</p>
-          </div>
-        ))}
-      </div>
+      <MetricCards cards={[
+        {
+          label: 'LIFE COVER',
+          value: formatINR(lifeCover),
+          sub: null,
+          valueColor: 'var(--color-text-primary)',
+          subColor: null,
+        },
+        {
+          label: 'HEALTH COVER',
+          value: formatINR(healthCover),
+          sub: null,
+          valueColor: '#1D9E75',
+          subColor: null,
+        },
+        {
+          label: 'ANNUAL PREMIUM',
+          value: formatINR(annualPremium),
+          sub: `${filtered.length} polic${filtered.length !== 1 ? 'ies' : 'y'}`,
+          valueColor: 'var(--color-text-primary)',
+          subColor: 'var(--color-text-secondary)',
+        },
+      ]} />
 
       {/* ── Form ──────────────────────────────────────────── */}
       {showAdd && !editPolicy && <PolicyForm onSave={handleSave} onCancel={() => setShowAdd(false)} activeMember={activeMember} />}

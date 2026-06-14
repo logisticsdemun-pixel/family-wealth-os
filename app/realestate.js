@@ -3,6 +3,7 @@ import { useState, useMemo } from 'react'
 import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS, computeOutstanding } from './lib/format'
 import { useStore } from './lib/store'
+import MetricCards from './components/MetricCards'
 
 const PROPERTY_TYPES = ['Residential', 'Commercial', 'Land', 'Other']
 
@@ -523,6 +524,9 @@ export default function RealEstate({ activeMember }) {
         return co ? s + (p.currentValue || 0) * (co.pct / 100) : s
       }, 0)
   const totalRent = filtered.reduce((s, p) => s + (p.monthlyRent || 0), 0)
+  const totalPurchaseValue = filtered.reduce((s, p) => s + (p.purchasePrice || 0), 0)
+  const totalGain = totalValue - totalPurchaseValue
+  const totalGainPct = totalPurchaseValue > 0 ? (totalGain / totalPurchaseValue) * 100 : 0
 
   // property id → linked loans
   const loansByPropertyId = useMemo(() => {
@@ -567,17 +571,29 @@ export default function RealEstate({ activeMember }) {
 
       {/* Summary cards */}
       {filtered.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-          {[
-            { label: activeMember === 'All' ? 'TOTAL PORTFOLIO VALUE' : 'ATTRIBUTABLE VALUE', value: formatINR(totalValue), color: 'var(--accent)' },
-            { label: 'MONTHLY RENTAL INCOME', value: totalRent > 0 ? formatINR(totalRent) : '—', color: 'var(--gain)' },
-          ].map(c => (
-            <div key={c.label} style={{ ...card, padding: '16px 20px' }}>
-              <p style={label}>{c.label}</p>
-              <p style={{ margin: 0, fontWeight: 700, fontSize: '1.2rem', color: c.color }}>{c.value}</p>
-            </div>
-          ))}
-        </div>
+        <MetricCards cards={[
+          {
+            label: 'PURCHASE VALUE',
+            value: formatINR(totalPurchaseValue),
+            sub: `${filtered.length} propert${filtered.length !== 1 ? 'ies' : 'y'}`,
+            valueColor: 'var(--color-text-primary)',
+            subColor: 'var(--color-text-secondary)',
+          },
+          {
+            label: activeMember === 'All' ? 'PORTFOLIO VALUE' : 'ATTRIBUTABLE VALUE',
+            value: formatINR(totalValue),
+            sub: totalRent > 0 ? `${formatINR(totalRent)}/mo rental` : 'At current valuation',
+            valueColor: '#534AB7',
+            subColor: 'var(--color-text-secondary)',
+          },
+          {
+            label: 'APPRECIATION',
+            value: (totalGain >= 0 ? '+' : '') + formatINR(totalGain),
+            sub: (totalGainPct >= 0 ? '+' : '') + totalGainPct.toFixed(2) + '% overall',
+            valueColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
+            subColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
+          },
+        ]} />
       )}
 
       {/* Property cards */}

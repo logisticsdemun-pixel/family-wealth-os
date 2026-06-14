@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS, computeOutstanding, loanMonthsRemaining, totalInterestPaid, monthsElapsed } from './lib/format'
 import { useStore } from './lib/store'
+import MetricCards from './components/MetricCards'
 
 const LOAN_TYPES = ['Home Loan', 'Car Loan', 'Personal Loan', 'Education Loan', 'Business Loan', 'Other']
 
@@ -231,6 +232,7 @@ export default function Loans({ activeMember }) {
   const filtered = filterByMember(loans, activeMember)
   const totalOutstanding = filtered.reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0)
   const totalEMI = filtered.reduce((s, l) => s + (l.emi || 0), 0)
+  const totalPrincipal = filtered.reduce((s, l) => s + (l.principal || 0), 0)
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '28px 24px' }}>
@@ -261,17 +263,29 @@ export default function Loans({ activeMember }) {
       </div>
 
       {/* ── Summary cards ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-        {[
-          { label: 'TOTAL OUTSTANDING', value: formatINR(totalOutstanding), color: 'var(--loss)' },
-          { label: 'MONTHLY EMI OUTGO', value: formatINR(totalEMI), color: 'var(--text-primary)' },
-        ].map(c => (
-          <div key={c.label} style={{ ...card, padding: '16px 20px' }}>
-            <p style={label}>{c.label}</p>
-            <p style={{ margin: 0, fontWeight: 700, fontSize: '1.2rem', color: c.color }}>{c.value}</p>
-          </div>
-        ))}
-      </div>
+      <MetricCards cards={[
+        {
+          label: 'TOTAL OUTSTANDING',
+          value: formatINR(totalOutstanding),
+          sub: `${filtered.length} loan${filtered.length !== 1 ? 's' : ''}`,
+          valueColor: '#D85A30',
+          subColor: 'var(--color-text-secondary)',
+        },
+        {
+          label: 'MONTHLY EMI',
+          value: formatINR(totalEMI),
+          sub: 'Combined across all loans',
+          valueColor: 'var(--color-text-primary)',
+          subColor: 'var(--color-text-secondary)',
+        },
+        {
+          label: 'ORIGINAL PRINCIPAL',
+          value: formatINR(totalPrincipal),
+          sub: 'At time of disbursement',
+          valueColor: 'var(--color-text-primary)',
+          subColor: 'var(--color-text-secondary)',
+        },
+      ]} />
 
       {/* ── Add / Edit form ───────────────────────────────── */}
       {showAdd && !editLoan && (

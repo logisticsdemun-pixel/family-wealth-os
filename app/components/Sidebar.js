@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { id: 'dashboard',   label: 'Net Worth',   icon: 'ti-chart-donut',    key: 'netWorth' },
   { id: 'investments', label: 'Investments', icon: 'ti-briefcase',       key: 'investments' },
   { id: 'realestate',  label: 'Real Estate', icon: 'ti-building-estate', key: 'realEstate' },
-  { id: 'gold',        label: 'Gold',        icon: 'ti-coin',            key: 'gold' },
+  { id: 'gold',        label: 'Gold',        icon: 'ti-coins',           key: 'gold' },
   { id: 'loans',       label: 'Loans',       icon: 'ti-credit-card',     key: 'liabilities', isDebt: true },
   { id: 'insurance',   label: 'Insurance',   icon: 'ti-shield' },
 ]
