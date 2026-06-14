@@ -2,6 +2,7 @@
 import { useState, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { load, applyImport, KEYS } from '../lib/storage'
+import { useStore } from '../lib/store'
 import { MEMBERS, firstName, formatINR } from '../lib/format'
 import { takeSnapshotFromStorage } from '../lib/snapshot'
 import { SEED_INVESTMENTS } from '../lib/seedData'
@@ -361,6 +362,9 @@ function buildMFDiff(rows, member, existing) {
 // ── Main modal component ───────────────────────────────────
 
 export default function UpdateHoldingsModal({ onClose, activeMember }) {
+  const { data } = useStore()
+  const storeInvestments = data?.investments ?? []
+
   // If a specific member is already selected in the global filter, lock to it
   const memberFixed = Boolean(activeMember && activeMember !== 'All')
 
@@ -401,7 +405,7 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
     try {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
-      const existing = load(KEYS.INVESTMENTS, SEED_INVESTMENTS) || []
+      const existing = storeInvestments
 
       if (activeTab === 'family') {
         const holdings = parseTrackerHoldings(wb)
@@ -439,7 +443,7 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
     setImporting(true)
     try {
       takeSnapshotFromStorage()
-      const existing = load(KEYS.INVESTMENTS, SEED_INVESTMENTS) || []
+      const existing = storeInvestments
 
       if (activeTab === 'family') {
         await applyImport({ [KEYS.INVESTMENTS]: mergeByKey(existing, parsedA.holdings) })
@@ -727,7 +731,7 @@ export default function UpdateHoldingsModal({ onClose, activeMember }) {
                     </thead>
                     <tbody>
                       {parsedA.holdings.map((h, i) => {
-                        const isNew = !load(KEYS.INVESTMENTS, [])?.some(e =>
+                        const isNew = !storeInvestments.some(e =>
                           e.name.toLowerCase() === h.name.toLowerCase() && e.member.toLowerCase() === h.member.toLowerCase()
                         )
                         return (
