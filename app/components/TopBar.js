@@ -5,32 +5,28 @@ import { changePassword } from '../lib/crypto'
 import ExcelImportWizard from './ExcelImport'
 import ZerodhaImportWizard from './ZerodhaImport'
 
-const TABS = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'investments', label: 'Investments' },
-  { id: 'gold', label: 'Gold' },
-  { id: 'loans', label: 'Loans' },
-  { id: 'realestate', label: 'Real Estate' },
-  { id: 'insurance', label: 'Insurance' },
-  { id: 'artha', label: 'ARTHA' },
-]
-
 const inp = {
   width: '100%', padding: '9px 12px', borderRadius: 8,
   border: '1px solid var(--border)', backgroundColor: 'var(--bg)',
   color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none', marginBottom: 10,
 }
 
+const menuBtnStyle = {
+  display: 'block', width: '100%', padding: '8px 12px', borderRadius: 6,
+  border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)',
+  fontSize: '0.875rem', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s',
+}
+
 const BACKUP_SCHEMA = [
-  { key: KEYS.INVESTMENTS, label: 'Investments' },
+  { key: KEYS.INVESTMENTS,  label: 'Investments' },
   { key: KEYS.FIXED_INCOME, label: 'Fixed Income' },
-  { key: KEYS.GOLD, label: 'Gold' },
-  { key: KEYS.LOANS, label: 'Loans' },
-  { key: KEYS.REAL_ESTATE, label: 'Real Estate' },
-  { key: KEYS.INSURANCE, label: 'Insurance' },
-  { key: KEYS.CASH_ASSETS, label: 'Cash & Assets' },
-  { key: KEYS.LIABILITIES, label: 'Liabilities' },
-  { key: KEYS.SNAPSHOTS, label: 'History' },
+  { key: KEYS.GOLD,         label: 'Gold' },
+  { key: KEYS.LOANS,        label: 'Loans' },
+  { key: KEYS.REAL_ESTATE,  label: 'Real Estate' },
+  { key: KEYS.INSURANCE,    label: 'Insurance' },
+  { key: KEYS.CASH_ASSETS,  label: 'Cash & Assets' },
+  { key: KEYS.LIABILITIES,  label: 'Liabilities' },
+  { key: KEYS.SNAPSHOTS,    label: 'History' },
 ]
 
 function validateBackup(data) {
@@ -227,7 +223,7 @@ function ChangePasswordDialog({ onClose }) {
   )
 }
 
-export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLock }) {
+export default function TopBar({ theme, onThemeToggle, onLock }) {
   const [showMenu, setShowMenu] = useState(false)
   const [showChangePw, setShowChangePw] = useState(false)
   const [showExcelImport, setShowExcelImport] = useState(false)
@@ -263,110 +259,84 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
 
   return (
     <>
-      <nav style={{ backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
-        {/* Top row */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '0 24px', height: 56, gap: 8 }}>
-          {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginRight: 16, flexShrink: 0 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700 }}>G</div>
-            <span style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>Grey Diary</span>
-          </div>
+      <header style={{
+        backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)',
+        position: 'sticky', top: 0, zIndex: 50, flexShrink: 0,
+      }}>
+        <div style={{ height: 52, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 24px', gap: 8 }}>
+          {/* Theme toggle */}
+          <button onClick={onThemeToggle} title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} style={iconBtn}>
+            {theme === 'light' ? '🌙' : '☀️'}
+          </button>
 
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: 2, overflowX: 'auto', flex: 1, scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-            {TABS.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => onTabChange(tab.id)}
-                style={{
-                  padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
-                  fontSize: '0.85rem', fontWeight: 500, whiteSpace: 'nowrap',
-                  backgroundColor: activeTab === tab.id ? 'var(--accent)' : 'transparent',
-                  color: activeTab === tab.id ? '#fff' : 'var(--text-secondary)',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          {/* Lock */}
+          <button onClick={onLock} title="Lock app" style={iconBtn}>
+            🔒
+          </button>
 
-          {/* Right controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            {/* Theme toggle */}
-            <button onClick={onThemeToggle} title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} style={iconBtn}>
-              {theme === 'light' ? '🌙' : '☀️'}
-            </button>
+          {/* Settings menu */}
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setShowMenu(v => !v)} title="Settings" style={iconBtn}>⋯</button>
 
-            {/* Lock button */}
-            <button onClick={onLock} title="Lock app" style={iconBtn}>
-              🔒
-            </button>
+            {showMenu && (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowMenu(false)} />
+                <div style={{
+                  position: 'absolute', top: 44, right: 0,
+                  backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                  padding: 8, minWidth: 220, zIndex: 100,
+                }}>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Backup & Restore</p>
 
-            {/* Backup/Settings menu */}
-            <div style={{ position: 'relative' }}>
-              <button onClick={() => setShowMenu(v => !v)} title="Settings" style={iconBtn}>⋯</button>
+                  <button
+                    onClick={() => { exportAllData(); setShowMenu(false) }}
+                    style={{ ...menuBtnStyle, color: 'var(--accent)', fontWeight: 500 }}
+                  >
+                    ↓ Export Backup
+                  </button>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
+                    Download encrypted data as JSON
+                  </p>
 
-              {showMenu && (
-                <>
-                  <div style={{ position: 'fixed', inset: 0, zIndex: 99 }} onClick={() => setShowMenu(false)} />
-                  <div style={{
-                    position: 'absolute', top: 44, right: 0,
-                    backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
-                    borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                    padding: 8, minWidth: 220, zIndex: 100,
-                  }}>
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Backup & Restore</p>
+                  <button
+                    onClick={() => { fileRef.current?.click(); setShowMenu(false) }}
+                    style={menuBtnStyle}
+                  >
+                    ↑ Restore from Backup
+                  </button>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
+                    Import a previously exported file
+                  </p>
+                  <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
 
-                    <button
-                      onClick={() => { exportAllData(); setShowMenu(false) }}
-                      style={{ ...menuBtnStyle, color: 'var(--accent)', fontWeight: 500 }}
-                    >
-                      ↓ Export Backup
-                    </button>
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
-                      Download encrypted data as JSON
-                    </p>
+                  <button
+                    onClick={() => { setShowExcelImport(true); setShowMenu(false) }}
+                    style={menuBtnStyle}
+                  >
+                    📊 Import from Excel
+                  </button>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
+                    Wizard for .xlsx files (with diff preview)
+                  </p>
 
-                    <button
-                      onClick={() => { fileRef.current?.click(); setShowMenu(false) }}
-                      style={menuBtnStyle}
-                    >
-                      ↑ Restore from Backup
-                    </button>
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
-                      Import a previously exported file
-                    </p>
-                    <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
+                  <button
+                    onClick={() => { setShowZerodhaImport(true); setShowMenu(false) }}
+                    style={menuBtnStyle}
+                  >
+                    📈 Import from Zerodha
+                  </button>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
+                    Zerodha Kite holdings .xlsx (with diff preview)
+                  </p>
 
-                    <button
-                      onClick={() => { setShowExcelImport(true); setShowMenu(false) }}
-                      style={menuBtnStyle}
-                    >
-                      📊 Import from Excel
-                    </button>
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
-                      Wizard for .xlsx files (with diff preview)
-                    </p>
+                  <div style={{ height: 1, backgroundColor: 'var(--border)', margin: '6px 0' }} />
 
-                    <button
-                      onClick={() => { setShowZerodhaImport(true); setShowMenu(false) }}
-                      style={menuBtnStyle}
-                    >
-                      📈 Import from Zerodha
-                    </button>
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>
-                      Zerodha Kite holdings .xlsx (with diff preview)
-                    </p>
-
-                    <div style={{ height: 1, backgroundColor: 'var(--border)', margin: '6px 0' }} />
-
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Account</p>
-                    <button onClick={() => { setShowChangePw(true); setShowMenu(false) }} style={menuBtnStyle}>🔑 Change Password</button>
-                  </div>
-                </>
-              )}
-            </div>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Account</p>
+                  <button onClick={() => { setShowChangePw(true); setShowMenu(false) }} style={menuBtnStyle}>🔑 Change Password</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -376,7 +346,7 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
             <button onClick={() => setImportError(null)} style={{ background: 'none', border: 'none', color: 'var(--loss)', cursor: 'pointer' }}>✕</button>
           </div>
         )}
-      </nav>
+      </header>
 
       {showChangePw && <ChangePasswordDialog onClose={() => setShowChangePw(false)} />}
       {importData && <BackupRestoreDialog data={importData} onClose={() => setImportData(null)} />}
@@ -384,10 +354,4 @@ export default function Nav({ activeTab, onTabChange, theme, onThemeToggle, onLo
       {showZerodhaImport && <ZerodhaImportWizard onClose={() => setShowZerodhaImport(false)} />}
     </>
   )
-}
-
-const menuBtnStyle = {
-  display: 'block', width: '100%', padding: '8px 12px', borderRadius: 6,
-  border: 'none', backgroundColor: 'transparent', color: 'var(--text-primary)',
-  fontSize: '0.875rem', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s',
 }
