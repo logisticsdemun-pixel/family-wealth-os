@@ -148,6 +148,7 @@ function buildDiff(fileHoldings, allInvestments, memberName) {
 }
 
 export default function ZerodhaImportWizard({ onClose }) {
+  console.log('ZerodhaImport v2 loaded')
   const { data } = useStore()
   const allInvestments = data?.investments ?? SEED_INVESTMENTS
 
