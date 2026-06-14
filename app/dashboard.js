@@ -289,13 +289,18 @@ export default function Dashboard({ activeMember }) {
 
   // ── Member breakdown rows ────────────────────────────────
   const memberRows = useMemo(() => MEMBERS.map(m => {
-    const inv = investmentValue(investments, m)
-    const re = realEstateValue(realEstate, m)
-    const gld = goldValue(gold, goldPrices, m) + jewelleryValue(gold, goldPrices, m)
-    const csh = cashValue(cashAssets, m) + fdValue(fixedIncome, m)
-    const liab = manualLiabilityValue(liabilities, m) + loanLiabilities(loans, m)
-    return { member: m, inv, re, gld, csh, liab, net: inv + re + gld + csh - liab }
-  }), [investments, gold, goldPrices, cashAssets, fixedIncome, loans, liabilities, realEstate])
+    const mx = computeMemberMetrics(data, m)
+    return { member: m, inv: mx.investments, re: mx.realEstate, gld: mx.gold, csh: mx.cash, liab: mx.liabilities, net: mx.netWorth }
+  }), [data])
+
+  const sharedLiabilities = useMemo(() =>
+    (data?.liabilities || [])
+      .filter(l => l.isShared || l.shared)
+      .reduce((s, l) => s + (l.value || 0), 0) +
+    (data?.loans || [])
+      .filter(l => l.isShared)
+      .reduce((s, l) => s + (computeOutstanding(l) ?? 0), 0),
+  [data])
 
   // ── Allocation segments ──────────────────────────────────
   const allocSegments = useMemo(() => [
@@ -512,11 +517,14 @@ export default function Dashboard({ activeMember }) {
                             <span style={{ fontWeight: 500 }}>{firstName(row.member)}</span>
                           </div>
                         </td>
-                        {[row.inv, row.re, row.gld, row.csh, row.liab].map((v, i) => (
-                          <td key={i} style={{ padding: '12px 16px', textAlign: 'right', color: v === 0 ? 'var(--text-muted)' : (i === 4 ? 'var(--loss)' : 'var(--text-primary)') }}>
+                        {[row.inv, row.re, row.gld, row.csh].map((v, i) => (
+                          <td key={i} style={{ padding: '12px 16px', textAlign: 'right', color: v === 0 ? 'var(--text-muted)' : 'var(--text-primary)' }}>
                             {v === 0 ? '—' : formatINR(v)}
                           </td>
                         ))}
+                        <td style={{ padding: '12px 16px', textAlign: 'right', color: row.liab > 0 ? '#D85A30' : 'var(--text-muted)' }}>
+                          {row.liab > 0 ? formatINR(row.liab) : '—'}
+                        </td>
                         <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: row.net >= 0 ? 'var(--text-primary)' : 'var(--loss)' }}>
                           {formatINR(row.net)}
                         </td>
@@ -525,6 +533,19 @@ export default function Dashboard({ activeMember }) {
                   </tbody>
                 </table>
               </div>
+              {sharedLiabilities > 0 && (
+                <div style={{
+                  padding: '10px 16px', marginTop: 0, fontSize: 12,
+                  color: 'var(--text-secondary)',
+                  borderTop: '0.5px solid var(--border)',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <span>Shared family liabilities (e.g. home loan) — excluded from individual net worth above</span>
+                  <span style={{ color: '#D85A30', fontWeight: 500, marginLeft: 16, flexShrink: 0 }}>
+                    {formatINR(sharedLiabilities)}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
