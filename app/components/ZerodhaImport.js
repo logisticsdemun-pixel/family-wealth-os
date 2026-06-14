@@ -68,18 +68,37 @@ function tickerMatch(inv, base) {
   return t === `${base}.NS` || t === `${base}.BO` || t === base
 }
 
+function normaliseTicker(t) {
+  if (!t) return ''
+  return t.toUpperCase().replace(/\.NS$/, '').replace(/\.BO$/, '').trim()
+}
+
 function buildDiff(rows, member) {
   const existing = load(KEYS.INVESTMENTS, SEED_INVESTMENTS)
+
+  // Build set of tickers present in the uploaded file
+  const fileTickerSet = new Set(
+    rows.map(r => normaliseTicker(r.instrument)).filter(Boolean)
+  )
+
+  // All stocks for this member (MFs have no ticker, cannot exit via holdings file)
+  const memberStocks = existing.filter(h => !h.isMF && h.member === member)
+
+  // Stocks in app NOT found in the file → potential exits
+  const exited = memberStocks.filter(h => {
+    const t = normaliseTicker(h.ticker || '')
+    return t && !fileTickerSet.has(t)
+  })
+
   const toAdd = []
   const toUpdate = []
-
   for (const row of rows) {
     const match = existing.find(inv => !inv.isMF && inv.member === member && tickerMatch(inv, row.instrument))
     if (match) toUpdate.push({ existing: match, row })
     else toAdd.push(row)
   }
 
-  return { toAdd, toUpdate }
+  return { toAdd, toUpdate, exited }
 }
 
 export default function ZerodhaImportWizard({ onClose }) {
