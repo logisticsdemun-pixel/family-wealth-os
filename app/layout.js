@@ -1,6 +1,7 @@
 import './globals.css'
 import AuthShell from './components/AuthShell'
 import { Inter } from 'next/font/google'
+import { ClerkProvider } from '@clerk/nextjs'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -16,6 +17,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
+    <ClerkProvider>
     <html lang="en" suppressHydrationWarning className={inter.variable}>
       <head>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
@@ -25,5 +27,6 @@ export default function RootLayout({ children }) {
         <AuthShell>{children}</AuthShell>
       </body>
     </html>
+    </ClerkProvider>
   )
 }
