@@ -37,8 +37,9 @@ export default function AppShell() {
 
   const role = user?.publicMetadata?.role || 'member'
   const isAdmin = role === 'admin'
+  const isReadOnly = role === 'viewer'
 
-  const pageProps = { activeMember }
+  const pageProps = { activeMember, isReadOnly }
 
   return (
     <div style={{
@@ -59,6 +60,18 @@ export default function AppShell() {
       }}>
         <TopBar activeMember={activeMember} />
         <MemberFilter selected={activeMember} onChange={setActiveMember} />
+        {isReadOnly && (
+          <div style={{
+            backgroundColor: '#FBF5E0',
+            borderBottom: '0.5px solid #E0D0A0',
+            padding: '6px 24px',
+            fontSize: 12,
+            color: '#854F0B',
+            flexShrink: 0,
+          }}>
+            View only — contact the admin to make changes
+          </div>
+        )}
 
         <div style={{
           flex: 1,
