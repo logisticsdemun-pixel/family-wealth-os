@@ -18,7 +18,7 @@ const BOTTOM_ITEMS = [
   { id: 'beneficiary', label: 'Beneficiary', icon: 'ti-users' },
 ]
 
-export default function Sidebar({ activePage, onNavigate }) {
+export default function Sidebar({ activePage, onNavigate, isAdmin = false }) {
   const { data } = useStore()
   const metrics = useMemo(() => computeAllMetrics(data), [data])
 
@@ -108,6 +108,28 @@ export default function Sidebar({ activePage, onNavigate }) {
             </div>
           </div>
         ))}
+
+        {isAdmin && (
+          <div style={itemStyle('users')} onClick={() => onNavigate('users')}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <i
+                className="ti ti-users"
+                style={{
+                  fontSize: 15,
+                  color: activePage === 'users' ? 'var(--color-sidebar-text)' : 'var(--color-sidebar-muted)',
+                }}
+                aria-hidden="true"
+              />
+              <span style={{
+                fontSize: 13,
+                fontWeight: activePage === 'users' ? 500 : 400,
+                color: activePage === 'users' ? 'var(--color-sidebar-text)' : 'var(--color-sidebar-muted)',
+              }}>
+                Users
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Family selector */}

@@ -12,6 +12,7 @@ import Insurance from '../insurance'
 import RealEstate from '../realestate'
 import Artha from '../artha'
 import Goals from '../goals'
+import UserManagement from './UserManagement'
 
 export default function AppShell() {
   const { user, isLoaded, isSignedIn } = useUser()
@@ -73,6 +74,9 @@ export default function AppShell() {
             {activePage === 'insurance'   && <Insurance   {...pageProps} />}
             {activePage === 'artha'       && <Artha       {...pageProps} />}
             {activePage === 'goals'       && <Goals       {...pageProps} />}
+            {activePage === 'users'       && isAdmin && (
+              <UserManagement onBack={() => setActivePage('dashboard')} />
+            )}
           </div>
         </div>
       </div>
