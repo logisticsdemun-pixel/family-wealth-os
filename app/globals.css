@@ -87,6 +87,12 @@ input, select, textarea, button { font-family: inherit; }
   animation: fadeIn 0.15s ease-in;
 }
 
+/* ── Spinner ────────────────────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 /* ── SaveBar pending indicator ─────────────────────────── */
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }

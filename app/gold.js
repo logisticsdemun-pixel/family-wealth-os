@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { KEYS, load, save } from './lib/storage'
 import { formatINR, gainColor, firstName, MEMBERS } from './lib/format'
 import { DEFAULT_GOLD_PRICES } from './lib/seedData'
@@ -189,10 +189,14 @@ export default function Gold({ activeMember }) {
   const [showPrices, setShowPrices] = useState(false)
   const [localPrices, setLocalPrices] = useState(null)
 
-  const [goldPriceUpdatedAt] = useState(() => load(KEYS.GOLD_PRICE_UPDATED, null))
+  const [goldPriceUpdatedAt, setGoldPriceUpdatedAt] = useState(() => load(KEYS.GOLD_PRICE_UPDATED, null))
   const goldPriceAgeDays = goldPriceUpdatedAt
     ? Math.floor((Date.now() - new Date(goldPriceUpdatedAt).getTime()) / (24 * 60 * 60 * 1000))
     : null
+
+  const [fetchingGoldPrice, setFetchingGoldPrice] = useState(false)
+  const [goldPriceMeta, setGoldPriceMeta] = useState(null)
+  const [goldPriceError, setGoldPriceError] = useState(null)
 
   function saveGold(updated) { set(KEYS.GOLD, updated) }
   function updatePrices(prices) { set(KEYS.GOLD_PRICES, prices) }
@@ -200,11 +204,41 @@ export default function Gold({ activeMember }) {
   function savePrices() {
     if (localPrices) {
       updatePrices(localPrices)
-      save(KEYS.GOLD_PRICE_UPDATED, new Date().toISOString())
+      const now = new Date().toISOString()
+      save(KEYS.GOLD_PRICE_UPDATED, now)
+      setGoldPriceUpdatedAt(now)
     }
     setShowPrices(false)
     setLocalPrices(null)
   }
+
+  const handleRefreshGoldPrices = useCallback(async () => {
+    setFetchingGoldPrice(true)
+    setGoldPriceError(null)
+    try {
+      const res = await fetch('/api/gold-price')
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || 'Failed to fetch prices')
+      updatePrices(json.prices)
+      const now = new Date().toISOString()
+      save(KEYS.GOLD_PRICE_UPDATED, now)
+      setGoldPriceUpdatedAt(now)
+      setGoldPriceMeta(json.meta)
+    } catch (err) {
+      setGoldPriceError(err.message)
+    } finally {
+      setFetchingGoldPrice(false)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh on mount if prices are older than 12 hours
+  useEffect(() => {
+    const lastUpdated = load(KEYS.GOLD_PRICE_UPDATED, null)
+    const twelveHours = 12 * 60 * 60 * 1000
+    const isStale = !lastUpdated ||
+      Date.now() - new Date(lastUpdated).getTime() > twelveHours
+    if (isStale) handleRefreshGoldPrices()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleSave(item) {
     if (item.id && gold.find(g => g.id === item.id)) {
@@ -231,7 +265,7 @@ export default function Gold({ activeMember }) {
     <PageLayout>
 
       {/* ── Header ────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: showPrices ? 12 : 20, flexWrap: 'wrap', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <h2 style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>Gold</h2>
           <p style={{ margin: '3px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
@@ -240,10 +274,18 @@ export default function Gold({ activeMember }) {
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
           <button
+            onClick={handleRefreshGoldPrices}
+            disabled={fetchingGoldPrice}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-primary)', color: fetchingGoldPrice ? 'var(--text-muted)' : 'var(--color-text-primary)', fontSize: '0.8rem', cursor: fetchingGoldPrice ? 'not-allowed' : 'pointer' }}
+          >
+            <i className="ti ti-refresh" style={{ fontSize: 15, animation: fetchingGoldPrice ? 'spin 1s linear infinite' : 'none' }} aria-hidden="true" />
+            {fetchingGoldPrice ? 'Fetching…' : 'Refresh Prices'}
+          </button>
+          <button
             onClick={showPrices ? () => setShowPrices(false) : openPrices}
             style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            Today's Gold Price
+            Today&apos;s Gold Price
             <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
               {formatINR(goldPrices[24])}/g
             </span>
@@ -262,6 +304,56 @@ export default function Gold({ activeMember }) {
           </button>
         </div>
       </div>
+
+      {/* ── Source info panel (after successful refresh) ──── */}
+      {goldPriceMeta && (() => {
+        const ageMinutes = goldPriceUpdatedAt
+          ? Math.round((Date.now() - new Date(goldPriceUpdatedAt).getTime()) / 60000)
+          : null
+        return (
+          <div style={{ padding: '10px 14px', background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 8, marginBottom: 16, fontSize: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+              <div>
+                <p style={{ margin: '0 0 4px', color: 'var(--color-text-primary)', fontWeight: 500 }}>
+                  Price source:{' '}
+                  <a href={goldPriceMeta.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#534AB7', marginLeft: 4, textDecoration: 'none' }}>
+                    {goldPriceMeta.source}
+                  </a>
+                </p>
+                <p style={{ margin: 0, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                  Spot price: ${goldPriceMeta.spotPriceUSD}/oz · USD/INR: ₹{goldPriceMeta.usdToINR}
+                  {ageMinutes !== null ? (ageMinutes < 60 ? ` · Updated ${ageMinutes}m ago` : ` · Updated ${Math.round(ageMinutes / 60)}h ago`) : ''}
+                </p>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <p style={{ margin: '0 0 2px', fontWeight: 500, color: 'var(--color-text-primary)' }}>24K: ₹{goldPrices[24]?.toLocaleString('en-IN')}/g</p>
+                <p style={{ margin: '0 0 2px', color: 'var(--color-text-secondary)' }}>22K: ₹{goldPrices[22]?.toLocaleString('en-IN')}/g</p>
+                <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>18K: ₹{goldPrices[18]?.toLocaleString('en-IN')}/g</p>
+              </div>
+            </div>
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--color-border-tertiary)', color: '#854F0B', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+              <i className="ti ti-alert-triangle" style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
+              <span>
+                {goldPriceMeta.note}{' '}For Indian retail rates, check{' '}
+                <a href="https://ibja.co" target="_blank" rel="noopener noreferrer" style={{ color: '#854F0B' }}>ibja.co</a>
+                {' '}(India Bullion and Jewellers Association).
+              </span>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Error state ───────────────────────────────────── */}
+      {goldPriceError && (
+        <div style={{ padding: '10px 14px', background: '#FCEBEB', border: '0.5px solid #F09595', borderRadius: 8, marginBottom: 16, fontSize: 12, color: '#A32D2D', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <i className="ti ti-alert-circle" style={{ fontSize: 14, flexShrink: 0 }} aria-hidden="true" />
+          <span>
+            Could not fetch live prices: {goldPriceError}. You can still update prices manually using the &ldquo;Today&rsquo;s Gold Price&rdquo; button. Check{' '}
+            <a href="https://ibja.co" target="_blank" rel="noopener noreferrer" style={{ color: '#A32D2D' }}>ibja.co</a>
+            {' '}for today&rsquo;s IBJA rates.
+          </span>
+        </div>
+      )}
 
       {/* ── Compact price panel ───────────────────────────── */}
       {showPrices && (
@@ -315,7 +407,7 @@ export default function Gold({ activeMember }) {
       {goldPriceAgeDays !== null && goldPriceAgeDays > 7 && (
         <div style={{ padding: '8px 14px', background: '#FAEEDA', borderRadius: 8, fontSize: 12, color: '#854F0B', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
           <i className="ti ti-alert-triangle" style={{ fontSize: 14 }} aria-hidden="true" />
-          Gold prices were last updated {goldPriceAgeDays} days ago. Click &ldquo;Today&rsquo;s Gold Price&rdquo; to update them.
+          Gold prices were last updated {goldPriceAgeDays} days ago. Click &ldquo;Refresh Prices&rdquo; to fetch live rates, or &ldquo;Today&rsquo;s Gold Price&rdquo; to enter manually.
         </div>
       )}
 
