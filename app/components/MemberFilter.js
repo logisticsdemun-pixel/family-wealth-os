@@ -19,7 +19,6 @@ export default function MemberFilter({ selected, onChange }) {
       flexShrink: 0,
       background: 'var(--color-background-primary)',
     }}>
-      <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginRight: 4 }}>View</span>
       {MEMBERS.map(m => (
         <button
           key={m.id}

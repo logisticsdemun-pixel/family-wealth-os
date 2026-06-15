@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { load, save, KEYS } from './lib/storage'
 import { useStore } from './lib/store'
 import { formatINR, formatPct, gainColor, firstName, MEMBERS, calculateCAGR, yearsElapsed } from './lib/format'
@@ -871,6 +871,28 @@ export default function Investments({ activeMember }) {
     setLastUpdated(ts)
     save(KEYS.PRICE_UPDATED, ts)
     takeSnapshotFromStorage()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh on mount and every 15 minutes
+  useEffect(() => {
+    refreshPrices()
+    const interval = setInterval(() => refreshPrices(), 15 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refresh when tab becomes visible again (if >15 min since last update)
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        const stored = load(KEYS.PRICE_UPDATED, null)
+        const fifteenMins = 15 * 60 * 1000
+        if (!stored || Date.now() - new Date(stored).getTime() > fifteenMins) {
+          refreshPrices()
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const allFiltered = filterByMember(investments, activeMember)

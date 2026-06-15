@@ -10,6 +10,7 @@ import Loans from '../loans'
 import Insurance from '../insurance'
 import RealEstate from '../realestate'
 import Artha from '../artha'
+import Goals from '../goals'
 
 export default function AppShell() {
   const [activePage, setActivePage] = useState('dashboard')
@@ -50,6 +51,7 @@ export default function AppShell() {
             {activePage === 'loans'       && <Loans       {...pageProps} />}
             {activePage === 'insurance'   && <Insurance   {...pageProps} />}
             {activePage === 'artha'       && <Artha       {...pageProps} />}
+            {activePage === 'goals'       && <Goals       {...pageProps} />}
           </div>
         </div>
       </div>

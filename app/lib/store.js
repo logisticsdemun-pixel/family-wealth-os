@@ -19,6 +19,7 @@ const KEY_TO_COLLECTION = {
   [KEYS.LIABILITIES]:  'liabilities',
   [KEYS.SNAPSHOTS]:    'snapshots',
   [KEYS.PRICE_CACHE]:  'priceCache',
+  [KEYS.GOALS]:        'goals',
 }
 
 // Prevents handleExternalChange from re-loading when the store
@@ -48,6 +49,7 @@ function readAll() {
     liabilities:  (load(KEYS.LIABILITIES, SEED_LIABILITIES)   ?? []).filter(l => l.member),
     snapshots:    load(KEYS.SNAPSHOTS, [])                     ?? [],
     priceCache:   load(KEYS.PRICE_CACHE, {})                   ?? {},
+    goals:        load(KEYS.GOALS, [])                         ?? [],
   }
 }
 

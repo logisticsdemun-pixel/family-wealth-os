@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { KEYS } from './lib/storage'
+import { KEYS, load, save } from './lib/storage'
 import { formatINR, gainColor, firstName, MEMBERS } from './lib/format'
 import { DEFAULT_GOLD_PRICES } from './lib/seedData'
 import { useStore } from './lib/store'
@@ -189,10 +189,22 @@ export default function Gold({ activeMember }) {
   const [showPrices, setShowPrices] = useState(false)
   const [localPrices, setLocalPrices] = useState(null)
 
+  const [goldPriceUpdatedAt] = useState(() => load(KEYS.GOLD_PRICE_UPDATED, null))
+  const goldPriceAgeDays = goldPriceUpdatedAt
+    ? Math.floor((Date.now() - new Date(goldPriceUpdatedAt).getTime()) / (24 * 60 * 60 * 1000))
+    : null
+
   function saveGold(updated) { set(KEYS.GOLD, updated) }
   function updatePrices(prices) { set(KEYS.GOLD_PRICES, prices) }
   function openPrices() { setLocalPrices({ ...goldPrices }); setShowPrices(true) }
-  function savePrices() { if (localPrices) updatePrices(localPrices); setShowPrices(false); setLocalPrices(null) }
+  function savePrices() {
+    if (localPrices) {
+      updatePrices(localPrices)
+      save(KEYS.GOLD_PRICE_UPDATED, new Date().toISOString())
+    }
+    setShowPrices(false)
+    setLocalPrices(null)
+  }
 
   function handleSave(item) {
     if (item.id && gold.find(g => g.id === item.id)) {
@@ -298,6 +310,14 @@ export default function Gold({ activeMember }) {
           subColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
         },
       ]} />
+
+      {/* ── Stale price warning ───────────────────────────── */}
+      {goldPriceAgeDays !== null && goldPriceAgeDays > 7 && (
+        <div style={{ padding: '8px 14px', background: '#FAEEDA', borderRadius: 8, fontSize: 12, color: '#854F0B', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <i className="ti ti-alert-triangle" style={{ fontSize: 14 }} aria-hidden="true" />
+          Gold prices were last updated {goldPriceAgeDays} days ago. Click &ldquo;Today&rsquo;s Gold Price&rdquo; to update them.
+        </div>
+      )}
 
       {/* ── Sub-tabs ──────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
