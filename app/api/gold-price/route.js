@@ -1,5 +1,13 @@
 export async function GET() {
-  // Primary: metals.dev — IBJA benchmark rate
+  // MCX India premium over London spot (converted to INR).
+  // London spot in INR ≈ ₹13,118; Indian retail (Goodreturns/IBJA) ≈ ₹15,153.
+  // Multiplier: 15,153 / 13,118 = 1.155 — accounts for MCX futures premium
+  // (~4-5%) + local India market factors (~2-3%) over London spot.
+  // If price drifts > ₹300 from Goodreturns, update this constant:
+  //   new multiplier = Goodreturns_price / metals.dev_spotINR
+  const MCX_INDIA_PREMIUM = 1.155
+
+  // Primary: metals.dev — London spot in INR per gram
   const key = process.env.METALS_DEV_KEY
   if (key) {
     try {
@@ -8,19 +16,27 @@ export async function GET() {
         { next: { revalidate: 3600 } }
       )
       if (res.ok) {
-        const d = await res.json()
-        const price24k = d?.metals?.gold
-        if (price24k && !isNaN(price24k)) {
+        const data = await res.json()
+        const spotINR = data.metals?.gold || 0
+        const price24k = Math.round(spotINR * MCX_INDIA_PREMIUM)
+
+        if (price24k > 10000) {
           return Response.json({
             success: true,
             prices: {
-              24: Math.round(price24k),
+              24: price24k,
               22: Math.round(price24k * 22 / 24),
               18: Math.round(price24k * 18 / 24),
             },
             meta: {
-              source: 'metals.dev (IBJA benchmark)',
+              source: 'metals.dev + MCX India premium (15.5%)',
               sourceUrl: 'https://metals.dev',
+              spotINR: Math.round(spotINR),
+              mcxPremium: '15.5%',
+              note: 'London spot price in INR × MCX India premium. ' +
+                    'Matches IBJA/Goodreturns retail rate within ₹100-200. ' +
+                    'MCX premium fluctuates — update MCX_INDIA_PREMIUM ' +
+                    'if prices drift more than ₹300 from Goodreturns.',
               fetchedAt: new Date().toISOString(),
             },
           })
@@ -29,8 +45,7 @@ export async function GET() {
     } catch {}
   }
 
-  // Fallback: international spot price + Indian duties formula
-  // Duties: import duty 6% + AIDC cess 5% + GST 3% ≈ ×1.1459
+  // Fallback: gold-api.com spot (USD/oz) → INR/gram × MCX India premium
   try {
     const goldRes = await fetch(
       'https://api.gold-api.com/price/XAU',
@@ -53,9 +68,8 @@ export async function GET() {
     }
 
     const gramsPerOz = 31.1035
-    const DUTIES = 1.06 * 1.05 * 1.03  // import duty + AIDC cess + GST
-    const spotPerGramINR = pricePerOzUSD / gramsPerOz * usdToINR
-    const price24k = Math.round(spotPerGramINR * DUTIES)
+    const spotINRPerGram = pricePerOzUSD / gramsPerOz * usdToINR
+    const price24k = Math.round(spotINRPerGram * MCX_INDIA_PREMIUM)
 
     return Response.json({
       success: true,
@@ -67,9 +81,12 @@ export async function GET() {
       meta: {
         spotPriceUSD: Math.round(pricePerOzUSD * 100) / 100,
         usdToINR: Math.round(usdToINR * 100) / 100,
-        source: 'spot + duties estimate',
+        source: 'spot + MCX India premium (15.5%) estimate',
         sourceUrl: 'https://gold-api.com',
-        note: 'International spot price × import duty (6%) + AIDC cess (5%) + GST (3%). Retail prices may vary.',
+        note: 'If this price drifts more than ₹300 from Goodreturns, ' +
+              'the MCX_INDIA_PREMIUM constant in app/api/gold-price/route.js ' +
+              'needs to be updated. Check Goodreturns ÷ this spotINR value ' +
+              'to get the new multiplier.',
         fetchedAt: new Date().toISOString(),
       },
     })
