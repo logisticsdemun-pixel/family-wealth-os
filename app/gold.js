@@ -310,19 +310,29 @@ export default function Gold({ activeMember }) {
         const ageMinutes = goldPriceUpdatedAt
           ? Math.round((Date.now() - new Date(goldPriceUpdatedAt).getTime()) / 60000)
           : null
+        const isIBJA = (goldPriceMeta.source || '').toLowerCase().includes('ibja')
         return (
           <div style={{ padding: '10px 14px', background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 8, marginBottom: 16, fontSize: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
               <div>
-                <p style={{ margin: '0 0 4px', color: 'var(--color-text-primary)', fontWeight: 500 }}>
-                  Price source:{' '}
-                  <a href={goldPriceMeta.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#534AB7', marginLeft: 4, textDecoration: 'none' }}>
-                    {goldPriceMeta.source}
-                  </a>
-                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <p style={{ margin: 0, color: 'var(--color-text-primary)', fontWeight: 500 }}>
+                    Price source:{' '}
+                    <a href={goldPriceMeta.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)', marginLeft: 4, textDecoration: 'none' }}>
+                      {goldPriceMeta.source}
+                    </a>
+                  </p>
+                  {isIBJA ? (
+                    <span style={{ padding: '2px 7px', borderRadius: 20, backgroundColor: '#E6F9F2', color: '#1D9E75', fontSize: 11, fontWeight: 500, flexShrink: 0 }}>✓ IBJA Rate</span>
+                  ) : (
+                    <span style={{ padding: '2px 7px', borderRadius: 20, backgroundColor: '#FEF3CD', color: '#854F0B', fontSize: 11, fontWeight: 500, flexShrink: 0 }}>≈ Spot + Duties estimate</span>
+                  )}
+                </div>
                 <p style={{ margin: 0, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                  Spot price: ${goldPriceMeta.spotPriceUSD}/oz · USD/INR: ₹{goldPriceMeta.usdToINR}
-                  {ageMinutes !== null ? (ageMinutes < 60 ? ` · Updated ${ageMinutes}m ago` : ` · Updated ${Math.round(ageMinutes / 60)}h ago`) : ''}
+                  {!isIBJA && goldPriceMeta.spotPriceUSD && (
+                    <>{`Spot: $${goldPriceMeta.spotPriceUSD}/oz · USD/INR: ₹${goldPriceMeta.usdToINR} · `}</>
+                  )}
+                  {ageMinutes !== null ? (ageMinutes < 60 ? `Updated ${ageMinutes}m ago` : `Updated ${Math.round(ageMinutes / 60)}h ago`) : ''}
                 </p>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -331,14 +341,16 @@ export default function Gold({ activeMember }) {
                 <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>18K: ₹{goldPrices[18]?.toLocaleString('en-IN')}/g</p>
               </div>
             </div>
-            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--color-border-tertiary)', color: '#854F0B', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-              <i className="ti ti-alert-triangle" style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
-              <span>
-                {goldPriceMeta.note}{' '}For Indian retail rates, check{' '}
-                <a href="https://ibja.co" target="_blank" rel="noopener noreferrer" style={{ color: '#854F0B' }}>ibja.co</a>
-                {' '}(India Bullion and Jewellers Association).
-              </span>
-            </div>
+            {!isIBJA && (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--color-border-tertiary)', color: '#854F0B', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                <i className="ti ti-alert-triangle" style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
+                <span>
+                  {goldPriceMeta.note}{' '}For Indian retail rates, check{' '}
+                  <a href="https://ibja.co" target="_blank" rel="noopener noreferrer" style={{ color: '#854F0B' }}>ibja.co</a>
+                  {' '}(India Bullion and Jewellers Association).
+                </span>
+              </div>
+            )}
           </div>
         )
       })()}
