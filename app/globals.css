@@ -109,6 +109,11 @@ input, select, textarea, button { font-family: inherit; }
   50%       { opacity: 0.35; transform: scale(0.85); }
 }
 
+/* ── Dark mode metric card override ───────────────────── */
+[data-theme="dark"] .metric-card-white {
+  background: var(--color-background-secondary) !important;
+}
+
 .pulse-dot {
   display: inline-block;
   width: 8px;

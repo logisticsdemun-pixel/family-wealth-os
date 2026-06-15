@@ -335,11 +335,13 @@ export default function Dashboard({ activeMember }) {
   const monthChange = monthSnap ? viewMetrics.netWorth - monthSnap.netWorth : 0
 
   // ── Counts for metric card subtitles ─────────────────────
-  const invCount  = filterByMember(investments, activeMember).length
-  const reCount   = filterByMember(realEstate,  activeMember).length
-  const goldCount = filterByMember(gold,         activeMember).length
-  const cashCount = filterByMember(cashAssets,   activeMember).length
-                  + filterByMember(fixedIncome,  activeMember).length
+  const invCount       = filterByMember(investments, activeMember).length
+  const reCount        = filterByMember(realEstate,  activeMember).length
+  const goldCount      = filterByMember(gold,         activeMember).length
+  const cashCount      = filterByMember(cashAssets,   activeMember).length
+                       + filterByMember(fixedIncome,  activeMember).length
+  const totalGoldGrams = filterByMember(gold, activeMember).reduce((s, g) => s + (g.grams || 0), 0)
+  const fdCount        = filterByMember(fixedIncome, activeMember).length
 
   return (
     <PageLayout maxWidth={1100}>
@@ -411,48 +413,55 @@ export default function Dashboard({ activeMember }) {
         </div>
       </div>
 
-      {/* ── METRIC ROW — joined card group ───────────────── */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-        border: '0.5px solid var(--color-border-tertiary)',
-        borderRadius: 'var(--border-radius-lg)',
-        overflow: 'hidden', marginBottom: 24,
-        background: 'var(--color-border-tertiary)',
-        gap: '0.5px',
-      }}>
+      {/* ── METRIC CARDS — white, separated ──────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
         {[
           {
-            lbl: 'INVESTMENTS', icon: 'ti-trending-up', val: viewMetrics.investments,
+            label: 'INVESTMENTS',
+            value: formatINR(viewMetrics.investments),
             sub: invGain !== 0
-              ? `${invGain >= 0 ? '+' : '-'}${fmtAxisINR(Math.abs(invGain))} gain`
+              ? `${invGain >= 0 ? '+' : ''}${fmtAxisINR(invGain)} gain`
               : `${invCount} holding${invCount === 1 ? '' : 's'}`,
-            subColor: invGain >= 0 ? '#1D9E75' : '#D85A30',
+            valueColor: 'var(--color-text-primary)',
+            subColor: invGain >= 0 ? '#2D6A4F' : '#D85A30',
           },
           {
-            lbl: 'REAL ESTATE', icon: 'ti-building-estate', val: viewMetrics.realEstate,
+            label: 'REAL ESTATE',
+            value: formatINR(viewMetrics.realEstate),
             sub: `${reCount} propert${reCount === 1 ? 'y' : 'ies'}`,
+            valueColor: 'var(--color-text-primary)',
             subColor: 'var(--color-text-secondary)',
           },
           {
-            lbl: 'GOLD', icon: 'ti-coin', val: viewMetrics.gold,
-            sub: `${goldCount} item${goldCount === 1 ? '' : 's'}`,
+            label: 'GOLD',
+            value: formatINR(viewMetrics.gold),
+            sub: totalGoldGrams > 0 ? `${totalGoldGrams.toFixed(0)}g total` : `${goldCount} item${goldCount === 1 ? '' : 's'}`,
+            valueColor: '#C9A84C',
             subColor: 'var(--color-text-secondary)',
           },
           {
-            lbl: 'CASH & FDS', icon: 'ti-wallet', val: viewMetrics.cash,
-            sub: `${cashCount} account${cashCount === 1 ? '' : 's'}`,
+            label: 'CASH & FDS',
+            value: formatINR(viewMetrics.cash),
+            sub: fdCount > 0 ? `${fdCount} FD active` : 'Savings only',
+            valueColor: 'var(--color-text-primary)',
             subColor: 'var(--color-text-secondary)',
           },
-        ].map(m => (
-          <div key={m.lbl} style={{ background: 'var(--color-background-primary)', padding: '16px 20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
-              <i className={`ti ${m.icon}`} style={{ fontSize: 13, color: 'var(--color-text-secondary)' }} />
-              <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-secondary)' }}>{m.lbl}</span>
-            </div>
-            <p style={{ margin: '0 0 5px', fontSize: 18, fontWeight: 500, letterSpacing: '-0.5px', color: 'var(--color-text-primary)' }}>
-              {formatINR(m.val)}
+        ].map(card => (
+          <div key={card.label} className="metric-card-white" style={{
+            background: '#FFFFFF',
+            borderRadius: 10,
+            border: '0.5px solid var(--color-border-tertiary)',
+            padding: '16px 18px',
+          }}>
+            <p style={{ fontSize: 10, fontWeight: 400, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 10px' }}>
+              {card.label}
             </p>
-            <p style={{ margin: 0, fontSize: 11, color: m.subColor }}>{m.sub}</p>
+            <p style={{ fontSize: 18, fontWeight: 600, color: card.valueColor, letterSpacing: '-0.3px', margin: card.sub ? '0 0 3px' : 0 }}>
+              {card.value}
+            </p>
+            {card.sub && (
+              <p style={{ fontSize: 11, color: card.subColor, margin: 0 }}>{card.sub}</p>
+            )}
           </div>
         ))}
       </div>
