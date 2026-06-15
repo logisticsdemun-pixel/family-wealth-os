@@ -8,6 +8,7 @@ import { takeSnapshot } from './lib/snapshot'
 import { useStore } from './lib/store'
 import { computeMemberMetrics } from './lib/metrics'
 import PageLayout from './components/PageLayout'
+import DailySummary from './components/DailySummary'
 
 const ASSET_TYPES = ['Cash & Savings', 'Fixed Deposit', 'EPF / PPF', 'Real Estate', 'Crypto', 'Other']
 const LIABILITY_TYPES = ['Credit Card', 'Personal Loan', 'Education Loan', 'Other Debt']
@@ -267,6 +268,7 @@ export default function Dashboard({ activeMember }) {
 
   const [showAddCash, setShowAddCash] = useState(false)
   const [showAddLiability, setShowAddLiability] = useState(false)
+  const [showDailySummary, setShowDailySummary] = useState(false)
 
   // ── Shared metrics (identical logic to sidebar) ──────────
   const viewMetrics = useMemo(
@@ -343,6 +345,15 @@ export default function Dashboard({ activeMember }) {
   const totalGoldGrams = filterByMember(gold, activeMember).reduce((s, g) => s + (g.grams || 0), 0)
   const fdCount        = filterByMember(fixedIncome, activeMember).length
 
+  if (showDailySummary) {
+    return (
+      <DailySummary
+        memberFilter={activeMember}
+        onBack={() => setShowDailySummary(false)}
+      />
+    )
+  }
+
   return (
     <PageLayout maxWidth={1100}>
 
@@ -392,12 +403,27 @@ export default function Dashboard({ activeMember }) {
 
           <div style={{ width: '0.5px', height: 36, background: 'var(--color-border-secondary)', flexShrink: 0 }} />
 
-          <div>
-            <p style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>Today</p>
-            <p style={{ fontSize: 18, fontWeight: 600, color: dayChange >= 0 ? '#2D6A4F' : '#D85A30', letterSpacing: '-0.3px', margin: 0 }}>
+          <button
+            onClick={() => setShowDailySummary(true)}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+          >
+            <p style={{
+              fontSize: 10, color: 'var(--color-text-secondary)',
+              textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px',
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}>
+              Today
+              <span style={{ fontSize: 10 }}>→</span>
+            </p>
+            <p style={{
+              fontSize: 18, fontWeight: 600,
+              color: dayChange >= 0 ? '#2D6A4F' : '#D85A30',
+              letterSpacing: '-0.3px', margin: 0,
+              textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3,
+            }}>
               {dayChange >= 0 ? '+' : ''}{formatINR(dayChange)}
             </p>
-          </div>
+          </button>
 
           {monthChange !== 0 && (
             <span style={{
