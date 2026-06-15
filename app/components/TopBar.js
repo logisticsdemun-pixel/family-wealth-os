@@ -175,6 +175,13 @@ function ChangePasswordDialog({ onClose }) {
   )
 }
 
+function getGreeting() {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
 export default function TopBar({ activeMember }) {
   const { dirty, flush } = useStore()
   const handleLock = useLock()
@@ -235,8 +242,8 @@ export default function TopBar({ activeMember }) {
         flexShrink: 0,
         background: 'var(--color-background-primary)',
       }}>
-        <span style={{ fontSize: 16, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-          Hello, {greetingName}
+        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', letterSpacing: '-0.2px' }}>
+          {getGreeting()}, {greetingName} 👋
         </span>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
