@@ -330,9 +330,9 @@ export default function Dashboard({ activeMember }) {
   const prevDayNW = snapshots[snapshots.length - 2]?.netWorth ?? viewMetrics.netWorth
   const dayChange = viewMetrics.netWorth - prevDayNW
 
-  const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-  const yearAgoNW = snapshots.find(s => new Date(s.date) >= oneYearAgo)?.netWorth ?? viewMetrics.netWorth
-  const yearChange = viewMetrics.netWorth - yearAgoNW
+  const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const monthSnap = snapshots.find(s => new Date(s.date) >= thirtyDaysAgo)
+  const monthChange = monthSnap ? viewMetrics.netWorth - monthSnap.netWorth : 0
 
   // ── Counts for metric card subtitles ─────────────────────
   const invCount  = filterByMember(investments, activeMember).length
@@ -340,8 +340,6 @@ export default function Dashboard({ activeMember }) {
   const goldCount = filterByMember(gold,         activeMember).length
   const cashCount = filterByMember(cashAssets,   activeMember).length
                   + filterByMember(fixedIncome,  activeMember).length
-
-  const nwLabel = activeMember === 'All' ? 'Net Worth' : `${firstName(activeMember)} Net Worth`
 
   return (
     <PageLayout maxWidth={1100}>
@@ -353,47 +351,63 @@ export default function Dashboard({ activeMember }) {
         </div>
       )}
 
-      {/* ── HERO ROW — joined card group ─────────────────── */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
-        border: '0.5px solid var(--color-border-tertiary)',
-        borderRadius: 'var(--border-radius-lg)',
-        overflow: 'hidden', marginBottom: 12,
-        background: 'var(--color-border-tertiary)',
-        gap: '0.5px',
-      }}>
-        {/* Net Worth */}
-        <div style={{ background: 'var(--color-background-primary)', padding: '24px 24px 20px' }}>
-          <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>{nwLabel}</p>
-          <p style={{ margin: '0 0 12px', fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px', color: viewMetrics.netWorth >= 0 ? 'var(--color-text-primary)' : 'var(--loss)' }}>
-            {formatINR(viewMetrics.netWorth)}
-          </p>
-          <div style={{ display: 'flex', gap: 16 }}>
-            {[{ lbl: '1 Day', v: dayChange }, { lbl: '1 Year', v: yearChange }].map(({ lbl, v }) => (
-              <div key={lbl}>
-                <p style={{ margin: '0 0 2px', fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{lbl}</p>
-                <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: v >= 0 ? '#1D9E75' : '#D85A30' }}>
-                  {v >= 0 ? '+' : ''}{formatINR(v)}
-                </p>
-              </div>
-            ))}
+      {/* ── HERO — no box, pure typography ───────────────── */}
+      <div style={{ marginBottom: 28 }}>
+        {/* Eyebrow */}
+        <p style={{
+          fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)',
+          textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px',
+        }}>
+          {activeMember === 'All' ? 'Family net worth' : `${activeMember.split(' ')[0]}'s net worth`}
+        </p>
+
+        {/* Big number */}
+        <p style={{
+          fontSize: 36, fontWeight: 700, color: viewMetrics.netWorth >= 0 ? 'var(--color-text-primary)' : '#D85A30',
+          letterSpacing: '-0.8px', lineHeight: 1, margin: '0 0 16px',
+          fontFamily: 'var(--font-inter), sans-serif',
+        }}>
+          {formatINR(viewMetrics.netWorth)}
+        </p>
+
+        {/* Stats row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>Total assets</p>
+            <p style={{ fontSize: 18, fontWeight: 600, color: 'var(--color-text-primary)', letterSpacing: '-0.3px', margin: 0 }}>
+              {formatINR(viewMetrics.totalAssets)}
+            </p>
           </div>
-        </div>
 
-        {/* Assets */}
-        <div style={{ background: 'var(--color-background-primary)', padding: '24px 24px 20px' }}>
-          <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>Total Assets</p>
-          <p style={{ margin: 0, fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px', color: '#1D9E75' }}>
-            {formatINR(viewMetrics.totalAssets)}
-          </p>
-        </div>
+          <div style={{ width: '0.5px', height: 36, background: 'var(--color-border-secondary)', flexShrink: 0 }} />
 
-        {/* Liabilities */}
-        <div style={{ background: 'var(--color-background-primary)', padding: '24px 24px 20px' }}>
-          <p style={{ margin: '0 0 10px', fontSize: 11, color: 'var(--color-text-secondary)' }}>Total Liabilities</p>
-          <p style={{ margin: 0, fontSize: 26, fontWeight: 500, letterSpacing: '-0.5px', color: '#D85A30' }}>
-            {formatINR(viewMetrics.liabilities)}
-          </p>
+          <div>
+            <p style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>Liabilities</p>
+            <p style={{ fontSize: 18, fontWeight: 600, color: viewMetrics.liabilities > 0 ? '#D85A30' : 'var(--color-text-primary)', letterSpacing: '-0.3px', margin: 0 }}>
+              {formatINR(viewMetrics.liabilities)}
+            </p>
+          </div>
+
+          <div style={{ width: '0.5px', height: 36, background: 'var(--color-border-secondary)', flexShrink: 0 }} />
+
+          <div>
+            <p style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px' }}>Today</p>
+            <p style={{ fontSize: 18, fontWeight: 600, color: dayChange >= 0 ? '#2D6A4F' : '#D85A30', letterSpacing: '-0.3px', margin: 0 }}>
+              {dayChange >= 0 ? '+' : ''}{formatINR(dayChange)}
+            </p>
+          </div>
+
+          {monthChange !== 0 && (
+            <span style={{
+              marginLeft: 'auto', fontSize: 12, fontWeight: 500,
+              padding: '4px 10px', borderRadius: 20, flexShrink: 0,
+              background: monthChange >= 0 ? '#EAF3DE' : '#FCEBEB',
+              color: monthChange >= 0 ? '#3B6D11' : '#A32D2D',
+            }}>
+              {monthChange >= 0 ? '+' : ''}
+              {((monthChange / Math.max(1, viewMetrics.netWorth - monthChange)) * 100).toFixed(1)}% this month
+            </span>
+          )}
         </div>
       </div>
 
