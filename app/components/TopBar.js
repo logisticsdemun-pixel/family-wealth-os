@@ -1,10 +1,9 @@
 'use client'
 import { useRef, useState } from 'react'
+import { useUser, UserButton } from '@clerk/nextjs'
 import { useStore } from '../lib/store'
-import { useLock } from './AuthShell'
 import { exportAllData, applyImport, load, KEYS } from '../lib/storage'
 import AppearancePanel from './AppearancePanel'
-import { changePassword } from '../lib/crypto'
 import { takeSnapshotFromStorage } from '../lib/snapshot'
 import ExcelImportWizard from './ExcelImport'
 import ZerodhaImportWizard from './ZerodhaImport'
@@ -127,54 +126,6 @@ function BackupRestoreDialog({ data, onClose }) {
   )
 }
 
-function ChangePasswordDialog({ onClose }) {
-  const [oldPw, setOldPw] = useState('')
-  const [newPw, setNewPw] = useState('')
-  const [confirmPw, setConfirmPw] = useState('')
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
-  const [loading, setLoading] = useState(false)
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    if (newPw.length < 6) { setError('New password must be at least 6 characters.'); return }
-    if (newPw !== confirmPw) { setError('New passwords do not match.'); return }
-    setLoading(true); setError('')
-    try {
-      await changePassword(oldPw, newPw)
-      setSuccess(true)
-      setTimeout(onClose, 1500)
-    } catch (err) {
-      setError(err.message === 'WRONG_PASSWORD' ? 'Current password is incorrect.' : 'Failed to change password. Please try again.')
-    } finally { setLoading(false) }
-  }
-
-  const labelStyle = { fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', margin: '0 0 4px', display: 'block' }
-
-  return (
-    <>
-      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 200 }} onClick={onClose} />
-      <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 201, width: '100%', maxWidth: 360, backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '32px 28px' }}>
-        <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 600 }}>Change Password</h3>
-        {success ? (
-          <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--gain)', fontWeight: 500 }}>Password changed successfully.</div>
-        ) : (
-          <form onSubmit={handleSubmit}>
-            <div><span style={labelStyle}>Current Password</span><input type="password" value={oldPw} onChange={e => { setOldPw(e.target.value); setError('') }} autoFocus disabled={loading} style={inp} /></div>
-            <div><span style={labelStyle}>New Password</span><input type="password" value={newPw} onChange={e => { setNewPw(e.target.value); setError('') }} disabled={loading} style={inp} /></div>
-            <div><span style={labelStyle}>Confirm New Password</span><input type="password" value={confirmPw} onChange={e => { setConfirmPw(e.target.value); setError('') }} disabled={loading} style={inp} /></div>
-            {error && <p style={{ color: 'var(--loss)', fontSize: '0.8rem', margin: '-4px 0 10px' }}>{error}</p>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button type="submit" disabled={loading} style={{ padding: '9px 16px', borderRadius: 8, border: 'none', backgroundColor: loading ? 'var(--text-muted)' : 'var(--accent)', color: '#fff', fontSize: '0.875rem', fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer' }}>{loading ? 'Saving…' : 'Change Password'}</button>
-              <button type="button" onClick={onClose} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: '0.875rem', cursor: 'pointer' }}>Cancel</button>
-            </div>
-          </form>
-        )}
-      </div>
-    </>
-  )
-}
-
 function getGreeting() {
   const hour = new Date().getHours()
   if (hour < 12) return 'Good morning'
@@ -183,22 +134,20 @@ function getGreeting() {
 }
 
 export default function TopBar({ activeMember }) {
+  const { user } = useUser()
   const { dirty, flush } = useStore()
-  const handleLock = useLock()
 
   const [saved, setSaved] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showAppearance, setShowAppearance] = useState(false)
-  const [showChangePw, setShowChangePw] = useState(false)
   const [showExcelImport, setShowExcelImport] = useState(false)
   const [showZerodhaImport, setShowZerodhaImport] = useState(false)
   const [importError, setImportError] = useState(null)
   const [importData, setImportData] = useState(null)
   const fileRef = useRef(null)
 
-  const greetingName = activeMember === 'All'
-    ? 'Devashish'
-    : activeMember.split(' ')[0]
+  const greetingName = user?.firstName
+    || (activeMember !== 'All' ? activeMember.split(' ')[0] : 'there')
 
   async function handleSave() {
     setSaved(true)
@@ -285,24 +234,15 @@ export default function TopBar({ activeMember }) {
           </button>
           <input ref={fileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
 
-          {/* Lock */}
-          <button onClick={handleLock} title="Lock app" style={iconBtn}>
-            <i className="ti ti-lock" style={{ fontSize: 16 }} aria-hidden="true" />
-          </button>
-
-          {/* Avatar / settings menu */}
-          <div style={{ position: 'relative', marginLeft: 4 }}>
-            <div
+          {/* Settings menu */}
+          <div style={{ position: 'relative' }}>
+            <button
               onClick={() => setShowMenu(v => !v)}
-              title="Settings"
-              style={{
-                width: 30, height: 30, borderRadius: '50%',
-                background: '#EAF3DE',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 11, fontWeight: 500, color: '#3B6D11', cursor: 'pointer',
-                userSelect: 'none',
-              }}
-            >DS</div>
+              title="Import holdings"
+              style={iconBtn}
+            >
+              <i className="ti ti-dots-vertical" style={{ fontSize: 16 }} aria-hidden="true" />
+            </button>
 
             {showMenu && (
               <>
@@ -318,12 +258,20 @@ export default function TopBar({ activeMember }) {
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>Wizard for .xlsx files</p>
                   <button onClick={() => { setShowZerodhaImport(true); setShowMenu(false) }} style={menuBtnStyle}>📈 Import from Zerodha</button>
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>Zerodha Kite holdings .xlsx</p>
-                  <div style={{ height: 1, backgroundColor: 'var(--border)', margin: '6px 0' }} />
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Account</p>
-                  <button onClick={() => { setShowChangePw(true); setShowMenu(false) }} style={menuBtnStyle}>🔑 Change Password</button>
                 </div>
               </>
             )}
+          </div>
+
+          {/* Clerk UserButton — Google profile photo, sign out */}
+          <div style={{ marginLeft: 4 }}>
+            <UserButton
+              appearance={{
+                elements: {
+                  avatarBox: { width: 30, height: 30 },
+                },
+              }}
+            />
           </div>
         </div>
       </div>
@@ -335,8 +283,7 @@ export default function TopBar({ activeMember }) {
         </div>
       )}
 
-      {showChangePw   && <ChangePasswordDialog onClose={() => setShowChangePw(false)} />}
-      {importData     && <BackupRestoreDialog data={importData} onClose={() => setImportData(null)} />}
+      {importData && <BackupRestoreDialog data={importData} onClose={() => setImportData(null)} />}
       {showExcelImport   && <ExcelImportWizard onClose={() => setShowExcelImport(false)} />}
       {showZerodhaImport && <ZerodhaImportWizard onClose={() => setShowZerodhaImport(false)} />}
     </>

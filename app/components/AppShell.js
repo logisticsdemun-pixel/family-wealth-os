@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { useUser } from '@clerk/nextjs'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import MemberFilter from './MemberFilter'
@@ -13,8 +14,28 @@ import Artha from '../artha'
 import Goals from '../goals'
 
 export default function AppShell() {
+  const { user, isLoaded, isSignedIn } = useUser()
   const [activePage, setActivePage] = useState('dashboard')
   const [activeMember, setActiveMember] = useState('All')
+
+  if (!isLoaded) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--color-background-primary, #E8EAED)',
+      }}>
+        <p style={{ fontSize: 13, color: 'var(--color-text-secondary, #4A5260)' }}>Loading…</p>
+      </div>
+    )
+  }
+
+  if (!isSignedIn) return null
+
+  const role = user?.publicMetadata?.role || 'member'
+  const isAdmin = role === 'admin'
 
   const pageProps = { activeMember }
 
@@ -26,7 +47,7 @@ export default function AppShell() {
       background: 'var(--color-background-primary)',
       fontFamily: 'var(--font-sans)',
     }}>
-      <Sidebar activePage={activePage} onNavigate={setActivePage} />
+      <Sidebar activePage={activePage} onNavigate={setActivePage} isAdmin={isAdmin} />
 
       <div style={{
         flex: 1,

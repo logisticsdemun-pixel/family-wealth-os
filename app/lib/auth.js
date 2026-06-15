@@ -1,42 +1,46 @@
-import { setupPassword, unlockStorage, lockStorage, restoreFromSession } from './crypto'
+import { setupPassword, unlockStorage, restoreFromSession } from './crypto'
 
 let _unlocked = false
-
-export async function unlock(password, mode) {
-  try {
-    if (mode === 'setup') await setupPassword(password)
-    else await unlockStorage(password)
-    _unlocked = true
-    if (typeof window !== 'undefined') localStorage.setItem('fwos:session', 'active')
-    return true
-  } catch {
-    return false
-  }
-}
 
 export function isSessionUnlocked() {
   return _unlocked
 }
 
-export function lock() {
-  _unlocked = false
-  lockStorage()
-  if (typeof window !== 'undefined') localStorage.removeItem('fwos:session')
-}
+// Auto-unlock using a per-device key stored in localStorage.
+// No user password required — Clerk handles identity.
+export async function autoUnlock() {
+  if (_unlocked) return true
 
-export function hasPersistedSession() {
-  if (typeof window === 'undefined') return false
-  return localStorage.getItem('fwos:session') === 'active'
-}
-
-// Re-derive the AES key from sessionStorage and re-hydrate the memory store.
-// Called on page reload to restore the session without a password prompt.
-export async function restoreSession() {
+  // Fast path: AES key already in sessionStorage (survives page reload)
   try {
     const ok = await restoreFromSession()
-    if (ok) { _unlocked = true }
-    return ok
+    if (ok) { _unlocked = true; return true }
+  } catch {}
+
+  // Derive key from device key stored in localStorage
+  try {
+    let deviceKey = typeof window !== 'undefined'
+      ? localStorage.getItem('fwos:device-key')
+      : null
+
+    if (!deviceKey) {
+      deviceKey = crypto.randomUUID()
+      localStorage.setItem('fwos:device-key', deviceKey)
+      await setupPassword(deviceKey)
+    } else {
+      try {
+        await unlockStorage(deviceKey)
+      } catch {
+        // Device key doesn't match stored auth (old password system) → fresh setup
+        deviceKey = crypto.randomUUID()
+        localStorage.setItem('fwos:device-key', deviceKey)
+        await setupPassword(deviceKey)
+      }
+    }
+    _unlocked = true
+    return true
   } catch {
+    _unlocked = false
     return false
   }
 }
