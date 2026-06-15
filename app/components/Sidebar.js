@@ -30,18 +30,18 @@ export default function Sidebar({ activePage, onNavigate }) {
     borderRadius: 'var(--border-radius-md)',
     cursor: 'pointer',
     marginBottom: 2,
-    background: activePage === id ? 'var(--color-background-secondary)' : 'transparent',
+    background: activePage === id ? 'var(--color-sidebar-active)' : 'transparent',
   })
 
   return (
     <div style={{
       width: 200,
       flexShrink: 0,
-      borderRight: '0.5px solid var(--color-border-tertiary)',
+      borderRight: '0.5px solid var(--color-border-secondary)',
       display: 'flex',
       flexDirection: 'column',
       height: '100vh',
-      background: 'var(--color-background-primary)',
+      background: 'var(--color-sidebar-bg)',
     }}>
       {/* Logo */}
       <div style={{
@@ -51,7 +51,7 @@ export default function Sidebar({ activePage, onNavigate }) {
         alignItems: 'center',
         flexShrink: 0,
       }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', letterSpacing: '-0.3px' }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-sidebar-text)', letterSpacing: '-0.3px' }}>
           Grey Diary
         </span>
       </div>
@@ -66,8 +66,8 @@ export default function Sidebar({ activePage, onNavigate }) {
                 style={{
                   fontSize: 15,
                   color: activePage === item.id
-                    ? 'var(--color-text-primary)'
-                    : 'var(--color-text-secondary)',
+                    ? 'var(--color-sidebar-text)'
+                    : 'var(--color-sidebar-muted)',
                 }}
                 aria-hidden="true"
               />
@@ -75,8 +75,8 @@ export default function Sidebar({ activePage, onNavigate }) {
                 fontSize: 13,
                 fontWeight: activePage === item.id ? 500 : 400,
                 color: activePage === item.id
-                  ? 'var(--color-text-primary)'
-                  : 'var(--color-text-secondary)',
+                  ? 'var(--color-sidebar-text)'
+                  : 'var(--color-sidebar-muted)',
               }}>
                 {item.label}
               </span>
@@ -84,7 +84,7 @@ export default function Sidebar({ activePage, onNavigate }) {
             {item.key && (
               <span style={{
                 fontSize: 11,
-                color: item.isDebt && metrics.liabilities > 0 ? '#D85A30' : 'var(--color-text-secondary)',
+                color: item.isDebt && metrics.liabilities > 0 ? '#D85A30' : 'var(--color-sidebar-muted)',
               }}>
                 {formatShort(metrics[item.key])}
               </span>
@@ -99,10 +99,10 @@ export default function Sidebar({ activePage, onNavigate }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <i
                 className={`ti ${item.icon}`}
-                style={{ fontSize: 15, color: 'var(--color-text-secondary)' }}
+                style={{ fontSize: 15, color: 'var(--color-sidebar-muted)' }}
                 aria-hidden="true"
               />
-              <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+              <span style={{ fontSize: 13, color: 'var(--color-sidebar-muted)' }}>
                 {item.label}
               </span>
             </div>
@@ -113,7 +113,7 @@ export default function Sidebar({ activePage, onNavigate }) {
       {/* Family selector */}
       <div style={{
         padding: '10px 8px',
-        borderTop: '0.5px solid var(--color-border-tertiary)',
+        borderTop: '0.5px solid var(--color-border-secondary)',
         flexShrink: 0,
       }}>
         <div style={{
@@ -129,8 +129,8 @@ export default function Sidebar({ activePage, onNavigate }) {
             fontSize: 10, fontWeight: 500, color: 'var(--color-accent)', flexShrink: 0,
           }}>SS</div>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>Saxena Family</div>
-            <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>4 members</div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-sidebar-text)' }}>Saxena Family</div>
+            <div style={{ fontSize: 11, color: 'var(--color-sidebar-muted)' }}>4 members</div>
           </div>
         </div>
       </div>
