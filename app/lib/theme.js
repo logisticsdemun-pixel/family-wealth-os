@@ -1,32 +1,43 @@
 'use client'
 import { createContext, useContext, useEffect, useState } from 'react'
-import { load, save, KEYS } from './storage'
+import { loadAppearance, saveAppearance, applyTheme } from './themes'
 
-const ThemeCtx = createContext({ theme: 'light', toggleTheme: () => {} })
+const ThemeCtx = createContext({
+  themeId: 'overcast',
+  dark: false,
+  setTheme: () => {},
+  toggleDark: () => {},
+})
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState('light')
+  const [themeId, setThemeId] = useState('overcast')
+  const [dark, setDark] = useState(false)
 
   useEffect(() => {
-    const saved = load(KEYS.THEME, 'light')
-    setTheme(saved)
-    document.documentElement.setAttribute('data-theme', saved)
+    const { themeId: tid, dark: d } = loadAppearance()
+    setThemeId(tid)
+    setDark(d)
+    applyTheme(tid, d)
   }, [])
 
-  function toggleTheme() {
-    const next = theme === 'light' ? 'dark' : 'light'
-    setTheme(next)
-    save(KEYS.THEME, next)
-    document.documentElement.setAttribute('data-theme', next)
+  function setTheme(tid) {
+    setThemeId(tid)
+    saveAppearance(tid, dark)
+    applyTheme(tid, dark)
+  }
+
+  function toggleDark() {
+    const next = !dark
+    setDark(next)
+    saveAppearance(themeId, next)
+    applyTheme(themeId, next)
   }
 
   return (
-    <ThemeCtx.Provider value={{ theme, toggleTheme }}>
+    <ThemeCtx.Provider value={{ themeId, dark, setTheme, toggleDark }}>
       {children}
     </ThemeCtx.Provider>
   )
 }
 
-export function useTheme() {
-  return useContext(ThemeCtx)
-}
+export function useTheme() { return useContext(ThemeCtx) }

@@ -486,7 +486,7 @@ export default function ZerodhaImportWizard({ onClose }) {
               <button
                 onClick={handleImport}
                 disabled={importing}
-                style={{ flex: 1, padding: '11px', borderRadius: 8, border: 'none', background: importing ? 'var(--text-muted)' : '#534AB7', color: '#fff', fontSize: 13, fontWeight: 500, cursor: importing ? 'not-allowed' : 'pointer' }}
+                style={{ flex: 1, padding: '11px', borderRadius: 8, border: 'none', background: importing ? 'var(--text-muted)' : 'var(--color-accent)', color: '#fff', fontSize: 13, fontWeight: 500, cursor: importing ? 'not-allowed' : 'pointer' }}
               >
                 {importing ? 'Importing…' : 'Confirm import'}
               </button>

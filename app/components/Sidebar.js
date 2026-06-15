@@ -124,9 +124,9 @@ export default function Sidebar({ activePage, onNavigate }) {
         }}>
           <div style={{
             width: 28, height: 28, borderRadius: '50%',
-            background: '#EEEDFE',
+            background: 'var(--color-accent-bg)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 10, fontWeight: 500, color: '#534AB7', flexShrink: 0,
+            fontSize: 10, fontWeight: 500, color: 'var(--color-accent)', flexShrink: 0,
           }}>SS</div>
           <div>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>Saxena Family</div>

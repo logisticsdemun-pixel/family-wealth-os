@@ -305,7 +305,7 @@ export default function Dashboard({ activeMember }) {
 
   // ── Allocation segments ──────────────────────────────────
   const allocSegments = useMemo(() => [
-    { label: 'Real Estate', value: viewMetrics.realEstate,  color: '#534AB7' },
+    { label: 'Real Estate', value: viewMetrics.realEstate,  color: 'var(--color-accent)' },
     { label: 'Gold',        value: viewMetrics.gold,         color: '#BA7517' },
     { label: 'Investments', value: viewMetrics.investments,  color: '#1D9E75' },
     { label: 'Cash & FDs',  value: viewMetrics.cash,         color: '#378ADD' },
@@ -466,12 +466,12 @@ export default function Dashboard({ activeMember }) {
                 <AreaChart data={snapshots.slice(-90)} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#534AB7" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#534AB7" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <Area type="monotone" dataKey="netWorth"
-                    stroke="#534AB7" strokeWidth={1.5}
+                    stroke="var(--color-accent)" strokeWidth={1.5}
                     fill="url(#nwGrad)" dot={false} />
                   <XAxis dataKey="date" hide />
                   <YAxis hide domain={['auto', 'auto']} />

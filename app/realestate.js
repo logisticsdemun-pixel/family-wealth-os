@@ -583,7 +583,7 @@ export default function RealEstate({ activeMember }) {
             label: activeMember === 'All' ? 'PORTFOLIO VALUE' : 'ATTRIBUTABLE VALUE',
             value: formatINR(totalValue),
             sub: totalRent > 0 ? `${formatINR(totalRent)}/mo rental` : 'At current valuation',
-            valueColor: '#534AB7',
+            valueColor: 'var(--color-accent)',
             subColor: 'var(--color-text-secondary)',
           },
           {

@@ -163,7 +163,7 @@ function GoldTable({ items, prices, onEdit, onDelete, goldTab }) {
               <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500 }}>{totalGrams.toFixed(3)}g</td>
               <td />
               <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500 }}>{formatINR(totalBuy)}</td>
-              <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: '#534AB7' }}>{formatINR(totalCurrent)}</td>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: 'var(--color-accent)' }}>{formatINR(totalCurrent)}</td>
               <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: totalGain >= 0 ? '#1D9E75' : '#D85A30' }}>
                 {totalGain >= 0 ? '+' : ''}{formatINR(totalGain)}
               </td>
@@ -403,7 +403,7 @@ export default function Gold({ activeMember }) {
           label: 'CURRENT VALUE',
           value: formatINR(totalCurrentValue),
           sub: 'At current gold prices',
-          valueColor: '#534AB7',
+          valueColor: 'var(--color-accent)',
           subColor: 'var(--color-text-secondary)',
         },
         {

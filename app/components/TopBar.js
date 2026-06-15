@@ -2,8 +2,8 @@
 import { useRef, useState } from 'react'
 import { useStore } from '../lib/store'
 import { useLock } from './AuthShell'
-import { useTheme } from '../lib/theme'
 import { exportAllData, applyImport, load, KEYS } from '../lib/storage'
+import AppearancePanel from './AppearancePanel'
 import { changePassword } from '../lib/crypto'
 import { takeSnapshotFromStorage } from '../lib/snapshot'
 import ExcelImportWizard from './ExcelImport'
@@ -178,10 +178,10 @@ function ChangePasswordDialog({ onClose }) {
 export default function TopBar({ activeMember }) {
   const { dirty, flush } = useStore()
   const handleLock = useLock()
-  const { theme, toggleTheme } = useTheme()
 
   const [saved, setSaved] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
+  const [showAppearance, setShowAppearance] = useState(false)
   const [showChangePw, setShowChangePw] = useState(false)
   const [showExcelImport, setShowExcelImport] = useState(false)
   const [showZerodhaImport, setShowZerodhaImport] = useState(false)
@@ -245,8 +245,8 @@ export default function TopBar({ activeMember }) {
             <button onClick={handleSave} style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '5px 12px', borderRadius: 20,
-              border: '0.5px solid #AFA9EC', background: 'transparent',
-              fontSize: 11, fontWeight: 500, color: '#534AB7', cursor: 'pointer',
+              border: '0.5px solid var(--color-accent-subtle)', background: 'transparent',
+              fontSize: 11, fontWeight: 500, color: 'var(--color-accent)', cursor: 'pointer',
               marginRight: 8,
             }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF9F27', display: 'inline-block', flexShrink: 0 }} />
@@ -259,10 +259,13 @@ export default function TopBar({ activeMember }) {
             </span>
           )}
 
-          {/* Theme toggle */}
-          <button onClick={toggleTheme} title={theme === 'light' ? 'Dark mode' : 'Light mode'} style={iconBtn}>
-            <i className={`ti ${theme === 'light' ? 'ti-moon' : 'ti-sun'}`} style={{ fontSize: 16 }} aria-hidden="true" />
-          </button>
+          {/* Appearance */}
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setShowAppearance(v => !v)} title="Appearance" style={iconBtn}>
+              <i className="ti ti-palette" style={{ fontSize: 16 }} aria-hidden="true" />
+            </button>
+            {showAppearance && <AppearancePanel onClose={() => setShowAppearance(false)} />}
+          </div>
 
           {/* Export backup */}
           <button onClick={exportAllData} title="Export backup" style={iconBtn}>

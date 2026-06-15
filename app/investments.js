@@ -65,7 +65,7 @@ function SummaryCards({ items }) {
         label: 'CURRENT VALUE',
         value: formatINR(current),
         sub: null,
-        valueColor: '#534AB7',
+        valueColor: 'var(--color-accent)',
         subColor: null,
       },
       {

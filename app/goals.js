@@ -97,7 +97,7 @@ const lbl = {
 }
 const btnPrimary = {
   padding: '9px 20px', borderRadius: 8, border: 'none',
-  backgroundColor: '#534AB7', color: '#fff',
+  backgroundColor: 'var(--color-accent)', color: '#fff',
   fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer',
 }
 const btnGhost = {
@@ -301,7 +301,7 @@ export default function Goals({ activeMember }) {
         </div>
         <button
           onClick={() => { setEditingGoal(null); setShowForm(true) }}
-          style={{ padding: '8px 16px', borderRadius: 8, background: '#534AB7', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+          style={{ padding: '8px 16px', borderRadius: 8, background: 'var(--color-accent)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
         >
           + Add Goal
         </button>
@@ -320,7 +320,7 @@ export default function Goals({ activeMember }) {
           label: 'ALREADY SAVED',
           value: formatINR(totalCurrent),
           sub: 'From linked investments',
-          valueColor: '#534AB7',
+          valueColor: 'var(--color-accent)',
           subColor: 'var(--color-text-secondary)',
         },
         {
@@ -410,7 +410,7 @@ export default function Goals({ activeMember }) {
                   background: 'var(--color-background-primary)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}>
-                  <i className={`ti ${goalType.icon}`} style={{ fontSize: 18, color: '#534AB7' }} aria-hidden="true" />
+                  <i className={`ti ${goalType.icon}`} style={{ fontSize: 18, color: 'var(--color-accent)' }} aria-hidden="true" />
                 </div>
                 <div>
                   <p style={{ fontSize: 15, fontWeight: 500, margin: '0 0 3px', color: 'var(--color-text-primary)' }}>
@@ -444,7 +444,7 @@ export default function Goals({ activeMember }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
               {[
                 { label: 'Target corpus',      value: formatINR(goal.corpus),  color: 'var(--color-text-primary)' },
-                { label: 'Current value',       value: formatINR(goal.current), color: '#534AB7' },
+                { label: 'Current value',       value: formatINR(goal.current), color: 'var(--color-accent)' },
                 { label: 'Gap remaining',       value: formatINR(goal.gap),     color: goal.gap > 0 ? '#D85A30' : '#1D9E75' },
                 { label: 'Monthly SIP needed',  value: goal.sipNeeded > 0 ? formatINR(goal.sipNeeded) : 'Goal reached', color: 'var(--color-text-primary)' },
               ].map((stat, i) => (
@@ -461,7 +461,7 @@ export default function Goals({ activeMember }) {
                 height: '100%',
                 width: `${goal.fundedPct}%`,
                 borderRadius: 3,
-                background: goal.fundedPct >= 100 ? '#1D9E75' : goal.fundedPct >= 40 ? '#534AB7' : goal.fundedPct >= 15 ? '#EF9F27' : '#D85A30',
+                background: goal.fundedPct >= 100 ? '#1D9E75' : goal.fundedPct >= 40 ? 'var(--color-accent)' : goal.fundedPct >= 15 ? '#EF9F27' : '#D85A30',
                 transition: 'width 0.3s ease',
               }} />
             </div>
@@ -478,7 +478,7 @@ export default function Goals({ activeMember }) {
                   {linkedCount} investment{linkedCount !== 1 ? 's' : ''} linked
                   <button
                     onClick={() => setShowLinkPanel(goal.id)}
-                    style={{ marginLeft: 8, fontSize: 12, color: '#534AB7', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                    style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-accent)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
                   >
                     Manage links
                   </button>
@@ -486,7 +486,7 @@ export default function Goals({ activeMember }) {
               ) : (
                 <button
                   onClick={() => setShowLinkPanel(goal.id)}
-                  style={{ fontSize: 12, color: '#534AB7', background: 'none', border: 'none', cursor: 'pointer' }}
+                  style={{ fontSize: 12, color: 'var(--color-accent)', background: 'none', border: 'none', cursor: 'pointer' }}
                 >
                   + Link investments to track progress
                 </button>
@@ -508,7 +508,7 @@ export default function Goals({ activeMember }) {
           </p>
           <button
             onClick={() => { setEditingGoal(null); setShowForm(true) }}
-            style={{ padding: '10px 24px', borderRadius: 8, background: '#534AB7', color: '#fff', border: 'none', fontSize: 14, cursor: 'pointer' }}
+            style={{ padding: '10px 24px', borderRadius: 8, background: 'var(--color-accent)', color: '#fff', border: 'none', fontSize: 14, cursor: 'pointer' }}
           >
             + Add your first goal
           </button>
@@ -576,7 +576,7 @@ export default function Goals({ activeMember }) {
                           {inv.member} · {inv.ticker}
                         </p>
                       </div>
-                      <span style={{ fontSize: 13, color: '#534AB7' }}>{formatINR(currentVal)}</span>
+                      <span style={{ fontSize: 13, color: 'var(--color-accent)' }}>{formatINR(currentVal)}</span>
                     </label>
                   )
                 })}
@@ -605,7 +605,7 @@ export default function Goals({ activeMember }) {
                           {g.member} · {g.grams}g · {g.carat}K
                         </p>
                       </div>
-                      <span style={{ fontSize: 13, color: '#534AB7' }}>{formatINR(val)}</span>
+                      <span style={{ fontSize: 13, color: 'var(--color-accent)' }}>{formatINR(val)}</span>
                     </label>
                   )
                 })}
@@ -615,7 +615,7 @@ export default function Goals({ activeMember }) {
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
               <button
                 onClick={() => setShowLinkPanel(null)}
-                style={{ flex: 1, padding: '10px', borderRadius: 8, background: '#534AB7', color: '#fff', border: 'none', fontSize: 13, cursor: 'pointer' }}
+                style={{ flex: 1, padding: '10px', borderRadius: 8, background: 'var(--color-accent)', color: '#fff', border: 'none', fontSize: 13, cursor: 'pointer' }}
               >
                 Done
               </button>

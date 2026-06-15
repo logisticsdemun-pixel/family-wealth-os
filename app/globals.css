@@ -44,9 +44,18 @@
 :root {
   --color-background-primary:   var(--bg);
   --color-background-secondary: var(--surface);
-  --color-border-tertiary:      var(--border);
+  --color-background-tertiary:  var(--surface-2);
   --color-text-primary:         var(--text-primary);
   --color-text-secondary:       var(--text-secondary);
+  --color-text-muted:           var(--text-muted);
+  --color-border-primary:       var(--border);
+  --color-border-secondary:     var(--border);
+  --color-border-tertiary:      var(--border);
+  --color-accent:               #534AB7;
+  --color-accent-bg:            #EEEDFE;
+  --color-accent-subtle:        #AFA9EC;
+  --color-sidebar-bg:           var(--surface);
+  --color-sidebar-active:       var(--surface-2);
   --border-radius-md:           8px;
   --border-radius-lg:           12px;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
