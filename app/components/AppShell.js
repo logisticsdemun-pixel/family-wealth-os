@@ -49,7 +49,7 @@ export default function AppShell() {
       background: 'var(--color-background-primary)',
       fontFamily: 'var(--font-sans)',
     }}>
-      <Sidebar activePage={activePage} onNavigate={setActivePage} isAdmin={isAdmin} />
+      <Sidebar activePage={activePage} onNavigate={setActivePage} />
 
       <div style={{
         flex: 1,

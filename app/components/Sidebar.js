@@ -1,5 +1,6 @@
 'use client'
 import { useMemo } from 'react'
+import { useUser } from '@clerk/nextjs'
 import { useStore } from '../lib/store'
 import { computeAllMetrics, formatShort } from '../lib/metrics'
 
@@ -18,7 +19,9 @@ const BOTTOM_ITEMS = [
   { id: 'beneficiary', label: 'Beneficiary', icon: 'ti-users' },
 ]
 
-export default function Sidebar({ activePage, onNavigate, isAdmin = false }) {
+export default function Sidebar({ activePage, onNavigate }) {
+  const { user } = useUser()
+  const isAdmin = user?.publicMetadata?.role === 'admin'
   const { data } = useStore()
   const metrics = useMemo(() => computeAllMetrics(data), [data])
 
