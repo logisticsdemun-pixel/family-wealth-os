@@ -3,7 +3,8 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { useUser } from '@clerk/nextjs'
 import { load, save, KEYS, flushAll } from './storage'
 import { saveToMemory } from './crypto'
-import { getCollection, setCollection } from './supabaseStore'
+import { getCollection, setCollection, COLLECTIONS } from './supabaseStore'
+import { getSupabase } from './supabase'
 import {
   SEED_INVESTMENTS, SEED_FIXED_INCOME, SEED_GOLD, DEFAULT_GOLD_PRICES,
   SEED_LOANS, SEED_INSURANCE, SEED_CASH_ASSETS, SEED_LIABILITIES, SEED_REAL_ESTATE,
@@ -147,6 +148,39 @@ export function AppProvider({ children }) {
     window.addEventListener('fwos:datachanged', handleExternalChange)
     return () => window.removeEventListener('fwos:datachanged', handleExternalChange)
   }, [])
+
+  // ── Real-time sync — update this session when another device writes ──
+  useEffect(() => {
+    if (!data) return // wait until initial load completes
+
+    let subscription
+    try {
+      subscription = getSupabase()
+        .channel('family-data-changes')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'family_data',
+          filter: `family_id=eq.saxena-family`,
+        }, async (payload) => {
+          const collection = payload.new?.collection || payload.old?.collection
+          if (!collection || !COLLECTIONS.includes(collection)) return
+          const fresh = await getCollection(collection)
+          if (fresh === null) return
+          const value = Array.isArray(fresh) ? applyTransforms(collection, fresh) : fresh
+          setData(prev => prev ? { ...prev, [collection]: value } : prev)
+          const key = COLLECTION_TO_KEY[collection]
+          if (key) mirrorToMemory(key, value)
+        })
+        .subscribe()
+    } catch {}
+
+    return () => {
+      if (subscription) {
+        try { getSupabase().removeChannel(subscription) } catch {}
+      }
+    }
+  }, [!!data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── set(key, value) — identical signature to the old store ───
   // Dual-write: _memoryStore (for legacy functions) + Supabase (primary)
