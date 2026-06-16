@@ -47,8 +47,8 @@ async function fetchMFPrice(mfCode) {
 
 // ── Summary cards ──────────────────────────────────────────
 function SummaryCards({ items }) {
-  const invested = items.reduce((s, i) => s + i.units * i.buyPrice, 0)
-  const current = items.reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
+  const invested = items.reduce((s, i) => s + (i.units || 0) * (i.buyPrice || 0), 0)
+  const current = items.reduce((s, i) => s + (i.units || 0) * (i.currentPrice || i.buyPrice || 0), 0)
   const gain = current - invested
   const gainPct = invested > 0 ? (gain / invested) * 100 : 0
 
@@ -844,9 +844,22 @@ export default function Investments({ activeMember }) {
 
       await Promise.all(batch.map(async inv => {
         const key = getCacheKey(inv)
+
+        if (inv.isMF) {
+          console.log(`[price] Fetching MF: mfCode=${inv.mfCode} name="${inv.name}" units=${inv.units} storedPrice=${inv.currentPrice}`)
+        }
+        if (inv.mfCode === '147946') {
+          console.log('[price] Edelweiss holding:', JSON.stringify(inv))
+        }
+
         const price = inv.isMF
           ? await fetchMFPrice(inv.mfCode)
           : await fetchStockPrice(inv.ticker)
+
+        if (inv.isMF) {
+          console.log(`[price] MF result: mfCode=${inv.mfCode} → price=${price} | currentValue=${price != null ? (inv.units || 0) * price : 'N/A'}`)
+        }
+
         if (price != null) {
           const entry = map.get(inv.id)
           entry.currentPrice = price

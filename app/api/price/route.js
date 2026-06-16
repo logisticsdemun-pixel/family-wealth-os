@@ -33,11 +33,13 @@ async function fetchStock(ticker) {
 // Mutual fund latest NAV via MFAPI
 async function fetchMF(mfCode) {
   const res = await fetch(`https://api.mfapi.in/mf/${encodeURIComponent(mfCode)}/latest`, {
-    next: { revalidate: 3600 },
+    cache: 'no-store', // always fetch live — stale cache was causing wrong NAVs
   })
   if (!res.ok) throw new Error(`MFAPI: ${res.status}`)
   const data = await res.json()
-  const nav = parseFloat(data?.data?.[0]?.nav)
+  const rawNav = data?.data?.[0]?.nav
+  const nav = parseFloat(rawNav)
+  console.log('MF NAV fetch result:', mfCode, '| raw:', rawNav, '| parsed:', nav)
   if (isNaN(nav)) throw new Error('No NAV in response')
   return nav
 }
