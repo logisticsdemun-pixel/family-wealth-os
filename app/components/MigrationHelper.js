@@ -1,24 +1,9 @@
 'use client'
 import { useState } from 'react'
-import { getAllMemoryData } from '../lib/crypto'
-
-// Maps _memoryStore keys → Supabase collection names
-const KEY_TO_COLLECTION = {
-  'fwos-investments':  'investments',
-  'fwos-fixed-income': 'fixedIncome',
-  'fwos-gold':         'gold',
-  'fwos-gold-prices':  'goldPrices',
-  'fwos-loans':        'loans',
-  'fwos-real-estate':  'realEstate',
-  'fwos-insurance':    'insurance',
-  'fwos-cash-assets':  'cashAssets',
-  'fwos-liabilities':  'liabilities',
-  'fwos-snapshots':    'snapshots',
-  'fwos-price-cache':  'priceCache',
-  'fwos-goals':        'goals',
-}
+import { useStore } from '../lib/store'
 
 export default function MigrationHelper({ onDone }) {
+  const { migrateToSupabase, data } = useStore()
   const [status, setStatus] = useState('idle') // idle | migrating | done | empty | error
   const [results, setResults] = useState(null)
   const [error, setError] = useState(null)
@@ -27,40 +12,27 @@ export default function MigrationHelper({ onDone }) {
     setStatus('migrating')
     setError(null)
 
-    // Read decrypted data from _memoryStore (populated by autoUnlock on sign-in)
-    const memoryData = getAllMemoryData()
+    // Check if there is anything to migrate in the already-loaded data
+    const hasData =
+      (data?.investments || []).length > 0 ||
+      (data?.gold || []).length > 0 ||
+      (data?.realEstate || []).length > 0 ||
+      (data?.loans || []).length > 0 ||
+      (data?.fixedIncome || []).length > 0
 
-    // Map to collection names, skipping unknown keys and empty values
-    const localData = {}
-    let foundAny = false
-    for (const [key, value] of Object.entries(memoryData)) {
-      const collection = KEY_TO_COLLECTION[key]
-      if (!collection) continue
-      localData[collection] = value
-      if (Array.isArray(value) ? value.length > 0
-        : value && typeof value === 'object' && Object.keys(value).length > 0) {
-        foundAny = true
-      }
-    }
-
-    if (!foundAny) {
+    if (!hasData) {
       setStatus('empty')
       return
     }
 
     try {
-      const res = await fetch('/api/migrate-data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ localData }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setResults(data.results)
-        setStatus('done')
-      } else {
-        setError(data.error || 'Migration failed')
+      const res = await migrateToSupabase()
+      if (res?.error) {
+        setError(res.error)
         setStatus('error')
+      } else {
+        setResults(res)
+        setStatus('done')
       }
     } catch (e) {
       setError(e.message)
@@ -153,7 +125,7 @@ export default function MigrationHelper({ onDone }) {
   )
 
   if (status === 'done') {
-    const migrated = Object.entries(results || {}).filter(([, v]) => !v.startsWith('skipped'))
+    const migrated = Object.entries(results || {}).filter(([, v]) => !v.startsWith('empty'))
 
     return (
       <div style={overlay}>
@@ -176,7 +148,7 @@ export default function MigrationHelper({ onDone }) {
                   borderBottom: '0.5px solid var(--color-border-tertiary)',
                 }}>
                   <span style={{ color: 'var(--color-text-primary)' }}>{col}</span>
-                  <span style={{ color: result.startsWith('error') ? '#D85A30' : '#2D6A4F' }}>{result}</span>
+                  <span style={{ color: result === 'failed' ? '#D85A30' : '#2D6A4F' }}>{result}</span>
                 </div>
               ))}
             </div>

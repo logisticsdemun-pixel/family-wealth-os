@@ -26,7 +26,6 @@ const KEY_TO_COLLECTION = {
   [KEYS.GOALS]:        'goals',
 }
 
-// Reverse map: collection name → KEYS constant (for mirroring to _memoryStore)
 const COLLECTION_TO_KEY = Object.fromEntries(
   Object.entries(KEY_TO_COLLECTION).map(([k, v]) => [v, k])
 )
@@ -37,7 +36,6 @@ const ORDERED_COLLECTIONS = [
   'liabilities', 'snapshots', 'priceCache', 'goals',
 ]
 
-// Fallback values when Supabase has no row for a collection yet
 const DEFAULTS = {
   investments: SEED_INVESTMENTS,
   fixedIncome: SEED_FIXED_INCOME,
@@ -53,29 +51,49 @@ const DEFAULTS = {
   goals: [],
 }
 
-// Post-load transforms that match the old readAll() behaviour
 function applyTransforms(name, raw) {
   if (!Array.isArray(raw)) return raw
   if (name === 'investments') {
     return raw.map(h => (h.isMF && !h.investmentMode)
-      ? { ...h, investmentMode: 'lumpsum' }
-      : h
-    )
+      ? { ...h, investmentMode: 'lumpsum' } : h)
   }
   if (name === 'cashAssets')  return raw.filter(a => a.member)
   if (name === 'liabilities') return raw.filter(l => l.member)
   return raw
 }
 
-// Mirror a value into _memoryStore so that takeSnapshotFromStorage() and
-// exportAllData() (both read from _memoryStore via load()) stay correct
-// after we switch Supabase as the primary store.
+// Mirror into _memoryStore so takeSnapshotFromStorage / exportAllData stay correct
 function mirrorToMemory(key, value) {
   try { saveToMemory(key, value) } catch {}
 }
 
-// Block the fwos:datachanged listener from re-triggering when set() itself
-// writes via save() — same pattern as before.
+// Read all collections from _memoryStore (already decrypted by autoUnlock)
+// Used as fallback when Supabase has no data yet
+function readFromLocalStorage() {
+  const rawInv = load(KEYS.INVESTMENTS, DEFAULTS.investments) ?? []
+  let invDirty = false
+  const investments = rawInv.map(h => {
+    if (h.isMF && !h.investmentMode) { invDirty = true; return { ...h, investmentMode: 'lumpsum' } }
+    return h
+  })
+  if (invDirty) save(KEYS.INVESTMENTS, investments)
+
+  return {
+    investments,
+    fixedIncome:  load(KEYS.FIXED_INCOME, DEFAULTS.fixedIncome)  ?? DEFAULTS.fixedIncome,
+    gold:         load(KEYS.GOLD,          DEFAULTS.gold)          ?? DEFAULTS.gold,
+    goldPrices:   load(KEYS.GOLD_PRICES,   DEFAULTS.goldPrices)   ?? DEFAULTS.goldPrices,
+    loans:        load(KEYS.LOANS,         DEFAULTS.loans)         ?? DEFAULTS.loans,
+    realEstate:   load(KEYS.REAL_ESTATE,   DEFAULTS.realEstate)   ?? DEFAULTS.realEstate,
+    insurance:    load(KEYS.INSURANCE,     DEFAULTS.insurance)     ?? DEFAULTS.insurance,
+    cashAssets:  (load(KEYS.CASH_ASSETS,   DEFAULTS.cashAssets)   ?? DEFAULTS.cashAssets).filter(a => a.member),
+    liabilities: (load(KEYS.LIABILITIES,   DEFAULTS.liabilities)  ?? DEFAULTS.liabilities).filter(l => l.member),
+    snapshots:    load(KEYS.SNAPSHOTS,     DEFAULTS.snapshots)     ?? DEFAULTS.snapshots,
+    priceCache:   load(KEYS.PRICE_CACHE,   DEFAULTS.priceCache)   ?? DEFAULTS.priceCache,
+    goals:        load(KEYS.GOALS,         DEFAULTS.goals)         ?? DEFAULTS.goals,
+  }
+}
+
 let _storeWriting = false
 
 const AppContext = createContext(null)
@@ -84,52 +102,62 @@ export function AppProvider({ children }) {
   const { user, isLoaded } = useUser()
   const [data, setData] = useState(null)
   const [dirty, setDirty] = useState(false)
+  // 'supabase' | 'localStorage' | null
+  // Exposed so AppShell knows whether to show the migration helper
+  const [dataSource, setDataSource] = useState(null)
   const loadedRef = useRef(false)
 
-  // ── Load all collections from Supabase in parallel ──────────
-  const loadFromSupabase = useCallback(async () => {
+  const loadAll = useCallback(async () => {
+    // 1. Fetch all collections from Supabase in parallel
     const results = await Promise.all(
       ORDERED_COLLECTIONS.map(name => getCollection(name))
     )
 
-    let invNeedsSave = false
-    const dataMap = {}
-
-    ORDERED_COLLECTIONS.forEach((name, i) => {
-      const raw = results[i] ?? DEFAULTS[name]
-      const defaultIsArray = Array.isArray(DEFAULTS[name])
-      // If Supabase returned something of the wrong type, fall back to default
-      const coerced = (defaultIsArray && !Array.isArray(raw)) ? DEFAULTS[name] : raw
-      const value = Array.isArray(coerced) ? applyTransforms(name, coerced) : coerced
-      dataMap[name] = value
-
-      // Mirror into _memoryStore for snapshot / export functions
-      const key = COLLECTION_TO_KEY[name]
-      if (key) mirrorToMemory(key, value)
-
-      // Detect MF investments that needed the lumpsum migration
-      if (name === 'investments' && Array.isArray(results[i])) {
-        invNeedsSave = results[i].some(h => h.isMF && !h.investmentMode)
-      }
+    // 2. Determine if Supabase has any real data
+    const hasSupabaseData = results.some((r, i) => {
+      const isArr = Array.isArray(DEFAULTS[ORDERED_COLLECTIONS[i]])
+      return isArr ? (Array.isArray(r) && r.length > 0) : r !== null
     })
 
-    setData(dataMap)
+    if (hasSupabaseData) {
+      // ── Path A: use Supabase data ────────────────────────────
+      let invNeedsSave = false
+      const dataMap = {}
 
-    // Persist the lumpsum-fixed list back to Supabase (once)
-    if (invNeedsSave) setCollection('investments', dataMap.investments)
+      ORDERED_COLLECTIONS.forEach((name, i) => {
+        const raw = results[i] ?? DEFAULTS[name]
+        const defaultIsArray = Array.isArray(DEFAULTS[name])
+        const coerced = (defaultIsArray && !Array.isArray(raw)) ? DEFAULTS[name] : raw
+        const value = Array.isArray(coerced) ? applyTransforms(name, coerced) : coerced
+        dataMap[name] = value
+        const key = COLLECTION_TO_KEY[name]
+        if (key) mirrorToMemory(key, value)
+        if (name === 'investments' && Array.isArray(results[i])) {
+          invNeedsSave = results[i].some(h => h.isMF && !h.investmentMode)
+        }
+      })
+
+      setData(dataMap)
+      setDataSource('supabase')
+      if (invNeedsSave) setCollection('investments', dataMap.investments)
+    } else {
+      // ── Path B: Supabase empty — read from encrypted localStorage ──
+      // _memoryStore is already populated by autoUnlock() before AppProvider mounts.
+      // Do NOT mirror back to memory here — that would overwrite real data with seed defaults.
+      const dataMap = readFromLocalStorage()
+      setData(dataMap)
+      setDataSource('localStorage')
+    }
   }, [])
 
   useEffect(() => {
     if (!isLoaded || !user) return
     if (loadedRef.current) return
     loadedRef.current = true
-    loadFromSupabase()
-  }, [isLoaded, user, loadFromSupabase])
+    loadAll()
+  }, [isLoaded, user, loadAll])
 
-  // ── Handle backup restore / applyImport ─────────────────────
-  // applyImport() in storage.js writes to _memoryStore then fires
-  // fwos:datachanged. We catch that, read back from _memoryStore,
-  // update state, and also write to Supabase so other devices see it.
+  // ── Handle backup restore / applyImport ─────────────────────────────────
   useEffect(() => {
     function handleExternalChange() {
       if (_storeWriting) return
@@ -140,7 +168,7 @@ export function AppProvider({ children }) {
         const raw = load(key, DEFAULTS[name]) ?? DEFAULTS[name]
         const value = Array.isArray(raw) ? applyTransforms(name, raw) : raw
         newData[name] = value
-        setCollection(name, value) // propagate import to Supabase
+        setCollection(name, value)
       })
       setData(newData)
     }
@@ -149,9 +177,9 @@ export function AppProvider({ children }) {
     return () => window.removeEventListener('fwos:datachanged', handleExternalChange)
   }, [])
 
-  // ── Real-time sync — update this session when another device writes ──
+  // ── Real-time sync ───────────────────────────────────────────────────────
   useEffect(() => {
-    if (!data) return // wait until initial load completes
+    if (!data) return
 
     let subscription
     try {
@@ -182,36 +210,62 @@ export function AppProvider({ children }) {
     }
   }, [!!data]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── set(key, value) — identical signature to the old store ───
-  // Dual-write: _memoryStore (for legacy functions) + Supabase (primary)
+  // ── set(key, value) ──────────────────────────────────────────────────────
   const set = useCallback((key, value) => {
     const collection = KEY_TO_COLLECTION[key]
     if (!collection) return
 
     _storeWriting = true
-    save(key, value) // → _memoryStore + async encrypt to localStorage + fires event
+    save(key, value)
     _storeWriting = false
 
     setData(prev => prev ? { ...prev, [collection]: value } : prev)
     setDirty(true)
-
-    setCollection(collection, value) // primary: Supabase
+    setCollection(collection, value)
   }, [])
 
-  // ── flush() — awaits pending localStorage writes (legacy compat) ─
+  // ── flush() ──────────────────────────────────────────────────────────────
   const flush = useCallback(async () => {
     await flushAll()
     setDirty(false)
   }, [])
 
-  // ── reloadAll() — used after backup restore to refresh state ─
+  // ── reloadAll() ──────────────────────────────────────────────────────────
   const reloadAll = useCallback(() => {
     loadedRef.current = false
-    loadFromSupabase()
-  }, [loadFromSupabase])
+    loadAll()
+  }, [loadAll])
+
+  // ── migrateToSupabase() — reads already-loaded data, writes to Supabase ─
+  const migrateToSupabase = useCallback(async () => {
+    if (!data) return { error: 'No data loaded' }
+
+    const results = {}
+
+    for (const collection of ORDERED_COLLECTIONS) {
+      const value = data[collection]
+      const isEmpty = Array.isArray(value)
+        ? value.length === 0
+        : !value || Object.keys(value).length === 0
+
+      if (isEmpty) {
+        results[collection] = 'empty - skipped'
+        continue
+      }
+
+      const ok = await setCollection(collection, value)
+      const count = Array.isArray(value) ? `${value.length} items` : 'object'
+      results[collection] = ok ? `migrated (${count})` : 'failed'
+    }
+
+    return results
+  }, [data])
 
   return (
-    <AppContext.Provider value={{ data, set, reloadAll, dirty, flush }}>
+    <AppContext.Provider value={{
+      data, set, reloadAll, dirty, flush,
+      dataSource, migrateToSupabase,
+    }}>
       {children}
     </AppContext.Provider>
   )
@@ -223,7 +277,7 @@ export function useStore() {
   return ctx
 }
 
-// ── Selector hooks — same as before ────────────────────────────
+// ── Selector hooks ───────────────────────────────────────────────────────────
 export function useInvestments()  { return useStore().data?.investments  ?? [] }
 export function useFixedIncome()  { return useStore().data?.fixedIncome  ?? [] }
 export function useGold()         { return useStore().data?.gold         ?? [] }
