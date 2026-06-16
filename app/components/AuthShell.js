@@ -19,6 +19,12 @@ export default function AuthShell({ children }) {
     init()
   }, [isLoaded, isSignedIn])
 
+  // Clerk loaded, user not signed in — render children directly so
+  // sign-in/sign-up pages can display. Middleware guards all other routes.
+  if (isLoaded && !isSignedIn) {
+    return <>{children}</>
+  }
+
   if (!isLoaded || !cryptoReady) {
     return (
       <div style={{
@@ -32,9 +38,6 @@ export default function AuthShell({ children }) {
       </div>
     )
   }
-
-  // Middleware already redirects to /sign-in — this is a safety net
-  if (!isSignedIn) return null
 
   return (
     <ThemeProvider>
