@@ -244,13 +244,37 @@ export function AppProvider({ children }) {
   }, [loadAll])
 
   // ── migrateToSupabase() — reads already-loaded data, writes to Supabase ─
+  // When data[collection] is empty (e.g. Supabase had no realEstate row and
+  // fell back to seed defaults), we also try the encrypted localStorage via
+  // load() so the original user data is not silently skipped.
   const migrateToSupabase = useCallback(async () => {
     if (!data) return { error: 'No data in memory' }
 
     const results = {}
 
     for (const collection of ORDERED_COLLECTIONS) {
-      const value = data[collection]
+      let value = data[collection]
+
+      // If the in-memory value is empty, check if localStorage has real data
+      const storageKey = COLLECTION_TO_KEY[collection]
+      const inMemEmpty = Array.isArray(value)
+        ? value.length === 0
+        : !value || Object.keys(value).length === 0
+
+      if (inMemEmpty && storageKey) {
+        const fromLocal = load(storageKey, null)
+        const localHasData = Array.isArray(fromLocal)
+          ? fromLocal.length > 0
+          : fromLocal !== null && fromLocal !== undefined
+        if (localHasData) {
+          console.log(`[migrate] ${collection}: in-memory empty, using localStorage fallback (${Array.isArray(fromLocal) ? fromLocal.length + ' items' : 'object'})`)
+          value = fromLocal
+        }
+      }
+
+      const count = Array.isArray(value) ? value.length : (typeof value === 'object' && value ? Object.keys(value).length : 0)
+      console.log(`[migrate] ${collection}: ${Array.isArray(value) ? count + ' items' : typeof value}`)
+
       const isEmpty = Array.isArray(value)
         ? value.length === 0
         : !value || Object.keys(value).length === 0
@@ -262,8 +286,7 @@ export function AppProvider({ children }) {
 
       try {
         await setCollection(collection, value)
-        const count = Array.isArray(value) ? `${value.length} items` : 'object'
-        results[collection] = `✓ ${count}`
+        results[collection] = `✓ ${Array.isArray(value) ? count + ' items' : 'object'}`
       } catch (e) {
         results[collection] = `✗ ${e.message}`
       }
