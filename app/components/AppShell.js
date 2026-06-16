@@ -1,9 +1,12 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/nextjs'
+import { useStore } from '../lib/store'
+import { getAllMemoryData } from '../lib/crypto'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import MemberFilter from './MemberFilter'
+import MigrationHelper from './MigrationHelper'
 import Dashboard from '../dashboard'
 import Investments from '../investments'
 import Gold from '../gold'
@@ -16,8 +19,29 @@ import UserManagement from './UserManagement'
 
 export default function AppShell() {
   const { user, isLoaded, isSignedIn } = useUser()
+  const { data } = useStore()
   const [activePage, setActivePage] = useState('dashboard')
   const [activeMember, setActiveMember] = useState('All')
+  const [showMigration, setShowMigration] = useState(false)
+
+  // Show migration helper once when Supabase is empty but _memoryStore has data
+  useEffect(() => {
+    if (!data) return
+    const supabaseEmpty =
+      (data.investments || []).length === 0 &&
+      (data.gold || []).length === 0 &&
+      (data.realEstate || []).length === 0 &&
+      (data.loans || []).length === 0
+
+    if (!supabaseEmpty) return // already have cloud data — no migration needed
+
+    const memoryData = getAllMemoryData()
+    const hasLocalData = Object.values(memoryData).some(v =>
+      Array.isArray(v) && v.length > 0
+    )
+
+    if (hasLocalData) setShowMigration(true)
+  }, [data])
 
   if (!isLoaded) {
     return (
@@ -49,6 +73,10 @@ export default function AppShell() {
       background: 'var(--color-background-primary)',
       fontFamily: 'var(--font-sans)',
     }}>
+      {showMigration && (
+        <MigrationHelper onDone={() => setShowMigration(false)} />
+      )}
+
       <Sidebar activePage={activePage} onNavigate={setActivePage} />
 
       <div style={{
