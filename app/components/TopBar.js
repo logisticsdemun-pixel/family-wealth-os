@@ -135,7 +135,7 @@ function getGreeting() {
 
 export default function TopBar({ activeMember }) {
   const { user } = useUser()
-  const { dirty, flush } = useStore()
+  const { dirty, flush, migrateToSupabase, dataSource } = useStore()
 
   const [saved, setSaved] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
@@ -144,6 +144,8 @@ export default function TopBar({ activeMember }) {
   const [showZerodhaImport, setShowZerodhaImport] = useState(false)
   const [importError, setImportError] = useState(null)
   const [importData, setImportData] = useState(null)
+  const [migrating, setMigrating] = useState(false)
+  const [migrateResults, setMigrateResults] = useState(null)
   const fileRef = useRef(null)
 
   const greetingName = user?.firstName
@@ -172,6 +174,14 @@ export default function TopBar({ activeMember }) {
     }
     reader.readAsText(file)
     e.target.value = ''
+  }
+
+  async function handleMigrate() {
+    setMigrating(true)
+    setMigrateResults(null)
+    const results = await migrateToSupabase()
+    setMigrating(false)
+    setMigrateResults(results)
   }
 
   const iconBtn = {
@@ -258,6 +268,39 @@ export default function TopBar({ activeMember }) {
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>Wizard for .xlsx files</p>
                   <button onClick={() => { setShowZerodhaImport(true); setShowMenu(false) }} style={menuBtnStyle}>📈 Import from Zerodha</button>
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>Zerodha Kite holdings .xlsx</p>
+
+                  {dataSource === 'localStorage' && (
+                    <>
+                      <hr style={{ margin: '6px 8px', border: 'none', borderTop: '1px solid var(--border)' }} />
+                      <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 8px 8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Cloud Sync</p>
+                      <button
+                        onClick={handleMigrate}
+                        disabled={migrating}
+                        style={{
+                          ...menuBtnStyle,
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          backgroundColor: migrating ? '#7B73C8' : '#534AB7',
+                          color: '#fff', borderRadius: 6,
+                          cursor: migrating ? 'not-allowed' : 'pointer',
+                          opacity: migrating ? 0.8 : 1,
+                        }}
+                      >
+                        <i className={`ti ${migrating ? 'ti-loader-2' : 'ti-cloud-upload'}`} style={{ fontSize: 15 }} />
+                        {migrating ? 'Migrating…' : 'Migrate to Cloud'}
+                      </button>
+                      <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '-4px 8px 8px 12px' }}>Copy local data to Supabase</p>
+                      {migrateResults && !migrateResults.error && (
+                        <div style={{ margin: '0 8px 8px', padding: '8px 10px', borderRadius: 6, backgroundColor: 'var(--gain-faint, #E6F7F0)', border: '1px solid var(--gain, #1D9E75)', fontSize: '0.75rem', color: 'var(--gain, #1D9E75)' }}>
+                          ✓ Migrated {Object.values(migrateResults).filter(v => v.startsWith('migrated')).length} collections successfully
+                        </div>
+                      )}
+                      {migrateResults?.error && (
+                        <div style={{ margin: '0 8px 8px', padding: '8px 10px', borderRadius: 6, backgroundColor: 'var(--loss-faint)', border: '1px solid var(--loss)', fontSize: '0.75rem', color: 'var(--loss)' }}>
+                          {migrateResults.error}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </>
             )}
