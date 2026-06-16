@@ -73,3 +73,8 @@ CREATE POLICY "allow_all_anon" ON market_cache
   FOR ALL TO anon
   USING (true)
   WITH CHECK (true);
+
+-- ── Real-time publication ─────────────────────────────────────────────────
+-- Required for Supabase Realtime postgres_changes subscriptions.
+-- family_data is the only table that needs live sync across devices.
+ALTER PUBLICATION supabase_realtime ADD TABLE family_data;
