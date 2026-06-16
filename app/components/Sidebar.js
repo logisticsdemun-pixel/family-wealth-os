@@ -1,5 +1,5 @@
 'use client'
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { useStore } from '../lib/store'
 import { computeAllMetrics, formatShort } from '../lib/metrics'
@@ -23,6 +23,15 @@ export default function Sidebar({ activePage, onNavigate }) {
   const { user } = useUser()
   const isAdmin = user?.publicMetadata?.role === 'admin'
   const { data } = useStore()
+  const [memberCount, setMemberCount] = useState(4)
+
+  useEffect(() => {
+    if (!isAdmin) return
+    fetch('/api/users/list')
+      .then(r => r.json())
+      .then(d => { if (d.users) setMemberCount(d.users.length) })
+      .catch(() => {})
+  }, [isAdmin])
   const metrics = useMemo(() => computeAllMetrics(data), [data])
 
   const itemStyle = (id) => ({
@@ -112,8 +121,47 @@ export default function Sidebar({ activePage, onNavigate }) {
           </div>
         ))}
 
+      </div>
+
+      {/* Bottom: family block + Users nav (admin only) */}
+      <div style={{
+        padding: '10px 8px',
+        borderTop: '0.5px solid var(--color-border-secondary)',
+        flexShrink: 0,
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 10px',
+          borderRadius: 'var(--border-radius-md)',
+          marginBottom: isAdmin ? 4 : 0,
+        }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%',
+            background: 'var(--color-accent-bg)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 10, fontWeight: 600, color: 'var(--color-accent)', flexShrink: 0,
+          }}>SS</div>
+          <div>
+            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-sidebar-text)', margin: 0 }}>
+              Saxena Family
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--color-sidebar-muted)', margin: 0 }}>
+              Members: {memberCount}
+            </p>
+          </div>
+        </div>
+
         {isAdmin && (
-          <div style={itemStyle('users')} onClick={() => onNavigate('users')}>
+          <div
+            onClick={() => onNavigate('users')}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '7px 10px',
+              borderRadius: 'var(--border-radius-md)',
+              cursor: 'pointer',
+              background: activePage === 'users' ? 'var(--color-sidebar-active)' : 'transparent',
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <i
                 className="ti ti-users"
@@ -131,33 +179,15 @@ export default function Sidebar({ activePage, onNavigate }) {
                 Users
               </span>
             </div>
+            <span style={{
+              fontSize: 10, color: 'var(--color-sidebar-muted)',
+              background: 'var(--color-sidebar-active)',
+              padding: '2px 6px', borderRadius: 6,
+            }}>
+              Admin
+            </span>
           </div>
         )}
-      </div>
-
-      {/* Family selector */}
-      <div style={{
-        padding: '10px 8px',
-        borderTop: '0.5px solid var(--color-border-secondary)',
-        flexShrink: 0,
-      }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 10px',
-          borderRadius: 'var(--border-radius-md)',
-          cursor: 'default',
-        }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: '50%',
-            background: 'var(--color-accent-bg)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 10, fontWeight: 500, color: 'var(--color-accent)', flexShrink: 0,
-          }}>SS</div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-sidebar-text)' }}>Saxena Family</div>
-            <div style={{ fontSize: 11, color: 'var(--color-sidebar-muted)' }}>4 members</div>
-          </div>
-        </div>
       </div>
     </div>
   )
