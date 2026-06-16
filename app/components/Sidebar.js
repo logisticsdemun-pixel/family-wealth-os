@@ -123,71 +123,47 @@ export default function Sidebar({ activePage, onNavigate }) {
 
       </div>
 
-      {/* Bottom: family block + Users nav (admin only) */}
+      {/* Bottom: family block — clickable for admin to open user management */}
       <div style={{
         padding: '10px 8px',
         borderTop: '0.5px solid var(--color-border-secondary)',
         flexShrink: 0,
       }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 10px',
-          borderRadius: 'var(--border-radius-md)',
-          marginBottom: isAdmin ? 4 : 0,
-        }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: '50%',
-            background: 'var(--color-accent-bg)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 10, fontWeight: 600, color: 'var(--color-accent)', flexShrink: 0,
-          }}>SS</div>
-          <div>
-            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-sidebar-text)', margin: 0 }}>
-              Saxena Family
-            </p>
-            <p style={{ fontSize: 11, color: 'var(--color-sidebar-muted)', margin: 0 }}>
-              Members: {memberCount}
-            </p>
-          </div>
-        </div>
-
-        {isAdmin && (
-          <div
-            onClick={() => onNavigate('users')}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '7px 10px',
-              borderRadius: 'var(--border-radius-md)',
-              cursor: 'pointer',
-              background: activePage === 'users' ? 'var(--color-sidebar-active)' : 'transparent',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <i
-                className="ti ti-users"
-                style={{
-                  fontSize: 15,
-                  color: activePage === 'users' ? 'var(--color-sidebar-text)' : 'var(--color-sidebar-muted)',
-                }}
-                aria-hidden="true"
-              />
-              <span style={{
-                fontSize: 13,
-                fontWeight: activePage === 'users' ? 500 : 400,
-                color: activePage === 'users' ? 'var(--color-sidebar-text)' : 'var(--color-sidebar-muted)',
-              }}>
-                Users
-              </span>
+        <div
+          onClick={() => isAdmin && onNavigate('users')}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 8, padding: '8px 10px',
+            borderRadius: 'var(--border-radius-md)',
+            cursor: isAdmin ? 'pointer' : 'default',
+            background: activePage === 'users' ? 'var(--color-sidebar-active)' : 'transparent',
+            transition: 'background 0.15s ease',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: '50%',
+              background: 'var(--color-accent-bg)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 10, fontWeight: 600, color: 'var(--color-accent)', flexShrink: 0,
+            }}>SS</div>
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-sidebar-text)', margin: 0 }}>
+                Saxena Family
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--color-sidebar-muted)', margin: 0 }}>
+                {memberCount} member{memberCount !== 1 ? 's' : ''}
+              </p>
             </div>
-            <span style={{
-              fontSize: 10, color: 'var(--color-sidebar-muted)',
-              background: 'var(--color-sidebar-active)',
-              padding: '2px 6px', borderRadius: 6,
-            }}>
-              Admin
-            </span>
           </div>
-        )}
+          {isAdmin && (
+            <i
+              className="ti ti-settings"
+              style={{ fontSize: 14, color: 'var(--color-sidebar-muted)', flexShrink: 0 }}
+              aria-hidden="true"
+            />
+          )}
+        </div>
       </div>
     </div>
   )
