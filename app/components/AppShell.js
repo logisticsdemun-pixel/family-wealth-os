@@ -18,10 +18,12 @@ import UserManagement from './UserManagement'
 
 export default function AppShell() {
   const { user, isLoaded, isSignedIn } = useUser()
-  const { data, dataSource } = useStore()
+  const { data, dataSource, migrateToSupabase, hasSupabaseData } = useStore()
   const [activePage, setActivePage] = useState('dashboard')
   const [activeMember, setActiveMember] = useState('All')
   const [showMigration, setShowMigration] = useState(false)
+  const [floatMigrating, setFloatMigrating] = useState(false)
+  const [floatDone, setFloatDone] = useState(false)
 
   // Show migration helper once when data was loaded from localStorage (Supabase empty)
   // and the in-memory data actually has content worth migrating
@@ -68,6 +70,36 @@ export default function AppShell() {
     }}>
       {showMigration && (
         <MigrationHelper onDone={() => setShowMigration(false)} />
+      )}
+
+      {/* Floating migrate button — visible on all pages when Supabase has no data */}
+      {!hasSupabaseData && !floatDone && (
+        <div
+          onClick={async () => {
+            if (floatMigrating) return
+            setFloatMigrating(true)
+            const results = await migrateToSupabase()
+            setFloatMigrating(false)
+            const succeeded = Object.values(results || {}).filter(v => String(v).startsWith('✓')).length
+            alert(`Migration complete! ${succeeded} collections uploaded to cloud. The page will reload.`)
+            setFloatDone(true)
+            window.location.reload()
+          }}
+          style={{
+            position: 'fixed', bottom: 80, right: 24, zIndex: 9999,
+            background: floatMigrating ? '#7B73C8' : '#534AB7',
+            color: '#fff', borderRadius: 12,
+            padding: '12px 20px',
+            boxShadow: '0 4px 20px rgba(83,74,183,0.4)',
+            cursor: floatMigrating ? 'not-allowed' : 'pointer',
+            fontSize: 13, fontWeight: 500,
+            display: 'flex', alignItems: 'center', gap: 8,
+            userSelect: 'none',
+          }}
+        >
+          <i className={`ti ${floatMigrating ? 'ti-loader-2' : 'ti-cloud-upload'}`} style={{ fontSize: 16 }} />
+          {floatMigrating ? 'Migrating…' : '☁ Migrate data to cloud'}
+        </div>
       )}
 
       <Sidebar activePage={activePage} onNavigate={setActivePage} />

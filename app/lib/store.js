@@ -105,6 +105,7 @@ export function AppProvider({ children }) {
   // 'supabase' | 'localStorage' | null
   // Exposed so AppShell knows whether to show the migration helper
   const [dataSource, setDataSource] = useState(null)
+  const [hasSupabaseData, setHasSupabaseData] = useState(false)
   const loadedRef = useRef(false)
 
   const loadAll = useCallback(async () => {
@@ -139,6 +140,9 @@ export function AppProvider({ children }) {
 
       setData(dataMap)
       setDataSource('supabase')
+      setHasSupabaseData(true)
+      console.log('Store loaded from Supabase. Data keys:', Object.keys(dataMap))
+      console.log('Collection sizes:', { investments: dataMap.investments?.length, gold: dataMap.gold?.length, realEstate: dataMap.realEstate?.length })
       if (invNeedsSave) setCollection('investments', dataMap.investments)
     } else {
       // ── Path B: Supabase empty — read from encrypted localStorage ──
@@ -147,6 +151,9 @@ export function AppProvider({ children }) {
       const dataMap = readFromLocalStorage()
       setData(dataMap)
       setDataSource('localStorage')
+      setHasSupabaseData(false)
+      console.log('Store loaded from localStorage. Data keys:', Object.keys(dataMap))
+      console.log('Collection sizes:', { investments: dataMap.investments?.length, gold: dataMap.gold?.length, realEstate: dataMap.realEstate?.length })
     }
   }, [])
 
@@ -238,7 +245,7 @@ export function AppProvider({ children }) {
 
   // ── migrateToSupabase() — reads already-loaded data, writes to Supabase ─
   const migrateToSupabase = useCallback(async () => {
-    if (!data) return { error: 'No data loaded' }
+    if (!data) return { error: 'No data in memory' }
 
     const results = {}
 
@@ -249,22 +256,28 @@ export function AppProvider({ children }) {
         : !value || Object.keys(value).length === 0
 
       if (isEmpty) {
-        results[collection] = 'empty - skipped'
+        results[collection] = 'empty'
         continue
       }
 
-      const ok = await setCollection(collection, value)
-      const count = Array.isArray(value) ? `${value.length} items` : 'object'
-      results[collection] = ok ? `migrated (${count})` : 'failed'
+      try {
+        await setCollection(collection, value)
+        const count = Array.isArray(value) ? `${value.length} items` : 'object'
+        results[collection] = `✓ ${count}`
+      } catch (e) {
+        results[collection] = `✗ ${e.message}`
+      }
     }
 
+    console.log('=== MIGRATION RESULTS ===')
+    console.log(JSON.stringify(results, null, 2))
     return results
   }, [data])
 
   return (
     <AppContext.Provider value={{
       data, set, reloadAll, dirty, flush,
-      dataSource, migrateToSupabase,
+      dataSource, migrateToSupabase, hasSupabaseData,
     }}>
       {children}
     </AppContext.Provider>
