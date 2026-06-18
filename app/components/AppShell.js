@@ -38,6 +38,22 @@ export default function AppShell() {
     if (hasData) setShowMigration(true)
   }, [dataSource, data])
 
+  // Run SIP allotment check once on mount for admin users
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return
+    const role = user?.publicMetadata?.role || 'member'
+    if (role !== 'admin') return
+    fetch('/api/cron/sip-allotment', { method: 'POST' })
+      .then(r => r.json())
+      .then(result => {
+        if (result.processed > 0) {
+          console.log(`[SIP] Auto-allotted ${result.processed} SIP(s) for ${result.date}`)
+        }
+      })
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn])
+
   if (!isLoaded) {
     return (
       <div style={{

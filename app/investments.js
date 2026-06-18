@@ -476,6 +476,7 @@ function SIPConfigModal({ inv, onSave, onCancel }) {
     status: sipData.status || 'Active',
     hasStepUp: sipData.hasStepUp || false,
     stepUpPct: sipData.stepUpPct || 10,
+    instalmentDate: sipData.instalmentDate ?? '',
   })
   const instalments = sipData.instalments || []
   const isSIP = form.investmentMode === 'sip'
@@ -500,6 +501,9 @@ function SIPConfigModal({ inv, onSave, onCancel }) {
         instalments: sipData.instalments || [],
         hasStepUp: form.hasStepUp || false,
         stepUpPct: form.hasStepUp ? (parseFloat(form.stepUpPct) || 10) : 0,
+        instalmentDate: form.instalmentDate ? parseInt(form.instalmentDate) : null,
+        lastAllotmentDate: sipData.lastAllotmentDate || null,
+        allotmentHistory: sipData.allotmentHistory || [],
       } : inv.sip,
     })
   }
@@ -663,36 +667,73 @@ function SIPConfigModal({ inv, onSave, onCancel }) {
                 )}
               </div>
             )}
+
+            {/* Instalment date for auto-allotment */}
+            <div style={{ marginBottom: 16 }}>
+              <span style={label}>Instalment Date (day of month)</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <select
+                  value={form.instalmentDate}
+                  onChange={e => setForm({ ...form, instalmentDate: e.target.value })}
+                  style={{ ...inp, marginBottom: 0, width: 100 }}
+                >
+                  <option value="">— none —</option>
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Units allotted T+1 business day after this date
+                </span>
+              </div>
+              {sipData.lastAllotmentDate && (
+                <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Last allotment: {sipData.lastAllotmentDate}
+                  {sipData.allotmentHistory?.length > 0 && ` · ${sipData.allotmentHistory.length} allotment(s) recorded`}
+                </p>
+              )}
+            </div>
           </>
         )}
 
-        {/* ── Instalment history ── */}
-        {instalments.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <p style={{ ...label, marginBottom: 8 }}>Instalment History ({instalments.length})</p>
-            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
-                <thead>
-                  <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                    {['Date', 'Amount', 'NAV', 'Units'].map(h => (
-                      <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Date' ? 'left' : 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.7rem' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...instalments].reverse().map((inst, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '6px 10px' }}>{inst.date}</td>
-                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>{formatINR(inst.amount)}</td>
-                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>{inst.nav?.toFixed(4)}</td>
-                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>{inst.units?.toFixed(4)}</td>
+        {/* ── Instalment / allotment history ── */}
+        {(instalments.length > 0 || (sipData.allotmentHistory || []).length > 0) && (() => {
+          const autoHistory = sipData.allotmentHistory || []
+          const allRows = [
+            ...instalments.map(r => ({ ...r, _type: 'manual' })),
+            ...autoHistory.map(r => ({ ...r, _type: 'auto' })),
+          ].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+          return (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ ...label, marginBottom: 8 }}>History ({allRows.length})</p>
+              <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+                      {['Date', 'Amount', 'NAV', 'Units', ''].map(h => (
+                        <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Date' || h === '' ? 'left' : 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.7rem' }}>{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {allRows.map((inst, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '6px 10px' }}>{inst.date}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>{formatINR(inst.amount)}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>{inst.nav != null ? inst.nav.toFixed(4) : '—'}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>{inst.units > 0 ? inst.units.toFixed(4) : '—'}</td>
+                        <td style={{ padding: '6px 10px', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                          {inst._type === 'auto' ? 'auto' : ''}
+                          {inst.note ? ` · ${inst.note}` : ''}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={handleSave} style={btnPrimary}>Save</button>

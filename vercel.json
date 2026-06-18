@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/sip-allotment",
+      "schedule": "30 12 * * *"
+    }
+  ]
+}
