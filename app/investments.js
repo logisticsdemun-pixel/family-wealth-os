@@ -318,6 +318,19 @@ function fmtShortDate(dateStr) {
   return `${parseInt(d)} ${months[parseInt(m) - 1]}`
 }
 
+// Convert SIP amount to monthly equivalent based on frequency
+function getMonthlyAmount(sip) {
+  const amount = sip.monthlyAmount || sip.amount || sip.sipAmount || 0
+  const frequency = (sip.frequency || 'Monthly').toLowerCase()
+  switch (frequency) {
+    case 'weekly':      return amount * 4
+    case 'fortnightly': return amount * 2
+    case 'quarterly':   return amount / 3
+    case 'daily':       return amount * 30
+    default:            return amount
+  }
+}
+
 // ── SIP instalment modal ───────────────────────────────────
 function SIPInstalmentModal({ inv, onConfirm, onCancel }) {
   const today = new Date().toISOString().split('T')[0]
@@ -1046,7 +1059,7 @@ export default function Investments({ activeMember }) {
       {subTab === 'mf' && (() => {
         const sipInvs = displayed.filter(i => i.investmentMode === 'sip' && i.sip)
         if (sipInvs.length === 0) return null
-        const totalMonthly = sipInvs.reduce((s, i) => s + (i.sip.monthlyAmount || 0), 0)
+        const totalMonthly = sipInvs.reduce((s, i) => s + getMonthlyAmount(i.sip), 0)
         const nextSIPs = sipInvs
           .filter(i => i.sip?.startDate)
           .map(i => ({ name: i.name, date: nextSIPDate(i.sip) }))
