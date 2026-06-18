@@ -152,7 +152,21 @@ function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete, onSIPConfig, on
                 if (mode === 'sip') {
                   const freq = inv.sip?.frequency
                   const freqLabel = freq ? ` · ${freq.charAt(0).toUpperCase() + freq.slice(1)}` : ''
-                  return <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, backgroundColor: 'var(--accent-faint)', color: 'var(--accent)', fontWeight: 700 }}>SIP{freqLabel}</span>
+                  const effective = inv.sip ? getCurrentSIPAmount(inv.sip) : null
+                  const base = inv.sip?.monthlyAmount || inv.sip?.amount || 0
+                  return <>
+                    <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, backgroundColor: 'var(--accent-faint)', color: 'var(--accent)', fontWeight: 700 }}>SIP{freqLabel}</span>
+                    {inv.sip?.hasStepUp && (
+                      <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, background: '#EAF3DE', color: '#3B6D11', fontWeight: 600 }}>
+                        +{inv.sip.stepUpPct}% p.a.
+                      </span>
+                    )}
+                    {inv.sip?.hasStepUp && effective !== base && (
+                      <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                        {formatINR(effective)}/mo
+                      </span>
+                    )}
+                  </>
                 }
                 return <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, backgroundColor: 'var(--surface-2)', color: 'var(--text-muted)', fontWeight: 500 }}>Lumpsum</span>
               })()}
@@ -318,9 +332,19 @@ function fmtShortDate(dateStr) {
   return `${parseInt(d)} ${months[parseInt(m) - 1]}`
 }
 
+// Current effective SIP amount accounting for annual step-up compounding
+function getCurrentSIPAmount(sip) {
+  const base = sip.monthlyAmount || sip.amount || sip.sipAmount || 0
+  if (!sip.hasStepUp || !sip.stepUpPct || !sip.startDate) return base
+  const start = new Date(sip.startDate)
+  const yearsElapsed = Math.floor((Date.now() - start.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+  if (yearsElapsed <= 0) return base
+  return Math.round(base * Math.pow(1 + sip.stepUpPct / 100, yearsElapsed))
+}
+
 // Convert SIP amount to monthly equivalent based on frequency
 function getMonthlyAmount(sip) {
-  const amount = sip.monthlyAmount || sip.amount || sip.sipAmount || 0
+  const amount = getCurrentSIPAmount(sip)
   const frequency = (sip.frequency || 'Monthly').toLowerCase()
   switch (frequency) {
     case 'weekly':      return amount * 4
@@ -450,6 +474,8 @@ function SIPConfigModal({ inv, onSave, onCancel }) {
     dayOfWeek: sipData.dayOfWeek ?? 'Monday',
     startingMonth: sipData.startingMonth ?? 'Jan',
     status: sipData.status || 'Active',
+    hasStepUp: sipData.hasStepUp || false,
+    stepUpPct: sipData.stepUpPct || 10,
   })
   const instalments = sipData.instalments || []
   const isSIP = form.investmentMode === 'sip'
@@ -472,6 +498,8 @@ function SIPConfigModal({ inv, onSave, onCancel }) {
         startingMonth: form.startingMonth,
         status: form.status,
         instalments: sipData.instalments || [],
+        hasStepUp: form.hasStepUp || false,
+        stepUpPct: form.hasStepUp ? (parseFloat(form.stepUpPct) || 10) : 0,
       } : inv.sip,
     })
   }
@@ -594,6 +622,47 @@ function SIPConfigModal({ inv, onSave, onCancel }) {
                 </div>
               )}
             </div>
+
+            {/* Step-up toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0', padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 8 }}>
+              <input
+                type="checkbox"
+                id="hasStepUp"
+                checked={form.hasStepUp || false}
+                onChange={e => setForm({ ...form, hasStepUp: e.target.checked, stepUpPct: e.target.checked ? (form.stepUpPct || 10) : 0 })}
+                style={{ cursor: 'pointer' }}
+              />
+              <label htmlFor="hasStepUp" style={{ fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer', flex: 1 }}>
+                Step-up SIP (increase amount annually)
+              </label>
+            </div>
+
+            {form.hasStepUp && (
+              <div style={{ marginBottom: 12 }}>
+                <span style={label}>Annual step-up percentage</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="number" min="1" max="50"
+                    value={form.stepUpPct || 10}
+                    onChange={e => setForm({ ...form, stepUpPct: parseFloat(e.target.value) || 10 })}
+                    style={{ ...inp, marginBottom: 0, width: 80, textAlign: 'right' }}
+                  />
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>% per year</span>
+                  {form.startDate && (
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      · First step-up:{' '}
+                      {new Date(new Date(form.startDate).setFullYear(new Date(form.startDate).getFullYear() + 1))
+                        .toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
+                {form.amount && (
+                  <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Current effective: {formatINR(getCurrentSIPAmount({ ...form, monthlyAmount: parseFloat(form.amount) || 0, startDate: form.startDate }))}
+                  </p>
+                )}
+              </div>
+            )}
           </>
         )}
 
