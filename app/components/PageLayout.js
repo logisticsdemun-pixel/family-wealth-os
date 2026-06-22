@@ -3,7 +3,7 @@
 export default function PageLayout({ children, maxWidth }) {
   return (
     <div style={{
-      maxWidth: maxWidth || 1000,
+      maxWidth: maxWidth || 1100,
       margin: '0 auto',
       padding: '24px 28px',
       width: '100%',
