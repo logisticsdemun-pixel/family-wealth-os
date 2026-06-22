@@ -35,14 +35,45 @@ async function fetchStockPrice(ticker) {
   }
 }
 
-async function fetchMFPrice(mfCode) {
-  try {
-    const res = await fetch(`/api/price?mf=${encodeURIComponent(mfCode)}`)
-    const data = await res.json()
-    return data.price ?? null
-  } catch {
-    return null
+async function fetchSingleMFNav(mfCode, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`/api/price?mf=${encodeURIComponent(mfCode)}`, {
+        signal: AbortSignal.timeout(8000),
+        cache: 'no-store',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      const nav = data.price
+      if (!nav || nav <= 0 || isNaN(nav)) throw new Error(`Invalid NAV: ${nav}`)
+      return nav
+    } catch (e) {
+      console.warn(`[MF] ${mfCode} attempt ${attempt}/${retries}: ${e.message}`)
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, attempt * 1000))
+      }
+    }
   }
+  console.error(`[MF] All ${retries} attempts failed for ${mfCode}`)
+  return null
+}
+
+function isNAVReasonable(newNAV, previousNAV, fundName) {
+  if (!newNAV || newNAV <= 0 || isNaN(newNAV)) {
+    console.warn(`[MF] Invalid NAV for ${fundName}: ${newNAV}`)
+    return false
+  }
+  if (previousNAV && previousNAV > 0) {
+    const changePct = Math.abs((newNAV - previousNAV) / previousNAV) * 100
+    if (changePct > 20) {
+      console.warn(
+        `[MF] Suspicious NAV for ${fundName}: ₹${previousNAV} → ₹${newNAV} ` +
+        `(${changePct.toFixed(1)}% change). Keeping previous.`
+      )
+      return false
+    }
+  }
+  return true
 }
 
 // ── Summary cards ──────────────────────────────────────────
@@ -927,6 +958,7 @@ export default function Investments({ activeMember }) {
 
   const [fetchingIds, setFetchingIds] = useState(new Set())
   const [lastUpdated, setLastUpdated] = useState(() => load(KEYS.PRICE_UPDATED, null))
+  const [refreshStatus, setRefreshStatus] = useState(null) // { updated, failed, warn }
   const [subTab, setSubTab] = useState('all')
   const [showAddInv, setShowAddInv] = useState(false)
   const [showAddFD, setShowAddFD] = useState(false)
@@ -950,7 +982,6 @@ export default function Investments({ activeMember }) {
     const cache = { ...load(KEYS.PRICE_CACHE, {}) }
     const map = new Map(snapshot.map(inv => [inv.id, { ...inv }]))
     const now = Date.now()
-    const BATCH_SIZE = 5
 
     const toFetch = forceAll
       ? snapshot
@@ -961,28 +992,60 @@ export default function Investments({ activeMember }) {
 
     if (toFetch.length === 0) return
 
-    for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
-      const batch = toFetch.slice(i, i + BATCH_SIZE)
+    // ── MF: deduplicate, fetch sequentially, validate ────────
+    const mfToFetch = toFetch.filter(inv => inv.isMF && inv.mfCode)
+    const uniqueMFCodes = [...new Set(mfToFetch.map(inv => inv.mfCode))]
+
+    setFetchingIds(new Set(mfToFetch.map(inv => inv.id)))
+
+    const navMap = {}
+    const mfUpdated = []
+    const mfFailed = []
+
+    for (const code of uniqueMFCodes) {
+      const representative = mfToFetch.find(inv => inv.mfCode === code)
+      const fundName = representative?.name || code
+      const previousNAV = representative?.currentPrice || 0
+
+      console.log(`[MF] Fetching ${fundName} (${code})…`)
+      const newNAV = await fetchSingleMFNav(code)
+
+      if (newNAV && isNAVReasonable(newNAV, previousNAV, fundName)) {
+        navMap[code] = newNAV
+        mfUpdated.push({ code, fundName, nav: newNAV })
+        console.log(`[MF] ✓ ${fundName}: ₹${newNAV}`)
+        cache[`mf:${code}`] = { fetchedAt: now, status: 'ok' }
+      } else {
+        mfFailed.push({ code, fundName, previousNAV })
+        console.warn(`[MF] ✗ ${fundName}: keeping ₹${previousNAV}`)
+        cache[`mf:${code}`] = { fetchedAt: cache[`mf:${code}`]?.fetchedAt ?? 0, status: 'error' }
+      }
+
+      await new Promise(r => setTimeout(r, 400))
+    }
+
+    // Apply validated NAVs to every holding with that mfCode
+    for (const inv of snapshot) {
+      if (!inv.isMF || !inv.mfCode) continue
+      const entry = map.get(inv.id)
+      const nav = navMap[inv.mfCode]
+      if (nav) {
+        entry.currentPrice = nav
+        entry.flags = (entry.flags || []).filter(f => f !== 'manual')
+      }
+    }
+
+    // ── Stocks: parallel fetch (unchanged behaviour) ─────────
+    const stocksToFetch = toFetch.filter(inv => !inv.isMF && inv.ticker)
+    const BATCH_SIZE = 5
+
+    for (let i = 0; i < stocksToFetch.length; i += BATCH_SIZE) {
+      const batch = stocksToFetch.slice(i, i + BATCH_SIZE)
       setFetchingIds(new Set(batch.map(b => b.id)))
 
       await Promise.all(batch.map(async inv => {
         const key = getCacheKey(inv)
-
-        if (inv.isMF) {
-          console.log(`[price] Fetching MF: mfCode=${inv.mfCode} name="${inv.name}" units=${inv.units} storedPrice=${inv.currentPrice}`)
-        }
-        if (inv.mfCode === '147946') {
-          console.log('[price] Edelweiss holding:', JSON.stringify(inv))
-        }
-
-        const price = inv.isMF
-          ? await fetchMFPrice(inv.mfCode)
-          : await fetchStockPrice(inv.ticker)
-
-        if (inv.isMF) {
-          console.log(`[price] MF result: mfCode=${inv.mfCode} → price=${price} | currentValue=${price != null ? (inv.units || 0) * price : 'N/A'}`)
-        }
-
+        const price = await fetchStockPrice(inv.ticker)
         if (price != null) {
           const entry = map.get(inv.id)
           entry.currentPrice = price
@@ -993,20 +1056,29 @@ export default function Investments({ activeMember }) {
         }
       }))
 
-      const partial = snapshot.map(inv => map.get(inv.id))
-      storeSetRef.current(KEYS.INVESTMENTS, partial)
-      storeSetRef.current(KEYS.PRICE_CACHE, cache)
-
-      if (i + BATCH_SIZE < toFetch.length) {
+      if (i + BATCH_SIZE < stocksToFetch.length) {
         await new Promise(r => setTimeout(r, 500))
       }
     }
+
+    const partial = snapshot.map(inv => map.get(inv.id))
+    storeSetRef.current(KEYS.INVESTMENTS, partial)
+    storeSetRef.current(KEYS.PRICE_CACHE, cache)
 
     setFetchingIds(new Set())
     const ts = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
     setLastUpdated(ts)
     save(KEYS.PRICE_UPDATED, ts)
     takeSnapshotFromStorage()
+
+    if (uniqueMFCodes.length > 0) {
+      setRefreshStatus({
+        updated: mfUpdated.length,
+        failed: mfFailed.length,
+        warn: mfFailed.length > 0,
+      })
+      setTimeout(() => setRefreshStatus(null), 8000)
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh on mount and every 15 minutes
@@ -1071,6 +1143,12 @@ export default function Investments({ activeMember }) {
           {lastUpdated && (
             <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
               Prices updated at {lastUpdated}
+              {refreshStatus && (
+                <span style={{ marginLeft: 8, color: refreshStatus.warn ? 'var(--amber)' : 'var(--gain)' }}>
+                  · {refreshStatus.updated} fund{refreshStatus.updated !== 1 ? 's' : ''} updated
+                  {refreshStatus.failed > 0 ? `, ${refreshStatus.failed} kept previous` : ''}
+                </span>
+              )}
             </p>
           )}
         </div>
