@@ -1,22 +1,25 @@
 'use client'
 import { load, save, KEYS } from './storage'
-import { computeOutstanding } from './format'
+import { computeOutstanding, MEMBERS } from './format'
+import { computeMemberMetrics } from './metrics'
 
 const MAX_SNAPSHOTS = 365
-// Skip updating today's entry if net worth moved less than ₹1,000 (avoids noisy
-// writes from partial price refreshes that haven't fetched all holdings yet)
+// Skip updating today's entry if net worth moved less than ₹1,000 AND the new
+// entry has no richer data — avoids noisy writes from partial price refreshes
 const SNAPSHOT_MIN_DELTA = 1000
 
-export function takeSnapshot(netWorth) {
+export function takeSnapshot(netWorth, extra = {}) {
   if (typeof window === 'undefined' || netWorth == null || isNaN(netWorth) || netWorth === 0) return
   const snapshots = load(KEYS.SNAPSHOTS, []) || []
   const today = new Date().toISOString().slice(0, 10)
   const rounded = Math.round(netWorth)
   const idx = snapshots.findIndex(s => s.date === today)
 
-  if (idx >= 0 && Math.abs(rounded - snapshots[idx].netWorth) < SNAPSHOT_MIN_DELTA) return
+  // Always overwrite if rich data (byMember/byCategory) is being added
+  const hasRichData = extra.byMember || extra.byCategory
+  if (idx >= 0 && Math.abs(rounded - snapshots[idx].netWorth) < SNAPSHOT_MIN_DELTA && !hasRichData) return
 
-  const entry = { date: today, netWorth: rounded }
+  const entry = { date: today, netWorth: rounded, ...extra }
   const updated = idx >= 0
     ? snapshots.map((s, i) => i === idx ? entry : s)
     : [...snapshots, entry]
@@ -32,7 +35,6 @@ export function takeSnapshotFromStorage(goldPriceDefaults) {
   const cashAssets = (load(KEYS.CASH_ASSETS, []) || []).filter(a => a.member)
   const liabilities = (load(KEYS.LIABILITIES, []) || []).filter(l => l.member)
   const loans = load(KEYS.LOANS, []) || []
-
   const realEstate = load(KEYS.REAL_ESTATE, []) || []
 
   const invVal = investments.reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
@@ -47,7 +49,31 @@ export function takeSnapshotFromStorage(goldPriceDefaults) {
     return s + (p.currentValue || 0) * ((primaryPct + coOwnerPct) / 100)
   }, 0)
 
-  takeSnapshot(invVal + goldVal + fdVal + cashVal + reVal - loanLiab - manualLiab)
+  const netWorth = invVal + goldVal + fdVal + cashVal + reVal - loanLiab - manualLiab
+  const totalAssets = invVal + goldVal + fdVal + cashVal + reVal
+  const totalLiab = loanLiab + manualLiab
+
+  // Per-member net worth breakdown
+  const allData = { investments, gold, goldPrices, fixedIncome, cashAssets, liabilities, loans, realEstate }
+  const byMember = {}
+  for (const member of MEMBERS) {
+    const mx = computeMemberMetrics(allData, member)
+    byMember[member] = Math.round(mx.netWorth)
+  }
+
+  const byCategory = {
+    investments: Math.round(invVal),
+    gold: Math.round(goldVal),
+    realEstate: Math.round(reVal),
+    cash: Math.round(fdVal + cashVal),
+  }
+
+  takeSnapshot(netWorth, {
+    totalAssets: Math.round(totalAssets),
+    liabilities: Math.round(totalLiab),
+    byMember,
+    byCategory,
+  })
 }
 
 export function getSnapshots() {
