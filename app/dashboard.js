@@ -86,69 +86,92 @@ function fmtAxisINR(v) {
 // ── Snapshot period helpers ────────────────────────────────
 function getValidSnapshots(snapshots) {
   if (!snapshots || snapshots.length < 2) return []
-  const sorted = [...snapshots].sort((a, b) => new Date(b.date) - new Date(a.date))
-  const latestNW = parseFloat(sorted[0].netWorth || 0)
-  return sorted.filter(s => {
-    const nw = parseFloat(s.netWorth || 0)
-    if (nw <= 0) return false
-    if (latestNW <= 0) return true
-    return Math.abs((nw - latestNW) / latestNW) * 100 < 50
+  const sorted = [...snapshots]
+    .filter(s => s.date && s.netWorth > 0)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+  if (sorted.length === 0) return []
+  const latestNW = sorted[0].netWorth
+  return sorted.filter(s => Math.abs((s.netWorth - latestNW) / latestNW) * 100 < 50)
+}
+
+function findClosestSnapshot(snapshots, targetDate, direction = 'before') {
+  const target = new Date(targetDate)
+  target.setHours(0, 0, 0, 0)
+  const valid = snapshots.filter(s => {
+    const d = new Date(s.date)
+    if (direction === 'before') return d < target
+    return true
+  })
+  if (valid.length === 0) return null
+  return valid.reduce((closest, s) => {
+    if (!closest) return s
+    const sDiff = Math.abs(new Date(s.date) - target)
+    const cDiff = Math.abs(new Date(closest.date) - target)
+    return sDiff < cDiff ? s : closest
   })
 }
 
-function computeMemberChanges(latest, previous) {
-  if (!latest.byMember || !previous.byMember) return null
-  return Object.keys(latest.byMember).reduce((acc, member) => {
-    const now = latest.byMember[member] || 0
-    const before = previous.byMember[member] || 0
-    acc[member] = { change: now - before, changePct: before > 0 ? ((now - before) / before) * 100 : 0, current: now }
-    return acc
-  }, {})
+function computeChange(fromSnap, toSnap) {
+  if (!fromSnap || !toSnap) return null
+  const fromNW = fromSnap.netWorth || 0
+  const toNW   = toSnap.netWorth   || 0
+  const change    = toNW - fromNW
+  const changePct = fromNW > 0 ? (change / fromNW) * 100 : 0
+  const byMember  = {}
+  for (const m of ['Aseem Saxena', 'Poonam Saxena', 'Devashish Saxena', 'Shivansh Saxena']) {
+    const now    = toSnap.byMember?.[m]   || 0
+    const before = fromSnap.byMember?.[m] || 0
+    byMember[m] = { change: now - before, changePct: before > 0 ? ((now - before) / before) * 100 : 0, current: now }
+  }
+  const byCategory = {}
+  for (const cat of ['investments', 'gold', 'realEstate', 'cash', 'liabilities']) {
+    const now    = toSnap.byCategory?.[cat]   || 0
+    const before = fromSnap.byCategory?.[cat] || 0
+    byCategory[cat] = { change: now - before, changePct: before > 0 ? ((now - before) / before) * 100 : 0 }
+  }
+  return { change, changePct, fromDate: fromSnap.date, toDate: toSnap.date, fromNW, toNW, byMember, byCategory }
 }
 
-function computeCategoryChanges(latest, previous) {
-  if (!latest.byCategory || !previous.byCategory) return null
-  return ['investments', 'gold', 'realEstate', 'cash'].reduce((acc, cat) => {
-    const now = latest.byCategory[cat] || 0
-    const before = previous.byCategory[cat] || 0
-    acc[cat] = { change: now - before, changePct: before > 0 ? ((now - before) / before) * 100 : 0 }
-    return acc
-  }, {})
-}
-
-function getPeriodChange(snapshots, period) {
+function getPeriodChange(snapshots, period, customFrom, customTo) {
   const valid = getValidSnapshots(snapshots)
   if (valid.length < 2) return null
   const latest = valid[0]
-  const latestNW = parseFloat(latest.netWorth)
-  const today = new Date()
-
-  const candidates = valid.filter(s => s.date < latest.date)
-  let compare = null
-
-  if (period === 'today') {
-    compare = candidates[0] || null
-  } else {
-    const target =
-      period === 'week'  ? new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7) :
-      period === 'month' ? new Date(today.getFullYear(), today.getMonth(), 1) :
-                           new Date(today.getFullYear(), 0, 1)
-    compare = candidates.reduce((best, s) => {
-      if (!best) return s
-      return Math.abs(new Date(s.date) - target) < Math.abs(new Date(best.date) - target) ? s : best
-    }, null)
+  const today  = new Date()
+  today.setHours(0, 0, 0, 0)
+  let compareTarget
+  switch (period) {
+    case 'today': {
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+      compareTarget = yesterday
+      break
+    }
+    case 'week': {
+      const weekAgo = new Date(today)
+      weekAgo.setDate(weekAgo.getDate() - 7)
+      compareTarget = weekAgo
+      break
+    }
+    case 'month':
+      compareTarget = new Date(today.getFullYear(), today.getMonth(), 1)
+      break
+    case 'year':
+      compareTarget = new Date(today.getFullYear(), 0, 1)
+      break
+    case 'custom': {
+      if (!customFrom) return null
+      const fromSnap = findClosestSnapshot(valid, new Date(customFrom), 'before')
+      if (customTo) {
+        const toSnap = findClosestSnapshot(valid, new Date(customTo), 'closest')
+        return computeChange(fromSnap, toSnap)
+      }
+      return computeChange(fromSnap, latest)
+    }
+    default:
+      return null
   }
-
-  if (!compare) return null
-  const compareNW = parseFloat(compare.netWorth)
-  const change = latestNW - compareNW
-  const changePct = compareNW > 0 ? (change / compareNW) * 100 : 0
-  return {
-    change, changePct,
-    fromDate: compare.date, fromNW: compareNW, toNW: latestNW,
-    byMember: computeMemberChanges(latest, compare),
-    byCategory: computeCategoryChanges(latest, compare),
-  }
+  const compareSnap = findClosestSnapshot(valid, compareTarget, 'before')
+  return computeChange(compareSnap, latest)
 }
 
 // ── Allocation bar ─────────────────────────────────────────
@@ -338,6 +361,10 @@ export default function Dashboard({ activeMember }) {
   const [showAddLiability, setShowAddLiability] = useState(false)
   const [showDailySummary, setShowDailySummary] = useState(false)
   const [activePeriod, setActivePeriod] = useState('today')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState(new Date().toISOString().split('T')[0])
+  const [appliedCustomFrom, setAppliedCustomFrom] = useState('')
+  const [appliedCustomTo, setAppliedCustomTo] = useState('')
 
   // ── Shared metrics (identical logic to sidebar) ──────────
   const viewMetrics = useMemo(
@@ -424,13 +451,31 @@ export default function Dashboard({ activeMember }) {
   const totalGoldGrams = filterByMember(gold, activeMember).reduce((s, g) => s + (g.grams || 0), 0)
   const fdCount        = filterByMember(fixedIncome, activeMember).length
 
+  const periodNow = new Date()
+  const periodConfig = [
+    { id: 'today', label: 'Today' },
+    { id: 'week',  label: 'This week' },
+    { id: 'month', label: periodNow.toLocaleDateString('en-IN', { month: 'long' }) },
+    { id: 'year',  label: periodNow.getFullYear().toString() },
+    { id: 'custom', label: 'Custom' },
+  ]
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const activePeriodData = useMemo(() => {
+    if (activePeriod === 'custom') {
+      if (!appliedCustomFrom) return null
+      return getPeriodChange(snapshots, 'custom', appliedCustomFrom, appliedCustomTo)
+    }
+    return getPeriodChange(snapshots, activePeriod)
+  }, [snapshots, activePeriod, appliedCustomFrom, appliedCustomTo])
+
   if (showDailySummary) {
     return (
       <DailySummary
         memberFilter={activeMember}
         onBack={() => setShowDailySummary(false)}
         period={activePeriod}
-        periodData={getPeriodChange(snapshots, activePeriod)}
+        periodData={activePeriodData}
       />
     )
   }
@@ -484,60 +529,121 @@ export default function Dashboard({ activeMember }) {
 
           <div style={{ width: '0.5px', height: 36, background: 'var(--color-border-secondary)', flexShrink: 0 }} />
 
-          <div>
-            {/* Period selector pills */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-              {[
-                { id: 'today', label: 'Today' },
-                { id: 'week',  label: 'This Week' },
-                { id: 'month', label: new Date().toLocaleDateString('en-IN', { month: 'long' }) },
-                { id: 'year',  label: String(new Date().getFullYear()) },
-              ].map(p => {
-                const pd = getPeriodChange(snapshots, p.id)
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => { setActivePeriod(p.id); if (pd) setShowDailySummary(true) }}
-                    style={{
-                      padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontSize: 11,
-                      border: '0.5px solid',
-                      borderColor: activePeriod === p.id ? 'var(--color-accent)' : 'var(--color-border-tertiary)',
-                      background: activePeriod === p.id ? 'var(--color-accent-bg)' : 'transparent',
-                      color: activePeriod === p.id ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                    }}
-                  >
-                    {p.label}
-                  </button>
-                )
-              })}
+          {/* Period comparison block */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+
+            {/* Five period pills */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {periodConfig.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setActivePeriod(p.id)}
+                  style={{
+                    padding: '3px 10px', borderRadius: 20, border: '0.5px solid',
+                    borderColor: activePeriod === p.id ? 'var(--color-border-secondary)' : 'var(--color-border-tertiary)',
+                    background: activePeriod === p.id ? 'var(--color-background-secondary)' : 'transparent',
+                    cursor: 'pointer', fontSize: 11,
+                    fontWeight: activePeriod === p.id ? 500 : 400,
+                    color: activePeriod === p.id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
-            {/* Active period change value */}
-            {(() => {
-              const pd = getPeriodChange(snapshots, activePeriod)
-              if (!pd) return (
-                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>
-                  Not enough data yet
-                </p>
-              )
-              return (
+
+            {/* Custom date picker — only when Custom is active */}
+            {activePeriod === 'custom' && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, marginTop: 6,
+                padding: '8px 12px',
+                background: 'var(--color-background-secondary)',
+                borderRadius: 8,
+                border: '0.5px solid var(--color-border-tertiary)',
+                flexWrap: 'wrap',
+              }}>
+                <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>From</span>
+                <input
+                  type="date"
+                  value={customFrom}
+                  max={customTo || new Date().toISOString().split('T')[0]}
+                  onChange={e => setCustomFrom(e.target.value)}
+                  style={{
+                    fontSize: 12, padding: '3px 8px', borderRadius: 6,
+                    border: '0.5px solid var(--color-border-tertiary)',
+                    background: 'var(--color-background-primary)',
+                    color: 'var(--color-text-primary)', fontFamily: 'inherit', cursor: 'pointer',
+                  }}
+                />
+                <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>to</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  min={customFrom}
+                  max={new Date().toISOString().split('T')[0]}
+                  onChange={e => setCustomTo(e.target.value)}
+                  style={{
+                    fontSize: 12, padding: '3px 8px', borderRadius: 6,
+                    border: '0.5px solid var(--color-border-tertiary)',
+                    background: 'var(--color-background-primary)',
+                    color: 'var(--color-text-primary)', fontFamily: 'inherit', cursor: 'pointer',
+                  }}
+                />
+                <button
+                  onClick={() => { if (customFrom && customTo) { setAppliedCustomFrom(customFrom); setAppliedCustomTo(customTo) } }}
+                  disabled={!customFrom || !customTo}
+                  style={{
+                    padding: '4px 12px', borderRadius: 20,
+                    background: 'var(--color-text-primary)', color: 'var(--color-background-primary)',
+                    border: 'none', fontSize: 11, fontWeight: 500,
+                    cursor: customFrom && customTo ? 'pointer' : 'not-allowed',
+                    opacity: customFrom && customTo ? 1 : 0.5,
+                    fontFamily: 'inherit', whiteSpace: 'nowrap',
+                  }}
+                >
+                  Apply
+                </button>
+              </div>
+            )}
+
+            {/* Change value */}
+            {activePeriodData ? (
+              <>
                 <button
                   onClick={() => setShowDailySummary(true)}
-                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                  style={{
+                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                    textAlign: 'left', display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4,
+                  }}
                 >
-                  <p style={{
-                    fontSize: 18, fontWeight: 600, letterSpacing: '-0.3px', margin: '0 0 2px',
-                    color: pd.change >= 0 ? '#2D6A4F' : '#D85A30',
+                  <span style={{
+                    fontSize: 18, fontWeight: 500, letterSpacing: '-0.3px',
+                    color: activePeriodData.change >= 0 ? '#2D6A4F' : '#D85A30',
                     textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3,
                   }}>
-                    {pd.change >= 0 ? '+' : ''}{formatINR(pd.change)}
-                  </p>
-                  <p style={{ fontSize: 11, color: pd.change >= 0 ? '#2D6A4F' : '#D85A30', margin: 0 }}>
-                    {pd.changePct >= 0 ? '+' : ''}{pd.changePct.toFixed(2)}% · since{' '}
-                    {new Date(pd.fromDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                  </p>
+                    {activePeriodData.change >= 0 ? '+' : ''}{formatINR(activePeriodData.change)}
+                  </span>
+                  <span style={{
+                    fontSize: 12, fontWeight: 500, padding: '2px 8px', borderRadius: 20,
+                    background: activePeriodData.change >= 0 ? '#EAF3DE' : '#FCEBEB',
+                    color: activePeriodData.change >= 0 ? '#3B6D11' : '#A32D2D',
+                  }}>
+                    {activePeriodData.changePct >= 0 ? '+' : ''}{activePeriodData.changePct.toFixed(2)}%
+                  </span>
                 </button>
+                <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: 0 }}>
+                  vs{' '}{formatINR(activePeriodData.fromNW)}{' on '}
+                  {new Date(activePeriodData.fromDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </p>
+              </>
+            ) : (
+              activePeriod !== 'custom' && (
+                <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                  Not enough snapshots yet
+                </p>
               )
-            })()}
+            )}
           </div>
         </div>
       </div>
@@ -594,6 +700,79 @@ export default function Dashboard({ activeMember }) {
           </div>
         ))}
       </div>
+
+      {/* Inline period breakdown — member + category */}
+      {activePeriodData && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <p style={{ fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
+              {activePeriod === 'custom'
+                ? 'Custom period · Change by member'
+                : `${periodConfig.find(p => p.id === activePeriod)?.label} · Change by member`}
+            </p>
+            <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+              {new Date(activePeriodData.fromDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+              {' → '}
+              {new Date(activePeriodData.toDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+            </span>
+          </div>
+
+          {/* Member cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
+            {[
+              { name: 'Aseem Saxena',     initials: 'AS', bg: '#E6F1FB', color: '#185FA5' },
+              { name: 'Poonam Saxena',    initials: 'PS', bg: '#FAEEDA', color: '#854F0B' },
+              { name: 'Devashish Saxena', initials: 'DS', bg: '#EAF3DE', color: '#3B6D11' },
+              { name: 'Shivansh Saxena',  initials: 'SS', bg: '#FBEAF0', color: '#993556' },
+            ].map(m => {
+              const mData = activePeriodData.byMember?.[m.name]
+              const change = mData?.change || 0
+              const pct    = mData?.changePct || 0
+              return (
+                <div key={m.name} style={{ background: '#FFFFFF', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 10, padding: '14px 16px' }}>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: m.bg, color: m.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 500, marginBottom: 8 }}>
+                    {m.initials}
+                  </div>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', margin: '0 0 2px' }}>{m.name.split(' ')[0]}</p>
+                  <p style={{ fontSize: 15, fontWeight: 500, letterSpacing: '-0.3px', color: change === 0 ? 'var(--color-text-secondary)' : change > 0 ? '#2D6A4F' : '#D85A30', margin: '0 0 1px' }}>
+                    {change === 0 ? '—' : (change > 0 ? '+' : '') + formatINR(change)}
+                  </p>
+                  {change !== 0 && (
+                    <p style={{ fontSize: 11, color: change > 0 ? '#2D6A4F' : '#D85A30', margin: 0 }}>
+                      {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Category cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+            {[
+              { key: 'investments', label: 'Investments' },
+              { key: 'gold',        label: 'Gold' },
+              { key: 'realEstate',  label: 'Real estate' },
+              { key: 'cash',        label: 'Cash & FDs' },
+            ].map(cat => {
+              const cData  = activePeriodData.byCategory?.[cat.key]
+              const change = cData?.change || 0
+              const pct    = cData?.changePct || 0
+              return (
+                <div key={cat.key} style={{ background: '#FFFFFF', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 10, padding: '12px 14px' }}>
+                  <p style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>{cat.label}</p>
+                  <p style={{ fontSize: 14, fontWeight: 500, letterSpacing: '-0.2px', color: change === 0 ? 'var(--color-text-secondary)' : change > 0 ? '#2D6A4F' : '#D85A30', margin: '0 0 2px' }}>
+                    {change === 0 ? '—' : (change > 0 ? '+' : '') + formatINR(change)}
+                  </p>
+                  <p style={{ fontSize: 11, color: change === 0 ? 'var(--color-text-secondary)' : change > 0 ? '#2D6A4F' : '#D85A30', margin: 0 }}>
+                    {change === 0 ? 'No change' : (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Shared loan note */}
       {activeMember !== 'All' && sharedLoans > 0 && (

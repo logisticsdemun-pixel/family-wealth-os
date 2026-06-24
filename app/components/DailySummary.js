@@ -19,11 +19,12 @@ function formatDate(iso) {
 
 function getPeriodTitle(period) {
   switch (period) {
-    case 'today': return "Today's Summary"
-    case 'week':  return 'This Week'
-    case 'month': return new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-    case 'year':  return String(new Date().getFullYear())
-    default:      return 'Summary'
+    case 'today':  return "Today's Summary"
+    case 'week':   return 'This Week'
+    case 'month':  return new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    case 'year':   return String(new Date().getFullYear())
+    case 'custom': return 'Custom Period'
+    default:       return 'Summary'
   }
 }
 
@@ -300,7 +301,8 @@ export default function DailySummary({ memberFilter, onBack, period = 'today', p
               <span style={{ flexShrink: 0, marginTop: 1 }}>ℹ</span>
               <span>
                 Comparing snapshot from{' '}
-                <strong>{formatDate(displayFromDate)}</strong>{' '}to the latest.{' '}
+                <strong>{formatDate(displayFromDate)}</strong>{' '}
+                to {periodData?.toDate ? <strong>{formatDate(periodData.toDate)}</strong> : 'the latest'}.{' '}
                 Changes in investments reflect price refreshes between these snapshots.
               </span>
             </div>
