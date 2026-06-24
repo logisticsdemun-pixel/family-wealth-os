@@ -83,6 +83,74 @@ function fmtAxisINR(v) {
   return `₹${v}`
 }
 
+// ── Snapshot period helpers ────────────────────────────────
+function getValidSnapshots(snapshots) {
+  if (!snapshots || snapshots.length < 2) return []
+  const sorted = [...snapshots].sort((a, b) => new Date(b.date) - new Date(a.date))
+  const latestNW = parseFloat(sorted[0].netWorth || 0)
+  return sorted.filter(s => {
+    const nw = parseFloat(s.netWorth || 0)
+    if (nw <= 0) return false
+    if (latestNW <= 0) return true
+    return Math.abs((nw - latestNW) / latestNW) * 100 < 50
+  })
+}
+
+function computeMemberChanges(latest, previous) {
+  if (!latest.byMember || !previous.byMember) return null
+  return Object.keys(latest.byMember).reduce((acc, member) => {
+    const now = latest.byMember[member] || 0
+    const before = previous.byMember[member] || 0
+    acc[member] = { change: now - before, changePct: before > 0 ? ((now - before) / before) * 100 : 0, current: now }
+    return acc
+  }, {})
+}
+
+function computeCategoryChanges(latest, previous) {
+  if (!latest.byCategory || !previous.byCategory) return null
+  return ['investments', 'gold', 'realEstate', 'cash'].reduce((acc, cat) => {
+    const now = latest.byCategory[cat] || 0
+    const before = previous.byCategory[cat] || 0
+    acc[cat] = { change: now - before, changePct: before > 0 ? ((now - before) / before) * 100 : 0 }
+    return acc
+  }, {})
+}
+
+function getPeriodChange(snapshots, period) {
+  const valid = getValidSnapshots(snapshots)
+  if (valid.length < 2) return null
+  const latest = valid[0]
+  const latestNW = parseFloat(latest.netWorth)
+  const today = new Date()
+
+  const candidates = valid.filter(s => s.date < latest.date)
+  let compare = null
+
+  if (period === 'today') {
+    compare = candidates[0] || null
+  } else {
+    const target =
+      period === 'week'  ? new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7) :
+      period === 'month' ? new Date(today.getFullYear(), today.getMonth(), 1) :
+                           new Date(today.getFullYear(), 0, 1)
+    compare = candidates.reduce((best, s) => {
+      if (!best) return s
+      return Math.abs(new Date(s.date) - target) < Math.abs(new Date(best.date) - target) ? s : best
+    }, null)
+  }
+
+  if (!compare) return null
+  const compareNW = parseFloat(compare.netWorth)
+  const change = latestNW - compareNW
+  const changePct = compareNW > 0 ? (change / compareNW) * 100 : 0
+  return {
+    change, changePct,
+    fromDate: compare.date, fromNW: compareNW, toNW: latestNW,
+    byMember: computeMemberChanges(latest, compare),
+    byCategory: computeCategoryChanges(latest, compare),
+  }
+}
+
 // ── Allocation bar ─────────────────────────────────────────
 function AllocationBar({ segments }) {
   const total = segments.reduce((s, sg) => s + sg.value, 0)
@@ -269,6 +337,7 @@ export default function Dashboard({ activeMember }) {
   const [showAddCash, setShowAddCash] = useState(false)
   const [showAddLiability, setShowAddLiability] = useState(false)
   const [showDailySummary, setShowDailySummary] = useState(false)
+  const [activePeriod, setActivePeriod] = useState('today')
 
   // ── Shared metrics (identical logic to sidebar) ──────────
   const viewMetrics = useMemo(
@@ -328,14 +397,6 @@ export default function Dashboard({ activeMember }) {
   const filteredCash = filterByMember(cashAssets, activeMember)
   const filteredLiab = filterByMember(liabilities, activeMember)
 
-  // ── Snapshot-derived changes ─────────────────────────────
-  const prevDayNW = snapshots[snapshots.length - 2]?.netWorth ?? viewMetrics.netWorth
-  const dayChange = viewMetrics.netWorth - prevDayNW
-
-  const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-  const monthSnap = snapshots.find(s => new Date(s.date) >= thirtyDaysAgo)
-  const monthChange = monthSnap ? viewMetrics.netWorth - monthSnap.netWorth : 0
-
   // ── Counts for metric card subtitles ─────────────────────
   const invCount       = filterByMember(investments, activeMember).length
   const reCount        = filterByMember(realEstate,  activeMember).length
@@ -350,6 +411,8 @@ export default function Dashboard({ activeMember }) {
       <DailySummary
         memberFilter={activeMember}
         onBack={() => setShowDailySummary(false)}
+        period={activePeriod}
+        periodData={getPeriodChange(snapshots, activePeriod)}
       />
     )
   }
@@ -403,39 +466,61 @@ export default function Dashboard({ activeMember }) {
 
           <div style={{ width: '0.5px', height: 36, background: 'var(--color-border-secondary)', flexShrink: 0 }} />
 
-          <button
-            onClick={() => setShowDailySummary(true)}
-            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
-          >
-            <p style={{
-              fontSize: 10, color: 'var(--color-text-secondary)',
-              textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 3px',
-              display: 'flex', alignItems: 'center', gap: 4,
-            }}>
-              Today
-              <span style={{ fontSize: 10 }}>→</span>
-            </p>
-            <p style={{
-              fontSize: 18, fontWeight: 600,
-              color: dayChange >= 0 ? '#2D6A4F' : '#D85A30',
-              letterSpacing: '-0.3px', margin: 0,
-              textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3,
-            }}>
-              {dayChange >= 0 ? '+' : ''}{formatINR(dayChange)}
-            </p>
-          </button>
-
-          {monthChange !== 0 && (
-            <span style={{
-              marginLeft: 'auto', fontSize: 12, fontWeight: 500,
-              padding: '4px 10px', borderRadius: 20, flexShrink: 0,
-              background: monthChange >= 0 ? '#EAF3DE' : '#FCEBEB',
-              color: monthChange >= 0 ? '#3B6D11' : '#A32D2D',
-            }}>
-              {monthChange >= 0 ? '+' : ''}
-              {((monthChange / Math.max(1, viewMetrics.netWorth - monthChange)) * 100).toFixed(1)}% this month
-            </span>
-          )}
+          <div>
+            {/* Period selector pills */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+              {[
+                { id: 'today', label: 'Today' },
+                { id: 'week',  label: 'This Week' },
+                { id: 'month', label: new Date().toLocaleDateString('en-IN', { month: 'long' }) },
+                { id: 'year',  label: String(new Date().getFullYear()) },
+              ].map(p => {
+                const pd = getPeriodChange(snapshots, p.id)
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => { setActivePeriod(p.id); if (pd) setShowDailySummary(true) }}
+                    style={{
+                      padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontSize: 11,
+                      border: '0.5px solid',
+                      borderColor: activePeriod === p.id ? 'var(--color-accent)' : 'var(--color-border-tertiary)',
+                      background: activePeriod === p.id ? 'var(--color-accent-bg)' : 'transparent',
+                      color: activePeriod === p.id ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                )
+              })}
+            </div>
+            {/* Active period change value */}
+            {(() => {
+              const pd = getPeriodChange(snapshots, activePeriod)
+              if (!pd) return (
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>
+                  Not enough data yet
+                </p>
+              )
+              return (
+                <button
+                  onClick={() => setShowDailySummary(true)}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                >
+                  <p style={{
+                    fontSize: 18, fontWeight: 600, letterSpacing: '-0.3px', margin: '0 0 2px',
+                    color: pd.change >= 0 ? '#2D6A4F' : '#D85A30',
+                    textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3,
+                  }}>
+                    {pd.change >= 0 ? '+' : ''}{formatINR(pd.change)}
+                  </p>
+                  <p style={{ fontSize: 11, color: pd.change >= 0 ? '#2D6A4F' : '#D85A30', margin: 0 }}>
+                    {pd.changePct >= 0 ? '+' : ''}{pd.changePct.toFixed(2)}% · since{' '}
+                    {new Date(pd.fromDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  </p>
+                </button>
+              )
+            })()}
+          </div>
         </div>
       </div>
 
