@@ -66,6 +66,7 @@ export function takeSnapshotFromStorage(goldPriceDefaults) {
     gold: Math.round(goldVal),
     realEstate: Math.round(reVal),
     cash: Math.round(fdVal + cashVal),
+    liabilities: Math.round(totalLiab),
   }
 
   takeSnapshot(netWorth, {

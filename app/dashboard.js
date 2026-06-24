@@ -357,7 +357,25 @@ export default function Dashboard({ activeMember }) {
 
   // ── Snapshot on first data load ──────────────────────────
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (data) takeSnapshot(viewMetrics.netWorth) }, [!!data])
+  useEffect(() => {
+    if (!data) return
+    const allMetrics = computeMemberMetrics(data, 'All')
+    const byMember = Object.fromEntries(
+      MEMBERS.map(m => [m, Math.round(computeMemberMetrics(data, m).netWorth)])
+    )
+    takeSnapshot(allMetrics.netWorth, {
+      totalAssets: Math.round(allMetrics.totalAssets),
+      liabilities: Math.round(allMetrics.liabilities),
+      byMember,
+      byCategory: {
+        investments: Math.round(allMetrics.investments),
+        gold: Math.round(allMetrics.gold),
+        realEstate: Math.round(allMetrics.realEstate),
+        cash: Math.round(allMetrics.cash),
+        liabilities: Math.round(allMetrics.liabilities),
+      },
+    })
+  }, [!!data])
 
   // ── Member breakdown rows ────────────────────────────────
   const memberRows = useMemo(() => MEMBERS.map(m => {
