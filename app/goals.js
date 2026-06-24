@@ -27,7 +27,7 @@ function inflatedTarget(targetAmount, targetDate, inflationPct) {
   return targetAmount * Math.pow(1 + inflationPct / 100, years)
 }
 
-function linkedCurrentValue(goal, allInvestments, allGold, goldPrices) {
+function linkedCurrentValue(goal, allInvestments, allGold, goldPrices, allCashAccounts) {
   const invValue = (allInvestments || [])
     .filter(h => (goal.linkedInvestmentIds || []).includes(String(h.id)))
     .reduce((s, h) => s + (h.units || 0) * (h.currentPrice || h.buyPrice || 0), 0)
@@ -40,7 +40,11 @@ function linkedCurrentValue(goal, allInvestments, allGold, goldPrices) {
       return s + grams * price
     }, 0)
 
-  return invValue + goldValue
+  const cashValue = (allCashAccounts || [])
+    .filter(a => (goal.linkedCashIds || []).includes(String(a.id)))
+    .reduce((s, a) => s + (a.value || 0), 0)
+
+  return invValue + goldValue + cashValue
 }
 
 function monthlySIPNeeded(currentValue, targetCorpus, targetDate, annualReturnPct) {
@@ -229,7 +233,7 @@ export default function Goals({ activeMember }) {
   const goalsWithMetrics = useMemo(() =>
     filteredGoals.map(g => {
       const corpus = inflatedTarget(g.targetAmount, g.targetDate, g.inflationPct || 6)
-      const current = linkedCurrentValue(g, data?.investments, data?.gold, goldPrices)
+      const current = linkedCurrentValue(g, data?.investments, data?.gold, goldPrices, data?.cashAssets)
       const gap = Math.max(0, corpus - current)
       const fundedPct = corpus > 0 ? Math.min(100, (current / corpus) * 100) : 0
       const monthsLeft = Math.max(0, Math.round(
@@ -239,7 +243,7 @@ export default function Goals({ activeMember }) {
       const status = goalStatus(fundedPct, monthsLeft)
       return { ...g, corpus, current, gap, fundedPct, monthsLeft, sipNeeded, status }
     }),
-    [filteredGoals, data?.investments, data?.gold, goldPrices]
+    [filteredGoals, data?.investments, data?.gold, goldPrices, data?.cashAssets]
   )
 
   const totalTarget  = goalsWithMetrics.reduce((s, g) => s + g.corpus, 0)
@@ -257,6 +261,7 @@ export default function Goals({ activeMember }) {
       id: editingGoal?.id || String(Date.now()),
       linkedInvestmentIds: editingGoal?.linkedInvestmentIds || [],
       linkedGoldIds: editingGoal?.linkedGoldIds || [],
+      linkedCashIds: editingGoal?.linkedCashIds || [],
       createdAt: editingGoal?.createdAt || new Date().toISOString(),
     }
     saveGoals(
@@ -284,6 +289,18 @@ export default function Goals({ activeMember }) {
       ? current.filter(id => id !== sid)
       : [...current, sid]
     saveGoals(allGoals.map(g => g.id === goalId ? { ...g, [field]: updated } : g))
+  }
+
+  function toggleCashLink(goalId, accountId) {
+    const allGoals = data?.goals || []
+    const goal = allGoals.find(g => g.id === goalId)
+    if (!goal) return
+    const current = goal.linkedCashIds || []
+    const sid = String(accountId)
+    const updated = current.includes(sid)
+      ? current.filter(id => id !== sid)
+      : [...current, sid]
+    saveGoals(allGoals.map(g => g.id === goalId ? { ...g, linkedCashIds: updated } : g))
   }
 
   return (
@@ -392,7 +409,17 @@ export default function Goals({ activeMember }) {
       {goalsWithMetrics.map(goal => {
         const goalType = GOAL_TYPES.find(t => t.id === goal.type) || GOAL_TYPES.find(t => t.id === 'custom')
         const yearsLeft = (goal.monthsLeft / 12).toFixed(1)
-        const linkedCount = (goal.linkedInvestmentIds?.length || 0) + (goal.linkedGoldIds?.length || 0)
+        const linkedCount = (goal.linkedInvestmentIds?.length || 0) +
+          (goal.linkedGoldIds?.length || 0) +
+          (goal.linkedCashIds?.length || 0)
+
+        const linkedParts = []
+        if (goal.linkedInvestmentIds?.length > 0)
+          linkedParts.push(`${goal.linkedInvestmentIds.length} investment${goal.linkedInvestmentIds.length !== 1 ? 's' : ''}`)
+        if (goal.linkedGoldIds?.length > 0)
+          linkedParts.push(`${goal.linkedGoldIds.length} gold item${goal.linkedGoldIds.length !== 1 ? 's' : ''}`)
+        if (goal.linkedCashIds?.length > 0)
+          linkedParts.push(`${goal.linkedCashIds.length} cash account${goal.linkedCashIds.length !== 1 ? 's' : ''}`)
 
         return (
           <div key={goal.id} style={{
@@ -475,7 +502,7 @@ export default function Goals({ activeMember }) {
               {linkedCount > 0 ? (
                 <>
                   <i className="ti ti-link" style={{ fontSize: 13, marginRight: 4 }} aria-hidden="true" />
-                  {linkedCount} investment{linkedCount !== 1 ? 's' : ''} linked
+                  {linkedParts.join(' · ')} linked
                   <button
                     onClick={() => setShowLinkPanel(goal.id)}
                     style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-accent)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
@@ -610,6 +637,38 @@ export default function Goals({ activeMember }) {
                   )
                 })}
               </>
+            )}
+
+            {(data?.cashAssets || []).length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-secondary)', margin: '0 0 8px', paddingTop: 12, borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+                  Cash deposits &amp; accounts
+                </p>
+                {(data?.cashAssets || []).map(account => {
+                  const goal = (data?.goals || []).find(g => g.id === showLinkPanel)
+                  const isLinked = (goal?.linkedCashIds || []).includes(String(account.id))
+                  return (
+                    <label key={account.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '0.5px solid var(--color-border-tertiary)', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={isLinked}
+                        onChange={() => toggleCashLink(showLinkPanel, account.id)}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-primary)' }}>
+                          {account.name || account.bankName || 'Cash Account'}
+                        </p>
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                          {account.member || ''}{account.type || account.accountType ? ` · ${account.type || account.accountType}` : ''}
+                        </p>
+                      </div>
+                      <span style={{ fontSize: 13, color: 'var(--color-accent)', fontWeight: 500 }}>
+                        {formatINR(account.value || 0)}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
             )}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
