@@ -6,9 +6,10 @@ import { formatINR, memberColor, memberInitials, firstName, MEMBERS, computeOuts
 import { DEFAULT_GOLD_PRICES } from './lib/seedData'
 import { takeSnapshot } from './lib/snapshot'
 import { useStore } from './lib/store'
-import { computeMemberMetrics } from './lib/metrics'
+import { computeMemberMetrics, getPeriodChange } from './lib/metrics'
 import PageLayout from './components/PageLayout'
-import DailySummary from './components/DailySummary'
+import PeriodSummary from './components/PeriodSummary'
+import MemberDetail from './components/MemberDetail'
 
 const ASSET_TYPES = ['Cash & Savings', 'Fixed Deposit', 'EPF / PPF', 'Real Estate', 'Crypto', 'Other']
 const LIABILITY_TYPES = ['Credit Card', 'Personal Loan', 'Education Loan', 'Other Debt']
@@ -81,97 +82,6 @@ function fmtAxisINR(v) {
   if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`
   if (v >= 1000) return `₹${(v / 1000).toFixed(0)}K`
   return `₹${v}`
-}
-
-// ── Snapshot period helpers ────────────────────────────────
-function getValidSnapshots(snapshots) {
-  if (!snapshots || snapshots.length < 2) return []
-  const sorted = [...snapshots]
-    .filter(s => s.date && s.netWorth > 0)
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-  if (sorted.length === 0) return []
-  const latestNW = sorted[0].netWorth
-  return sorted.filter(s => Math.abs((s.netWorth - latestNW) / latestNW) * 100 < 50)
-}
-
-function findClosestSnapshot(snapshots, targetDate, direction = 'before') {
-  const target = new Date(targetDate)
-  target.setHours(0, 0, 0, 0)
-  const valid = snapshots.filter(s => {
-    const d = new Date(s.date)
-    if (direction === 'before') return d < target
-    return true
-  })
-  if (valid.length === 0) return null
-  return valid.reduce((closest, s) => {
-    if (!closest) return s
-    const sDiff = Math.abs(new Date(s.date) - target)
-    const cDiff = Math.abs(new Date(closest.date) - target)
-    return sDiff < cDiff ? s : closest
-  })
-}
-
-function computeChange(fromSnap, toSnap) {
-  if (!fromSnap || !toSnap) return null
-  const fromNW = fromSnap.netWorth || 0
-  const toNW   = toSnap.netWorth   || 0
-  const change    = toNW - fromNW
-  const changePct = fromNW > 0 ? (change / fromNW) * 100 : 0
-  const byMember  = {}
-  for (const m of ['Aseem Saxena', 'Poonam Saxena', 'Devashish Saxena', 'Shivansh Saxena']) {
-    const now    = toSnap.byMember?.[m]?.netWorth   || 0
-    const before = fromSnap.byMember?.[m]?.netWorth || 0
-    byMember[m] = { change: now - before, changePct: before > 0 ? ((now - before) / before) * 100 : 0, current: now }
-  }
-  const byCategory = {}
-  for (const cat of ['investments', 'gold', 'realEstate', 'cash', 'liabilities']) {
-    const now    = toSnap.byCategory?.[cat]   || 0
-    const before = fromSnap.byCategory?.[cat] || 0
-    byCategory[cat] = { change: now - before, changePct: before > 0 ? ((now - before) / before) * 100 : 0 }
-  }
-  return { change, changePct, fromDate: fromSnap.date, toDate: toSnap.date, fromNW, toNW, byMember, byCategory }
-}
-
-function getPeriodChange(snapshots, period, customFrom, customTo) {
-  const valid = getValidSnapshots(snapshots)
-  if (valid.length < 2) return null
-  const latest = valid[0]
-  const today  = new Date()
-  today.setHours(0, 0, 0, 0)
-  let compareTarget
-  switch (period) {
-    case 'today': {
-      const yesterday = new Date(today)
-      yesterday.setDate(yesterday.getDate() - 1)
-      compareTarget = yesterday
-      break
-    }
-    case 'week': {
-      const weekAgo = new Date(today)
-      weekAgo.setDate(weekAgo.getDate() - 7)
-      compareTarget = weekAgo
-      break
-    }
-    case 'month':
-      compareTarget = new Date(today.getFullYear(), today.getMonth(), 1)
-      break
-    case 'year':
-      compareTarget = new Date(today.getFullYear(), 0, 1)
-      break
-    case 'custom': {
-      if (!customFrom) return null
-      const fromSnap = findClosestSnapshot(valid, new Date(customFrom), 'before')
-      if (customTo) {
-        const toSnap = findClosestSnapshot(valid, new Date(customTo), 'closest')
-        return computeChange(fromSnap, toSnap)
-      }
-      return computeChange(fromSnap, latest)
-    }
-    default:
-      return null
-  }
-  const compareSnap = findClosestSnapshot(valid, compareTarget, 'before')
-  return computeChange(compareSnap, latest)
 }
 
 // ── Allocation bar ─────────────────────────────────────────
@@ -359,12 +269,13 @@ export default function Dashboard({ activeMember }) {
 
   const [showAddCash, setShowAddCash] = useState(false)
   const [showAddLiability, setShowAddLiability] = useState(false)
-  const [showDailySummary, setShowDailySummary] = useState(false)
+  const [showPeriodSummary, setShowPeriodSummary] = useState(false)
+  const [selectedMemberDetail, setSelectedMemberDetail] = useState(null)
   const [activePeriod, setActivePeriod] = useState('today')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState(new Date().toISOString().split('T')[0])
-  const [appliedCustomFrom, setAppliedCustomFrom] = useState('')
-  const [appliedCustomTo, setAppliedCustomTo] = useState('')
+  const [appliedFrom, setAppliedFrom] = useState('')
+  const [appliedTo, setAppliedTo] = useState('')
 
   // ── Shared metrics (identical logic to sidebar) ──────────
   const viewMetrics = useMemo(
@@ -473,19 +384,32 @@ export default function Dashboard({ activeMember }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const activePeriodData = useMemo(() => {
     if (activePeriod === 'custom') {
-      if (!appliedCustomFrom) return null
-      return getPeriodChange(snapshots, 'custom', appliedCustomFrom, appliedCustomTo)
+      if (!appliedFrom) return null
+      return getPeriodChange(snapshots, 'custom', appliedFrom, appliedTo)
     }
     return getPeriodChange(snapshots, activePeriod)
-  }, [snapshots, activePeriod, appliedCustomFrom, appliedCustomTo])
+  }, [snapshots, activePeriod, appliedFrom, appliedTo])
 
-  if (showDailySummary) {
+  const periodLabel = periodConfig.find(p => p.id === activePeriod)?.label || 'Custom period'
+
+  if (selectedMemberDetail) {
     return (
-      <DailySummary
-        memberFilter={activeMember}
-        onBack={() => setShowDailySummary(false)}
-        period={activePeriod}
+      <MemberDetail
+        memberName={selectedMemberDetail}
         periodData={activePeriodData}
+        periodLabel={periodLabel}
+        onBack={() => setSelectedMemberDetail(null)}
+      />
+    )
+  }
+
+  if (showPeriodSummary) {
+    return (
+      <PeriodSummary
+        periodData={activePeriodData}
+        periodLabel={periodLabel}
+        onBack={() => setShowPeriodSummary(false)}
+        onSelectMember={name => { setSelectedMemberDetail(name) }}
       />
     )
   }
@@ -601,7 +525,7 @@ export default function Dashboard({ activeMember }) {
                   }}
                 />
                 <button
-                  onClick={() => { if (customFrom && customTo) { setAppliedCustomFrom(customFrom); setAppliedCustomTo(customTo) } }}
+                  onClick={() => { if (customFrom && customTo) { setAppliedFrom(customFrom); setAppliedTo(customTo) } }}
                   disabled={!customFrom || !customTo}
                   style={{
                     padding: '4px 12px', borderRadius: 20,
@@ -621,7 +545,7 @@ export default function Dashboard({ activeMember }) {
             {activePeriodData ? (
               <>
                 <button
-                  onClick={() => setShowDailySummary(true)}
+                  onClick={() => setShowPeriodSummary(true)}
                   style={{
                     background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                     textAlign: 'left', display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4,
@@ -648,7 +572,13 @@ export default function Dashboard({ activeMember }) {
                 </p>
               </>
             ) : (
-              activePeriod !== 'custom' && (
+              activePeriod === 'custom' ? (
+                !appliedFrom && (
+                  <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                    Select a date range above
+                  </p>
+                )
+              ) : (
                 <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
                   Not enough snapshots yet
                 </p>
@@ -710,79 +640,6 @@ export default function Dashboard({ activeMember }) {
           </div>
         ))}
       </div>
-
-      {/* Inline period breakdown — member + category */}
-      {activePeriodData && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <p style={{ fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
-              {activePeriod === 'custom'
-                ? 'Custom period · Change by member'
-                : `${periodConfig.find(p => p.id === activePeriod)?.label} · Change by member`}
-            </p>
-            <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-              {new Date(activePeriodData.fromDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-              {' → '}
-              {new Date(activePeriodData.toDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-            </span>
-          </div>
-
-          {/* Member cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
-            {[
-              { name: 'Aseem Saxena',     initials: 'AS', bg: '#E6F1FB', color: '#185FA5' },
-              { name: 'Poonam Saxena',    initials: 'PS', bg: '#FAEEDA', color: '#854F0B' },
-              { name: 'Devashish Saxena', initials: 'DS', bg: '#EAF3DE', color: '#3B6D11' },
-              { name: 'Shivansh Saxena',  initials: 'SS', bg: '#FBEAF0', color: '#993556' },
-            ].map(m => {
-              const mData = activePeriodData.byMember?.[m.name]
-              const change = mData?.change || 0
-              const pct    = mData?.changePct || 0
-              return (
-                <div key={m.name} style={{ background: '#FFFFFF', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 10, padding: '14px 16px' }}>
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: m.bg, color: m.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 500, marginBottom: 8 }}>
-                    {m.initials}
-                  </div>
-                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', margin: '0 0 2px' }}>{m.name.split(' ')[0]}</p>
-                  <p style={{ fontSize: 15, fontWeight: 500, letterSpacing: '-0.3px', color: change === 0 ? 'var(--color-text-secondary)' : change > 0 ? '#2D6A4F' : '#D85A30', margin: '0 0 1px' }}>
-                    {change === 0 ? '—' : (change > 0 ? '+' : '') + formatINR(change)}
-                  </p>
-                  {change !== 0 && (
-                    <p style={{ fontSize: 11, color: change > 0 ? '#2D6A4F' : '#D85A30', margin: 0 }}>
-                      {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Category cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-            {[
-              { key: 'investments', label: 'Investments' },
-              { key: 'gold',        label: 'Gold' },
-              { key: 'realEstate',  label: 'Real estate' },
-              { key: 'cash',        label: 'Cash & FDs' },
-            ].map(cat => {
-              const cData  = activePeriodData.byCategory?.[cat.key]
-              const change = cData?.change || 0
-              const pct    = cData?.changePct || 0
-              return (
-                <div key={cat.key} style={{ background: '#FFFFFF', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 10, padding: '12px 14px' }}>
-                  <p style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>{cat.label}</p>
-                  <p style={{ fontSize: 14, fontWeight: 500, letterSpacing: '-0.2px', color: change === 0 ? 'var(--color-text-secondary)' : change > 0 ? '#2D6A4F' : '#D85A30', margin: '0 0 2px' }}>
-                    {change === 0 ? '—' : (change > 0 ? '+' : '') + formatINR(change)}
-                  </p>
-                  <p style={{ fontSize: 11, color: change === 0 ? 'var(--color-text-secondary)' : change > 0 ? '#2D6A4F' : '#D85A30', margin: 0 }}>
-                    {change === 0 ? 'No change' : (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'}
-                  </p>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Shared loan note */}
       {activeMember !== 'All' && sharedLoans > 0 && (
