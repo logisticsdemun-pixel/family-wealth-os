@@ -58,7 +58,14 @@ export function takeSnapshotFromStorage(goldPriceDefaults) {
   const byMember = {}
   for (const member of MEMBERS) {
     const mx = computeMemberMetrics(allData, member)
-    byMember[member] = Math.round(mx.netWorth)
+    byMember[member] = {
+      netWorth:    Math.round(mx.netWorth),
+      investments: Math.round(mx.investments),
+      gold:        Math.round(mx.gold),
+      realEstate:  Math.round(mx.realEstate),
+      cash:        Math.round(mx.cash),
+      liabilities: Math.round(mx.liabilities),
+    }
   }
 
   const byCategory = {

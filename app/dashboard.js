@@ -119,8 +119,8 @@ function computeChange(fromSnap, toSnap) {
   const changePct = fromNW > 0 ? (change / fromNW) * 100 : 0
   const byMember  = {}
   for (const m of ['Aseem Saxena', 'Poonam Saxena', 'Devashish Saxena', 'Shivansh Saxena']) {
-    const now    = toSnap.byMember?.[m]   || 0
-    const before = fromSnap.byMember?.[m] || 0
+    const now    = toSnap.byMember?.[m]?.netWorth   || 0
+    const before = fromSnap.byMember?.[m]?.netWorth || 0
     byMember[m] = { change: now - before, changePct: before > 0 ? ((now - before) / before) * 100 : 0, current: now }
   }
   const byCategory = {}
@@ -388,7 +388,17 @@ export default function Dashboard({ activeMember }) {
     if (!data) return
     const allMetrics = computeMemberMetrics(data, 'All')
     const byMember = Object.fromEntries(
-      MEMBERS.map(m => [m, Math.round(computeMemberMetrics(data, m).netWorth)])
+      MEMBERS.map(m => {
+        const mx = computeMemberMetrics(data, m)
+        return [m, {
+          netWorth:    Math.round(mx.netWorth),
+          investments: Math.round(mx.investments),
+          gold:        Math.round(mx.gold),
+          realEstate:  Math.round(mx.realEstate),
+          cash:        Math.round(mx.cash),
+          liabilities: Math.round(mx.liabilities),
+        }]
+      })
     )
     takeSnapshot(allMetrics.netWorth, {
       totalAssets: Math.round(allMetrics.totalAssets),
