@@ -170,6 +170,14 @@ export default function ZerodhaImportWizard({ onClose }) {
     if (!file) return
     setError('')
     e.target.value = ''
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File is too large. Please select a file under 10MB.')
+      return
+    }
+    if (!/\.(xlsx|xls)$/i.test(file.name)) {
+      setError('Invalid file type. Please select a .xlsx or .xls file.')
+      return
+    }
     try {
       const rows = await parseZerodhaHoldings(file)
       const diff = buildDiff(rows, allInvestments, member)
