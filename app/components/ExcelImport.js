@@ -204,6 +204,16 @@ export default function ExcelImportWizard({ onClose }) {
     const file = e.target.files?.[0]
     if (!file) return
     setError(null)
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File is too large. Please select a file under 10MB.')
+      e.target.value = ''
+      return
+    }
+    if (!/\.(xlsx|xls)$/i.test(file.name)) {
+      setError('Invalid file type. Please select a .xlsx or .xls file.')
+      e.target.value = ''
+      return
+    }
     try {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf, { type: 'array', cellDates: false })

@@ -1,17 +1,24 @@
 import { NextResponse } from 'next/server'
 import { auth, clerkClient } from '@clerk/nextjs/server'
+import { timingSafeEqual } from 'node:crypto'
 import { processPendingSIPAllotments } from '../../../lib/sipProcessor'
 
 export const runtime = 'nodejs'
 
+function timingSafeEqualStr(a, b) {
+  if (a.length !== b.length) return false
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b))
+}
+
 export async function POST(request) {
   // Accept either: Vercel cron secret OR an admin Clerk session
   const authHeader = request.headers.get('authorization') || ''
-  const cronSecret = process.env.CRON_SECRET
+  const expected = process.env.CRON_SECRET
 
   let authorized = false
 
-  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+  const ok = !!expected && timingSafeEqualStr(authHeader, `Bearer ${expected}`)
+  if (ok) {
     authorized = true
   } else {
     // Fallback: valid Clerk admin session (for AppShell trigger)
@@ -42,9 +49,10 @@ export async function POST(request) {
 // Also allow GET for Vercel cron (Vercel sends GET requests to cron endpoints)
 export async function GET(request) {
   const authHeader = request.headers.get('authorization') || ''
-  const cronSecret = process.env.CRON_SECRET
+  const expected = process.env.CRON_SECRET
 
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+  const ok = !!expected && timingSafeEqualStr(authHeader, `Bearer ${expected}`)
+  if (!ok) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

@@ -9,6 +9,14 @@ export function getSupabase() {
   if (!url || !key) {
     throw new Error('Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY')
   }
-  _client = createClient(url, key)
+  _client = createClient(url, key, {
+    accessToken: async () => {
+      try {
+        return (await window.Clerk?.session?.getToken()) ?? null
+      } catch {
+        return null
+      }
+    },
+  })
   return _client
 }

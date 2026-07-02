@@ -33,10 +33,8 @@ CREATE OR REPLACE TRIGGER family_data_updated_at
 
 ALTER TABLE family_data ENABLE ROW LEVEL SECURITY;
 
--- Open policy — Clerk auth is enforced at app level, not Supabase level.
--- The anon key is safe here because family_id is app-controlled (not user input).
-CREATE POLICY "allow_all_anon" ON family_data
-  FOR ALL TO anon
+CREATE POLICY "authenticated_all" ON family_data
+  FOR ALL TO authenticated
   USING (true)
   WITH CHECK (true);
 
@@ -54,10 +52,10 @@ CREATE OR REPLACE TRIGGER user_settings_updated_at
 
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "allow_all_anon" ON user_settings
-  FOR ALL TO anon
-  USING (true)
-  WITH CHECK (true);
+CREATE POLICY "authenticated_own" ON user_settings
+  FOR ALL TO authenticated
+  USING (user_id = auth.jwt()->>'sub')
+  WITH CHECK (user_id = auth.jwt()->>'sub');
 
 -- ── market_cache — shared price cache across all users ────────────────────
 CREATE TABLE IF NOT EXISTS market_cache (
@@ -69,8 +67,8 @@ CREATE TABLE IF NOT EXISTS market_cache (
 
 ALTER TABLE market_cache ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "allow_all_anon" ON market_cache
-  FOR ALL TO anon
+CREATE POLICY "authenticated_all" ON market_cache
+  FOR ALL TO authenticated
   USING (true)
   WITH CHECK (true);
 

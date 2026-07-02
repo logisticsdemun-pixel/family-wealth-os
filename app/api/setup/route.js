@@ -8,6 +8,16 @@ export async function POST() {
   }
 
   const client = await clerkClient()
+  const caller = await client.users.getUser(userId)
+
+  const primaryEmail = caller.emailAddresses
+    .find(e => e.id === caller.primaryEmailAddressId)?.emailAddress ?? ''
+  const bootstrapEmail = process.env.ADMIN_BOOTSTRAP_EMAIL ?? ''
+
+  if (!bootstrapEmail || primaryEmail.toLowerCase() !== bootstrapEmail.toLowerCase()) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   const users = await client.users.getUserList()
   const hasAdmin = users.data.some(u => u.publicMetadata?.role === 'admin')
 
