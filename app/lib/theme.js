@@ -1,16 +1,16 @@
 'use client'
 import { createContext, useContext, useEffect, useState } from 'react'
-import { loadAppearance, saveAppearance, applyTheme } from './themes'
+import { loadAppearance, saveAppearance, applyTheme, DEFAULT_THEME } from './themes'
 
 const ThemeCtx = createContext({
-  themeId: 'overcast',
+  themeId: DEFAULT_THEME,
   dark: false,
   setTheme: () => {},
   toggleDark: () => {},
 })
 
 export function ThemeProvider({ children }) {
-  const [themeId, setThemeId] = useState('overcast')
+  const [themeId, setThemeId] = useState(DEFAULT_THEME)
   const [dark, setDark] = useState(false)
 
   useEffect(() => {

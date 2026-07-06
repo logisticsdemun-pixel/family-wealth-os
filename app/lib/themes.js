@@ -1,5 +1,31 @@
 export const THEMES = {
 
+  'command': {
+    id: 'command',
+    name: 'Command',
+    description: 'Financial terminal · deep navy-black · electric blue accent',
+    swatch: ['#0D1117', '#4F8EF7'],
+    vars: {
+      '--color-background-primary':    '#0D1117',
+      '--color-background-secondary':  '#161C24',
+      '--color-background-tertiary':   '#1C2430',
+      '--color-text-primary':          '#E6EDF3',
+      '--color-text-secondary':        '#7D8590',
+      '--color-text-muted':            '#484F58',
+      '--color-border-primary':        '#30363D',
+      '--color-border-secondary':      '#21262D',
+      '--color-border-tertiary':       '#1A1F26',
+      '--color-accent':                '#4F8EF7',
+      '--color-accent-bg':             '#0D1F3C',
+      '--color-accent-subtle':         '#112046',
+      '--color-sidebar-bg':            '#010409',
+      '--color-sidebar-active':        '#1C2430',
+      '--color-sidebar-text':          '#E6EDF3',
+      '--color-sidebar-muted':         '#484F58',
+      '--font-sans': '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    },
+  },
+
   'warm-linen': {
     id: 'warm-linen',
     name: 'Warm Linen',
@@ -95,7 +121,7 @@ export const DARK_OVERLAY = {
   '--color-sidebar-muted':         '#A1A1AA',
 }
 
-export const DEFAULT_THEME = 'overcast'
+export const DEFAULT_THEME = 'command'
 
 const STORAGE_KEY = 'fwos-appearance'
 

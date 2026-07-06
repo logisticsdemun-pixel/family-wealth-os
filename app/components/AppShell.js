@@ -6,6 +6,8 @@ import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import MemberFilter from './MemberFilter'
 import MigrationHelper from './MigrationHelper'
+import CommandCentre from './CommandCentre'
+import Holdings from './Holdings'
 import Dashboard from '../dashboard'
 import Investments from '../investments'
 import Gold from '../gold'
@@ -19,7 +21,7 @@ import UserManagement from './UserManagement'
 export default function AppShell() {
   const { user, isLoaded, isSignedIn } = useUser()
   const { data, dataSource, migrateToSupabase, hasSupabaseData } = useStore()
-  const [activePage, setActivePage] = useState('dashboard')
+  const [activePage, setActivePage] = useState('command')
   const [activeMember, setActiveMember] = useState('All')
   const [showMigration, setShowMigration] = useState(false)
   const [floatMigrating, setFloatMigrating] = useState(false)
@@ -148,6 +150,8 @@ export default function AppShell() {
           background: 'var(--color-background-primary)',
         }}>
           <div key={activePage} className="page-content">
+            {activePage === 'command'     && <CommandCentre {...pageProps} />}
+            {activePage === 'holdings'    && <Holdings      {...pageProps} />}
             {activePage === 'dashboard'   && <Dashboard   {...pageProps} />}
             {activePage === 'investments' && <Investments {...pageProps} />}
             {activePage === 'gold'        && <Gold        {...pageProps} />}
