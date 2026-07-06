@@ -76,7 +76,7 @@ export default function AppShell() {
   const isAdmin = role === 'admin'
   const isReadOnly = role === 'viewer'
 
-  const pageProps = { activeMember, isReadOnly }
+  const pageProps = { activeMember, isReadOnly, onNavigate: setActivePage }
 
   return (
     <div style={{
