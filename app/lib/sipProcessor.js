@@ -10,6 +10,23 @@ function getServiceClient() {
   )
 }
 
+// Short slug used as member_id in the transactions ledger
+const MEMBER_ID_MAP = {
+  'Aseem Saxena':     'aseem',
+  'Poonam Saxena':    'poonam',
+  'Devashish Saxena': 'devashish',
+  'Shivansh Saxena':  'shivansh',
+}
+
+async function writeTxn(row) {
+  try {
+    const { error } = await getServiceClient().from('transactions').insert(row)
+    if (error) console.warn('[sipProcessor] Ledger write failed:', error.message)
+  } catch (e) {
+    console.warn('[sipProcessor] Ledger write exception:', e.message)
+  }
+}
+
 async function readInvestments() {
   const { data, error } = await getServiceClient()
     .from('family_data')
@@ -130,6 +147,22 @@ export async function processPendingSIPAllotments() {
 
     console.log(`[sipProcessor] ${inv.name}: amount=${amount} nav=${nav} units=${unitsAdded}`)
     processed++
+
+    // Write to transaction ledger (best-effort — failure does not abort the allotment)
+    await writeTxn({
+      family_id:   FAMILY_ID,
+      member_id:   MEMBER_ID_MAP[inv.member] ?? inv.member,
+      txn_type:    'sip_allotment',
+      asset_class: 'mutual_fund',
+      asset_ref:   inv.mfCode ?? null,
+      quantity:    unitsAdded || null,
+      price:       nav ?? null,
+      amount,
+      txn_date:    todayISO,
+      source:      'sip_cron',
+      notes:       note ? `${inv.name} — ${note}` : inv.name,
+      created_by:  null,
+    })
   }
 
   if (processed > 0) {
