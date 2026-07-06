@@ -19,10 +19,10 @@ function daysUntil(dateStr) {
 // ── Insight card ───────────────────────────────────────────
 function InsightCard({ severity, title, body, extra, onDismiss }) {
   const colors = {
-    alert: { border: 'var(--loss)', bg: 'var(--loss-faint)', dot: 'var(--loss)', badge: '#fecaca', badgeText: '#7f1d1d' },
-    warning: { border: 'var(--amber)', bg: 'var(--amber-faint)', dot: 'var(--amber)', badge: '#fde68a', badgeText: '#78350f' },
-    info: { border: 'var(--accent)', bg: 'var(--accent-faint)', dot: 'var(--accent)', badge: '#c7d2fe', badgeText: '#312e81' },
-    good: { border: 'var(--gain)', bg: 'var(--gain-faint)', dot: 'var(--gain)', badge: '#bbf7d0', badgeText: '#14532d' },
+    alert:   { border: 'var(--color-negative)', bg: 'var(--color-negative-bg)', dot: 'var(--color-negative)', badge: 'var(--color-negative-bg)', badgeText: 'var(--color-negative)' },
+    warning: { border: 'var(--color-warning)',  bg: 'var(--color-warning-bg)',  dot: 'var(--color-warning)',  badge: 'var(--color-warning-bg)',  badgeText: 'var(--color-warning)' },
+    info:    { border: 'var(--color-info)',     bg: 'var(--color-info-bg)',     dot: 'var(--color-info)',     badge: 'var(--color-info-bg)',     badgeText: 'var(--color-info)' },
+    good:    { border: 'var(--color-positive)', bg: 'var(--color-positive-bg)', dot: 'var(--color-positive)', badge: 'var(--color-positive-bg)', badgeText: 'var(--color-positive)' },
   }
   const c = colors[severity] ?? colors.info
 
@@ -358,9 +358,9 @@ export default function Artha() {
           display: 'flex', gap: 0, flexWrap: 'wrap',
         }}>
           {[
-            { label: 'Action Needed', value: counts.alert, color: 'var(--loss)' },
-            { label: 'Watch Out', value: counts.warning, color: 'var(--amber)' },
-            { label: 'On Track', value: counts.good, color: 'var(--gain)' },
+            { label: 'Action Needed', value: counts.alert, color: 'var(--color-negative)' },
+            { label: 'Watch Out', value: counts.warning, color: 'var(--color-warning)' },
+            { label: 'On Track', value: counts.good, color: 'var(--color-positive)' },
           ].map((s, i) => (
             <div key={s.label} style={{ textAlign: 'center', flex: 1, minWidth: 80, borderRight: i < 2 ? '1px solid var(--border)' : undefined, padding: '4px 16px' }}>
               <p style={{ margin: 0, fontSize: '1.8rem', fontWeight: 700, color: s.color, lineHeight: 1 }}>{s.value}</p>
@@ -369,7 +369,7 @@ export default function Artha() {
           ))}
           {emergencyMonths !== null && (
             <div style={{ textAlign: 'center', flex: 1, minWidth: 80, borderLeft: '1px solid var(--border)', padding: '4px 16px' }}>
-              <p style={{ margin: 0, fontSize: '1.8rem', fontWeight: 700, color: emergencyMonths >= EMERGENCY_MONTHS ? 'var(--gain)' : 'var(--loss)', lineHeight: 1 }}>
+              <p style={{ margin: 0, fontSize: '1.8rem', fontWeight: 700, color: emergencyMonths >= EMERGENCY_MONTHS ? 'var(--color-positive)' : 'var(--color-negative)', lineHeight: 1 }}>
                 {emergencyMonths.toFixed(1)}
               </p>
               <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>Emergency Months</p>

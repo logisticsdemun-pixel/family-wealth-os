@@ -88,7 +88,7 @@ function NavItem({ item, active, metrics, onNavigate }) {
           flexShrink: 0,
           marginLeft: 4,
           color: item.isDebt && (metrics.liabilities || 0) > 0
-            ? '#D85A30'
+            ? 'var(--color-negative)'
             : 'var(--color-sidebar-muted)',
         }}>
           {formatShort(metrics[item.key])}

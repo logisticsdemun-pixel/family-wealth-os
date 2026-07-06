@@ -269,7 +269,7 @@ export default function Loans({ activeMember }) {
           label: 'TOTAL OUTSTANDING',
           value: formatINR(totalOutstanding),
           sub: `${filtered.length} loan${filtered.length !== 1 ? 's' : ''}`,
-          valueColor: '#D85A30',
+          valueColor: 'var(--color-negative)',
           subColor: 'var(--color-text-secondary)',
         },
         {

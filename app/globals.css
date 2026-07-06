@@ -13,14 +13,28 @@
   --accent-hover:   #4f46e5;
   --accent-faint:   #eef2ff;
   --accent-text:    #4338ca;
-  --gain:           #16a34a;
-  --gain-faint:     #f0fdf4;
-  --loss:           #dc2626;
-  --loss-faint:     #fef2f2;
-  --gold-color:     #d97706;
-  --gold-faint:     #fffbeb;
-  --amber:          #f59e0b;
-  --amber-faint:    #fffbeb;
+
+  /* ── Semantic vars (light defaults) ── */
+  --color-positive:    #1D9E75;
+  --color-positive-bg: #EAF3DE;
+  --color-negative:    #D85A30;
+  --color-negative-bg: #FCEBEB;
+  --color-warning:     #854F0B;
+  --color-warning-bg:  #FAEEDA;
+  --color-info:        #3B6BA5;
+  --color-info-bg:     #EBF3FD;
+  --color-gold:        #B07C30;
+  --color-gold-bg:     #FBF4E4;
+
+  /* ── Bridge: old vars → new semantic vars ── */
+  --gain:        var(--color-positive);
+  --gain-faint:  var(--color-positive-bg);
+  --loss:        var(--color-negative);
+  --loss-faint:  var(--color-negative-bg);
+  --amber:       var(--color-warning);
+  --amber-faint: var(--color-warning-bg);
+  --gold-color:  var(--color-gold);
+  --gold-faint:  var(--color-gold-bg);
 }
 
 /* ── Dark theme ────────────────────────────────────────── */
@@ -34,10 +48,18 @@
   --text-muted:     #64748b;
   --accent-faint:   #1e1b4b;
   --accent-text:    #a5b4fc;
-  --gain-faint:     #052e16;
-  --loss-faint:     #450a0a;
-  --gold-faint:     #451a03;
-  --amber-faint:    #451a03;
+
+  /* ── Semantic vars (dark overrides) ── */
+  --color-positive:    #34D399;
+  --color-positive-bg: rgba(52,211,153,0.10);
+  --color-negative:    #F87171;
+  --color-negative-bg: rgba(248,113,113,0.10);
+  --color-warning:     #FBBF24;
+  --color-warning-bg:  rgba(251,191,36,0.10);
+  --color-info:        #60A5FA;
+  --color-info-bg:     rgba(96,165,250,0.10);
+  --color-gold:        #F59E0B;
+  --color-gold-bg:     rgba(245,158,11,0.10);
 }
 
 /* ── Design token aliases (used by AppShell components) ── */

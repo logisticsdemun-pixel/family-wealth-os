@@ -590,8 +590,8 @@ export default function RealEstate({ activeMember }) {
             label: 'APPRECIATION',
             value: (totalGain >= 0 ? '+' : '') + formatINR(totalGain),
             sub: (totalGainPct >= 0 ? '+' : '') + totalGainPct.toFixed(2) + '% overall',
-            valueColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
-            subColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
+            valueColor: totalGain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)',
+            subColor: totalGain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)',
           },
         ]} />
       )}

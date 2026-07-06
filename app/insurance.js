@@ -218,7 +218,7 @@ export default function Insurance({ activeMember }) {
           label: 'HEALTH COVER',
           value: formatINR(healthCover),
           sub: null,
-          valueColor: '#1D9E75',
+          valueColor: 'var(--color-positive)',
           subColor: null,
         },
         {

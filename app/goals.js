@@ -60,11 +60,11 @@ function monthlySIPNeeded(currentValue, targetCorpus, targetDate, annualReturnPc
 }
 
 function goalStatus(fundedPct, monthsLeft) {
-  if (fundedPct >= 100) return { label: 'Achieved',        color: '#1D9E75', bg: '#EAF3DE' }
-  if (monthsLeft <= 0)  return { label: 'Overdue',         color: '#A32D2D', bg: '#FCEBEB' }
-  if (fundedPct >= 40)  return { label: 'On track',        color: '#3B6D11', bg: '#EAF3DE' }
-  if (fundedPct >= 15)  return { label: 'Needs attention', color: '#854F0B', bg: '#FAEEDA' }
-  return                       { label: 'Behind',           color: '#A32D2D', bg: '#FCEBEB' }
+  if (fundedPct >= 100) return { label: 'Achieved',        color: 'var(--color-positive)', bg: 'var(--color-positive-bg)' }
+  if (monthsLeft <= 0)  return { label: 'Overdue',         color: 'var(--color-negative)', bg: 'var(--color-negative-bg)' }
+  if (fundedPct >= 40)  return { label: 'On track',        color: 'var(--color-positive)', bg: 'var(--color-positive-bg)' }
+  if (fundedPct >= 15)  return { label: 'Needs attention', color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)' }
+  return                       { label: 'Behind',           color: 'var(--color-negative)', bg: 'var(--color-negative-bg)' }
 }
 
 function emergencyFundMonths(data, monthlyExpenses) {
@@ -344,14 +344,14 @@ export default function Goals({ activeMember }) {
           label: 'STILL NEEDED',
           value: formatINR(totalGap),
           sub: 'Gap to reach all goals',
-          valueColor: totalGap > 0 ? '#D85A30' : '#1D9E75',
-          subColor: totalGap > 0 ? '#D85A30' : '#1D9E75',
+          valueColor: totalGap > 0 ? 'var(--color-negative)' : 'var(--color-positive)',
+          subColor: totalGap > 0 ? 'var(--color-negative)' : 'var(--color-positive)',
         },
       ]} />
 
       {/* ── Emergency fund card ───────────────────────────── */}
       <div style={{
-        background: ef.months >= 6 ? 'var(--color-background-secondary)' : ef.months >= 3 ? '#FAEEDA' : '#FCEBEB',
+        background: ef.months >= 6 ? 'var(--color-background-secondary)' : ef.months >= 3 ? 'var(--color-warning-bg)' : 'var(--color-negative-bg)',
         border: '0.5px solid var(--color-border-tertiary)',
         borderRadius: 'var(--border-radius-lg)',
         padding: '20px 24px',
@@ -362,12 +362,12 @@ export default function Goals({ activeMember }) {
       }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <i className="ti ti-shield-check" style={{ fontSize: 18, color: ef.months >= 6 ? '#1D9E75' : ef.months >= 3 ? '#854F0B' : '#A32D2D' }} aria-hidden="true" />
+            <i className="ti ti-shield-check" style={{ fontSize: 18, color: ef.months >= 6 ? 'var(--color-positive)' : ef.months >= 3 ? 'var(--color-warning)' : 'var(--color-negative)' }} aria-hidden="true" />
             <p style={{ fontSize: 15, fontWeight: 500, margin: 0 }}>Emergency Fund</p>
             <span style={{
               fontSize: 11, padding: '2px 8px', borderRadius: 12, fontWeight: 500,
-              background: ef.months >= 6 ? '#EAF3DE' : ef.months >= 3 ? '#FAEEDA' : '#FCEBEB',
-              color: ef.months >= 6 ? '#3B6D11' : ef.months >= 3 ? '#854F0B' : '#A32D2D',
+              background: ef.months >= 6 ? 'var(--color-positive-bg)' : ef.months >= 3 ? 'var(--color-warning-bg)' : 'var(--color-negative-bg)',
+              color: ef.months >= 6 ? 'var(--color-positive)' : ef.months >= 3 ? 'var(--color-warning)' : 'var(--color-negative)',
             }}>
               {ef.months >= 6 ? 'Healthy' : ef.months >= 3 ? 'Low' : 'Critical'}
             </span>
@@ -376,7 +376,7 @@ export default function Goals({ activeMember }) {
             Auto-calculated · Cash + debt funds vs monthly expenses
           </p>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-            <span style={{ fontSize: 28, fontWeight: 700, color: ef.months >= 6 ? '#1D9E75' : ef.months >= 3 ? '#854F0B' : '#A32D2D' }}>
+            <span style={{ fontSize: 28, fontWeight: 700, color: ef.months >= 6 ? 'var(--color-positive)' : ef.months >= 3 ? 'var(--color-warning)' : 'var(--color-negative)' }}>
               {ef.months.toFixed(1)}
             </span>
             <span style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}>months covered</span>
@@ -460,7 +460,7 @@ export default function Goals({ activeMember }) {
                 </button>
                 <button
                   onClick={() => handleDeleteGoal(goal.id)}
-                  style={{ background: 'none', border: 'none', fontSize: 12, color: '#D85A30', cursor: 'pointer', padding: '3px 8px' }}
+                  style={{ background: 'none', border: 'none', fontSize: 12, color: 'var(--color-negative)', cursor: 'pointer', padding: '3px 8px' }}
                 >
                   Remove
                 </button>
@@ -472,7 +472,7 @@ export default function Goals({ activeMember }) {
               {[
                 { label: 'Target corpus',      value: formatINR(goal.corpus),  color: 'var(--color-text-primary)' },
                 { label: 'Current value',       value: formatINR(goal.current), color: 'var(--color-accent)' },
-                { label: 'Gap remaining',       value: formatINR(goal.gap),     color: goal.gap > 0 ? '#D85A30' : '#1D9E75' },
+                { label: 'Gap remaining',       value: formatINR(goal.gap),     color: goal.gap > 0 ? 'var(--color-negative)' : 'var(--color-positive)' },
                 { label: 'Monthly SIP needed',  value: goal.sipNeeded > 0 ? formatINR(goal.sipNeeded) : 'Goal reached', color: 'var(--color-text-primary)' },
               ].map((stat, i) => (
                 <div key={i}>
@@ -488,7 +488,7 @@ export default function Goals({ activeMember }) {
                 height: '100%',
                 width: `${goal.fundedPct}%`,
                 borderRadius: 3,
-                background: goal.fundedPct >= 100 ? '#1D9E75' : goal.fundedPct >= 40 ? 'var(--color-accent)' : goal.fundedPct >= 15 ? '#EF9F27' : '#D85A30',
+                background: goal.fundedPct >= 100 ? 'var(--color-positive)' : goal.fundedPct >= 40 ? 'var(--color-accent)' : goal.fundedPct >= 15 ? 'var(--color-warning)' : 'var(--color-negative)',
                 transition: 'width 0.3s ease',
               }} />
             </div>

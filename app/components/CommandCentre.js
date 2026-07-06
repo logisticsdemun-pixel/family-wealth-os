@@ -15,10 +15,10 @@ import { formatINR, firstName } from '../lib/format'
 // ── Severity palette ────────────────────────────────────────────────────────
 
 const SEV = {
-  risk:        { color: '#EF4444', bg: 'rgba(239,68,68,0.10)',   icon: 'ti-alert-triangle-filled' },
-  warning:     { color: '#F59E0B', bg: 'rgba(245,158,11,0.10)',  icon: 'ti-alert-circle' },
-  opportunity: { color: '#10B981', bg: 'rgba(16,185,129,0.10)',  icon: 'ti-trending-up' },
-  info:        { color: '#60A5FA', bg: 'rgba(96,165,250,0.10)',  icon: 'ti-info-circle' },
+  risk:        { color: 'var(--color-negative)', bg: 'var(--color-negative-bg)', icon: 'ti-alert-triangle-filled' },
+  warning:     { color: 'var(--color-warning)',  bg: 'var(--color-warning-bg)',  icon: 'ti-alert-circle' },
+  opportunity: { color: 'var(--color-positive)', bg: 'var(--color-positive-bg)', icon: 'ti-trending-up' },
+  info:        { color: 'var(--color-info)',      bg: 'var(--color-info-bg)',     icon: 'ti-info-circle' },
 }
 
 const GOAL_ICONS = {
@@ -189,7 +189,7 @@ function GoalRow({ goal }) {
     ? Math.max(0, Math.round((new Date(goal.targetDate) - Date.now()) / (365.25 * 24 * 60 * 60 * 1000)))
     : null
 
-  const barColor = pct >= 80 ? '#10B981' : pct >= 40 ? '#4F8EF7' : '#F59E0B'
+  const barColor = pct >= 80 ? 'var(--color-positive)' : pct >= 40 ? 'var(--color-accent)' : 'var(--color-warning)'
 
   return (
     <div style={{ marginBottom: 14 }}>
@@ -348,7 +348,7 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
           }
           subColor={
             todayDelta == null ? undefined
-            : todayDelta >= 0  ? '#10B981' : '#EF4444'
+            : todayDelta >= 0  ? 'var(--color-positive)' : 'var(--color-negative)'
           }
         />
         <HeroCard
@@ -361,9 +361,9 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
               : 'No monthly obligations'
           }
           subColor={
-            runway !== Infinity && runway < 3 ? '#EF4444'
-            : runway !== Infinity && runway < 6 ? '#F59E0B'
-            : '#10B981'
+            runway !== Infinity && runway < 3 ? 'var(--color-negative)'
+            : runway !== Infinity && runway < 6 ? 'var(--color-warning)'
+            : 'var(--color-positive)'
           }
         />
         <HeroCard
@@ -444,7 +444,7 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
               <span style={{
                 fontSize: 13,
                 fontWeight: 600,
-                color: (metrics.liabilities / (metrics.netWorth || 1)) > 0.3 ? '#EF4444' : '#F59E0B',
+                color: (metrics.liabilities / (metrics.netWorth || 1)) > 0.3 ? 'var(--color-negative)' : 'var(--color-warning)',
               }}>
                 {metrics.netWorth > 0 ? `${((metrics.liabilities / metrics.netWorth) * 100).toFixed(1)}% D/NW` : '—'}
               </span>

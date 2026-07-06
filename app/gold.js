@@ -164,7 +164,7 @@ function GoldTable({ items, prices, onEdit, onDelete, goldTab }) {
               <td />
               <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500 }}>{formatINR(totalBuy)}</td>
               <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: 'var(--color-accent)' }}>{formatINR(totalCurrent)}</td>
-              <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: totalGain >= 0 ? '#1D9E75' : '#D85A30' }}>
+              <td style={{ padding: '8px 12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: 500, color: totalGain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)' }}>
                 {totalGain >= 0 ? '+' : ''}{formatINR(totalGain)}
               </td>
               <td />
@@ -323,9 +323,9 @@ export default function Gold({ activeMember }) {
                     </a>
                   </p>
                   {isIBJA ? (
-                    <span style={{ padding: '2px 7px', borderRadius: 20, backgroundColor: '#E6F9F2', color: '#1D9E75', fontSize: 11, fontWeight: 500, flexShrink: 0 }}>✓ IBJA Rate</span>
+                    <span style={{ padding: '2px 7px', borderRadius: 20, backgroundColor: 'var(--color-positive-bg)', color: 'var(--color-positive)', fontSize: 11, fontWeight: 500, flexShrink: 0 }}>✓ IBJA Rate</span>
                   ) : (
-                    <span style={{ padding: '2px 7px', borderRadius: 20, backgroundColor: '#FEF3CD', color: '#854F0B', fontSize: 11, fontWeight: 500, flexShrink: 0 }}>≈ Spot + Duties estimate</span>
+                    <span style={{ padding: '2px 7px', borderRadius: 20, backgroundColor: 'var(--color-warning-bg)', color: 'var(--color-warning)', fontSize: 11, fontWeight: 500, flexShrink: 0 }}>≈ Spot + Duties estimate</span>
                   )}
                 </div>
                 <p style={{ margin: 0, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
@@ -342,11 +342,11 @@ export default function Gold({ activeMember }) {
               </div>
             </div>
             {!isIBJA && (
-              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--color-border-tertiary)', color: '#854F0B', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--color-border-tertiary)', color: 'var(--color-warning)', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
                 <i className="ti ti-alert-triangle" style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
                 <span>
                   {goldPriceMeta.note}{' '}For Indian retail rates, check{' '}
-                  <a href="https://ibja.co" target="_blank" rel="noopener noreferrer" style={{ color: '#854F0B' }}>ibja.co</a>
+                  <a href="https://ibja.co" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-warning)' }}>ibja.co</a>
                   {' '}(India Bullion and Jewellers Association).
                 </span>
               </div>
@@ -357,11 +357,11 @@ export default function Gold({ activeMember }) {
 
       {/* ── Error state ───────────────────────────────────── */}
       {goldPriceError && (
-        <div style={{ padding: '10px 14px', background: '#FCEBEB', border: '0.5px solid #F09595', borderRadius: 8, marginBottom: 16, fontSize: 12, color: '#A32D2D', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: '10px 14px', background: 'var(--color-negative-bg)', border: '0.5px solid var(--color-negative)', borderRadius: 8, marginBottom: 16, fontSize: 12, color: 'var(--color-negative)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <i className="ti ti-alert-circle" style={{ fontSize: 14, flexShrink: 0 }} aria-hidden="true" />
           <span>
             Could not fetch live prices: {goldPriceError}. You can still update prices manually using the &ldquo;Today&rsquo;s Gold Price&rdquo; button. Check{' '}
-            <a href="https://ibja.co" target="_blank" rel="noopener noreferrer" style={{ color: '#A32D2D' }}>ibja.co</a>
+            <a href="https://ibja.co" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-negative)' }}>ibja.co</a>
             {' '}for today&rsquo;s IBJA rates.
           </span>
         </div>
@@ -410,14 +410,14 @@ export default function Gold({ activeMember }) {
           label: 'GAIN / LOSS',
           value: (totalGain >= 0 ? '+' : '') + formatINR(totalGain),
           sub: (totalGainPct >= 0 ? '+' : '') + totalGainPct.toFixed(2) + '% overall',
-          valueColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
-          subColor: totalGain >= 0 ? '#1D9E75' : '#D85A30',
+          valueColor: totalGain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)',
+          subColor: totalGain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)',
         },
       ]} />
 
       {/* ── Stale price warning ───────────────────────────── */}
       {goldPriceAgeDays !== null && goldPriceAgeDays > 7 && (
-        <div style={{ padding: '8px 14px', background: '#FAEEDA', borderRadius: 8, fontSize: 12, color: '#854F0B', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: '8px 14px', background: 'var(--color-warning-bg)', borderRadius: 8, fontSize: 12, color: 'var(--color-warning)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
           <i className="ti ti-alert-triangle" style={{ fontSize: 14 }} aria-hidden="true" />
           Gold prices were last updated {goldPriceAgeDays} days ago. Click &ldquo;Refresh Prices&rdquo; to fetch live rates, or &ldquo;Today&rsquo;s Gold Price&rdquo; to enter manually.
         </div>
@@ -436,8 +436,8 @@ export default function Gold({ activeMember }) {
             style={{
               padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
               fontSize: '0.85rem',
-              backgroundColor: goldTab === tab.id ? '#334155' : 'var(--surface-2)',
-              color: goldTab === tab.id ? 'white' : 'var(--text-secondary)',
+              backgroundColor: goldTab === tab.id ? 'var(--color-background-tertiary)' : 'var(--surface-2)',
+              color: goldTab === tab.id ? 'var(--color-text-primary)' : 'var(--text-secondary)',
             }}
           >
             {tab.label}
@@ -451,7 +451,7 @@ export default function Gold({ activeMember }) {
           fontSize: 12, color: 'var(--text-secondary)',
           margin: '-12px 0 16px', padding: '8px 12px',
           background: 'var(--surface-2)', borderRadius: 8,
-          borderLeft: '3px solid #BA7517',
+          borderLeft: '3px solid var(--color-gold)',
         }}>
           Jewellery values are estimated by gold weight only.
           Craftsmanship, diamonds, and gemstone values are not included.

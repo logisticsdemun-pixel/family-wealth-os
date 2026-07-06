@@ -103,8 +103,8 @@ function SummaryCards({ items }) {
         label: 'GAIN / LOSS',
         value: (gain >= 0 ? '+' : '') + formatINR(gain),
         sub: (gainPct >= 0 ? '+' : '') + gainPct.toFixed(2) + '%',
-        valueColor: gain >= 0 ? '#1D9E75' : '#D85A30',
-        subColor: gain >= 0 ? '#1D9E75' : '#D85A30',
+        valueColor: gain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)',
+        subColor: gain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)',
       },
     ]} />
   )
@@ -188,7 +188,7 @@ function InvRow({ inv, fetching, cacheEntry, onUpdate, onDelete, onSIPConfig, on
                   return <>
                     <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, backgroundColor: 'var(--accent-faint)', color: 'var(--accent)', fontWeight: 700 }}>SIP{freqLabel}</span>
                     {inv.sip?.hasStepUp && (
-                      <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, background: '#EAF3DE', color: '#3B6D11', fontWeight: 600 }}>
+                      <span style={{ fontSize: '0.62rem', padding: '1px 5px', borderRadius: 4, background: 'var(--color-positive-bg)', color: 'var(--color-positive)', fontWeight: 600 }}>
                         +{inv.sip.stepUpPct}% p.a.
                       </span>
                     )}
@@ -1233,8 +1233,8 @@ export default function Investments({ activeMember }) {
               border: 'none',
               cursor: 'pointer',
               fontSize: '0.85rem',
-              backgroundColor: subTab === t.id ? '#334155' : 'var(--color-background-secondary)',
-              color: subTab === t.id ? 'white' : 'var(--color-text-secondary)',
+              backgroundColor: subTab === t.id ? 'var(--color-background-tertiary)' : 'var(--color-background-secondary)',
+              color: subTab === t.id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
               transition: 'background-color 0.15s ease',
             }}
           >
