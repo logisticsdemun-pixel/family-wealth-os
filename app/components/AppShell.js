@@ -22,6 +22,7 @@ export default function AppShell() {
   const { user, isLoaded, isSignedIn } = useUser()
   const { data, dataSource, migrateToSupabase, hasSupabaseData } = useStore()
   const [activePage, setActivePage] = useState('command')
+  const [activeView, setActiveView] = useState('all')
   const [activeMember, setActiveMember] = useState('All')
   const [showMigration, setShowMigration] = useState(false)
   const [floatMigrating, setFloatMigrating] = useState(false)
@@ -76,7 +77,17 @@ export default function AppShell() {
   const isAdmin = role === 'admin'
   const isReadOnly = role === 'viewer'
 
-  const pageProps = { activeMember, isReadOnly, onNavigate: setActivePage }
+  function navigate(target) {
+    if (typeof target === 'string') {
+      setActivePage(target)
+      setActiveView('all')
+    } else {
+      setActivePage(target.page)
+      setActiveView(target.view || 'all')
+    }
+  }
+
+  const pageProps = { activeMember, isReadOnly, onNavigate: navigate, activeView }
 
   return (
     <div style={{
@@ -120,7 +131,7 @@ export default function AppShell() {
         </div>
       )}
 
-      <Sidebar activePage={activePage} onNavigate={setActivePage} />
+      <Sidebar activePage={activePage} activeView={activeView} onNavigate={navigate} />
 
       <div style={{
         flex: 1,
@@ -152,17 +163,19 @@ export default function AppShell() {
           <div key={activePage} className="page-content">
             {activePage === 'command'     && <CommandCentre {...pageProps} />}
             {activePage === 'holdings'    && <Holdings      {...pageProps} />}
-            {activePage === 'dashboard'   && <Dashboard   {...pageProps} />}
-            {activePage === 'investments' && <Investments {...pageProps} />}
-            {activePage === 'gold'        && <Gold        {...pageProps} />}
             {activePage === 'realestate'  && <RealEstate  {...pageProps} />}
             {activePage === 'loans'       && <Loans       {...pageProps} />}
             {activePage === 'insurance'   && <Insurance   {...pageProps} />}
-            {activePage === 'artha'       && <Artha       {...pageProps} />}
             {activePage === 'goals'       && <Goals       {...pageProps} />}
+            {activePage === 'advisor'     && <Artha       {...pageProps} />}
             {activePage === 'users'       && isAdmin && (
-              <UserManagement onBack={() => setActivePage('dashboard')} />
+              <UserManagement onBack={() => navigate('command')} />
             )}
+            {/* legacy routes — unlinked from nav, kept for safety */}
+            {activePage === 'dashboard'   && <Dashboard   {...pageProps} />}
+            {activePage === 'investments' && <Investments {...pageProps} />}
+            {activePage === 'gold'        && <Gold        {...pageProps} />}
+            {activePage === 'artha'       && <Artha       {...pageProps} />}
           </div>
         </div>
       </div>
