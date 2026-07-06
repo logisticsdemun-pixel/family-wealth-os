@@ -17,6 +17,7 @@ export const KEYS = {
   REAL_ESTATE: 'fwos-real-estate',
   GOALS: 'fwos-goals',
   GOLD_PRICE_UPDATED: 'fwos-gold-price-updated',
+  MEMBERS: 'fwos-members',
 }
 
 // Only theme is stored as plaintext; everything else goes through the encrypted memory store

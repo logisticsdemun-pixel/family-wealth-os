@@ -18,6 +18,7 @@ export const COLLECTIONS = [
   'snapshots',
   'priceCache',
   'goals',
+  'members',
 ]
 
 // ── Read a collection ──────────────────────────────────────────────────────

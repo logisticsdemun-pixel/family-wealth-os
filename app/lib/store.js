@@ -9,6 +9,7 @@ import {
   SEED_INVESTMENTS, SEED_FIXED_INCOME, SEED_GOLD, DEFAULT_GOLD_PRICES,
   SEED_LOANS, SEED_INSURANCE, SEED_CASH_ASSETS, SEED_LIABILITIES, SEED_REAL_ESTATE,
 } from './seedData'
+import { DEFAULT_MEMBERS } from './members'
 
 // ── KEYS constant → Supabase collection name ────────────────────────────────
 const KEY_TO_COLLECTION = {
@@ -24,6 +25,7 @@ const KEY_TO_COLLECTION = {
   [KEYS.SNAPSHOTS]:    'snapshots',
   [KEYS.PRICE_CACHE]:  'priceCache',
   [KEYS.GOALS]:        'goals',
+  [KEYS.MEMBERS]:      'members',
 }
 
 const COLLECTION_TO_KEY = Object.fromEntries(
@@ -33,7 +35,7 @@ const COLLECTION_TO_KEY = Object.fromEntries(
 const ORDERED_COLLECTIONS = [
   'investments', 'fixedIncome', 'gold', 'goldPrices',
   'loans', 'realEstate', 'insurance', 'cashAssets',
-  'liabilities', 'snapshots', 'priceCache', 'goals',
+  'liabilities', 'snapshots', 'priceCache', 'goals', 'members',
 ]
 
 const DEFAULTS = {
@@ -49,6 +51,7 @@ const DEFAULTS = {
   snapshots: [],
   priceCache: {},
   goals: [],
+  members: DEFAULT_MEMBERS,
 }
 
 function applyTransforms(name, raw) {
@@ -91,6 +94,7 @@ function readFromLocalStorage() {
     snapshots:    load(KEYS.SNAPSHOTS,     DEFAULTS.snapshots)     ?? DEFAULTS.snapshots,
     priceCache:   load(KEYS.PRICE_CACHE,   DEFAULTS.priceCache)   ?? DEFAULTS.priceCache,
     goals:        load(KEYS.GOALS,         DEFAULTS.goals)         ?? DEFAULTS.goals,
+    members:      load(KEYS.MEMBERS,       DEFAULTS.members)       ?? DEFAULTS.members,
   }
 }
 
@@ -326,3 +330,4 @@ export function useLiabilities()  { return useStore().data?.liabilities  ?? [] }
 export function useSnapshots()    { return useStore().data?.snapshots    ?? [] }
 export function usePriceCache()   { return useStore().data?.priceCache   ?? {} }
 export function useGoals()        { return useStore().data?.goals        ?? [] }
+export function useMembers()      { return useStore().data?.members      ?? DEFAULT_MEMBERS }
