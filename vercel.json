@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/sip-allotment",
       "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/daily-snapshot",
+      "schedule": "45 17 * * *"
     }
   ]
 }
