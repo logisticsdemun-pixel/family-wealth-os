@@ -1,31 +1,506 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useStore } from '../lib/store'
 import { computeTodayChange } from '../lib/wealthMetrics'
 import { formatShort } from '../lib/metrics'
 import { formatINR, firstName } from '../lib/format'
 import { getMembers } from '../lib/members'
+import { load, save, KEYS } from '../lib/storage'
+import UpdateHoldingsModal from './UpdateHoldings'
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
 const CLASS_FILTERS = [
-  { id: 'all',     label: 'All' },
-  { id: 'invest',  label: 'Investments' },
-  { id: 'gold',    label: 'Gold' },
-  { id: 'realty',  label: 'Real Estate' },
-  { id: 'fd',      label: 'Fixed Income' },
-  { id: 'cash',    label: 'Cash' },
+  { id: 'all',      label: 'All' },
+  { id: 'invest',   label: 'Investments' },
+  { id: 'gold',     label: 'Gold' },
+  { id: 'realty',   label: 'Real Estate' },
+  { id: 'deposits', label: 'Deposits & Cash' },
 ]
 
 const SORT_OPTIONS = [
-  { id: 'value', label: 'Value ↓' },
-  { id: 'name',  label: 'Name A–Z' },
+  { id: 'value',  label: 'Value ↓' },
+  { id: 'name',   label: 'Name A–Z' },
   { id: 'change', label: 'Today ↓' },
 ]
 
-// ── Shared style helpers ──────────────────────────────────────────────────
+const PRICE_TTL_MS = 5 * 60 * 1000
+const VIEW_TO_FILTER = { investments: 'invest', gold: 'gold', deposits: 'deposits', all: 'all' }
 
-const col = (flex, extra = {}) => ({ flex, minWidth: 0, ...extra })
+// ── Modal style constants ─────────────────────────────────────────────────
+
+const minp = {
+  width: '100%', padding: '9px 12px', borderRadius: 8,
+  border: '1px solid var(--border)', backgroundColor: 'var(--bg)',
+  color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none', marginBottom: 10,
+}
+const mlbl = {
+  fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.07em',
+  color: 'var(--text-muted)', margin: '0 0 4px', display: 'block',
+}
+const mbtnP = {
+  padding: '9px 16px', borderRadius: 8, border: 'none',
+  backgroundColor: 'var(--accent)', color: '#fff',
+  fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer',
+}
+const mbtnG = {
+  padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)',
+  backgroundColor: 'transparent', color: 'var(--text-secondary)',
+  fontSize: '0.875rem', cursor: 'pointer',
+}
+
+// ── SIP helpers ────────────────────────────────────────────────────────────
+
+function nextSIPDate(sip) {
+  if (!sip?.startDate) return null
+  const freq = sip.frequency || 'Monthly'
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  if (freq === 'Monthly') {
+    const dom = sip.dayOfMonth || new Date(sip.startDate).getDate()
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), dom)
+    return (thisMonth < today
+      ? new Date(today.getFullYear(), today.getMonth() + 1, dom)
+      : thisMonth
+    ).toISOString().split('T')[0]
+  }
+  if (freq === 'Daily') {
+    const next = new Date(today)
+    next.setDate(next.getDate() + 1)
+    return next.toISOString().split('T')[0]
+  }
+  if (freq === 'Weekly' || freq === 'Fortnightly') {
+    const days = freq === 'Weekly' ? 7 : 14
+    let next = new Date(sip.startDate)
+    while (next <= today) next = new Date(next.getTime() + days * 86400000)
+    return next.toISOString().split('T')[0]
+  }
+  if (freq === 'Quarterly') {
+    let next = new Date(sip.startDate)
+    while (next <= today) next.setMonth(next.getMonth() + 3)
+    return next.toISOString().split('T')[0]
+  }
+  return null
+}
+
+function fmtShortDate(dateStr) {
+  if (!dateStr) return '—'
+  const [, m, d] = dateStr.split('-')
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  return `${parseInt(d)} ${months[parseInt(m) - 1]}`
+}
+
+function getCurrentSIPAmount(sip) {
+  const base = sip.monthlyAmount || sip.amount || sip.sipAmount || 0
+  if (!sip.hasStepUp || !sip.stepUpPct || !sip.startDate) return base
+  const start = new Date(sip.startDate)
+  const yearsElapsed = Math.floor((Date.now() - start.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+  if (yearsElapsed <= 0) return base
+  return Math.round(base * Math.pow(1 + sip.stepUpPct / 100, yearsElapsed))
+}
+
+// ── SIP Configure Modal ────────────────────────────────────────────────────
+
+const FREQUENCIES   = ['Daily', 'Weekly', 'Fortnightly', 'Monthly', 'Quarterly']
+const DAYS_OF_WEEK  = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+const START_MONTHS  = ['Jan', 'Apr', 'Jul', 'Oct']
+
+function SIPConfigModal({ inv, onSave, onCancel }) {
+  const sipData = inv.sip || {}
+  const [form, setForm] = useState({
+    investmentMode: inv.investmentMode || 'lumpsum',
+    amount:         sipData.monthlyAmount ?? '',
+    startDate:      sipData.startDate ?? '',
+    frequency:      sipData.frequency || 'Monthly',
+    dayOfMonth:     sipData.dayOfMonth ?? (sipData.startDate ? new Date(sipData.startDate).getDate() : 1),
+    dayOfWeek:      sipData.dayOfWeek ?? 'Monday',
+    startingMonth:  sipData.startingMonth ?? 'Jan',
+    status:         sipData.status || 'Active',
+    hasStepUp:      sipData.hasStepUp || false,
+    stepUpPct:      sipData.stepUpPct || 10,
+    instalmentDate: sipData.instalmentDate ?? '',
+  })
+  const isSIP = form.investmentMode === 'sip'
+  const nextDate = isSIP && form.startDate
+    ? nextSIPDate({ ...form, monthlyAmount: parseFloat(form.amount) || 0 })
+    : null
+
+  const sectionHead = {
+    fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase',
+    letterSpacing: '0.1em', color: 'var(--text-muted)',
+    margin: '0 0 12px', paddingBottom: 6, borderBottom: '1px solid var(--border)',
+  }
+
+  function handleSave() {
+    onSave({
+      ...inv,
+      investmentMode: form.investmentMode,
+      sip: isSIP ? {
+        ...sipData,
+        monthlyAmount:      parseFloat(form.amount) || 0,
+        startDate:          form.startDate,
+        frequency:          form.frequency,
+        dayOfMonth:         parseInt(form.dayOfMonth) || 1,
+        dayOfWeek:          form.dayOfWeek,
+        startingMonth:      form.startingMonth,
+        status:             form.status,
+        instalments:        sipData.instalments || [],
+        hasStepUp:          form.hasStepUp || false,
+        stepUpPct:          form.hasStepUp ? (parseFloat(form.stepUpPct) || 10) : 0,
+        instalmentDate:     form.instalmentDate ? parseInt(form.instalmentDate) : null,
+        lastAllotmentDate:  sipData.lastAllotmentDate || null,
+        allotmentHistory:   sipData.allotmentHistory || [],
+      } : inv.sip,
+    })
+  }
+
+  const allRows = [
+    ...(sipData.instalments || []).map(r => ({ ...r, _type: 'manual' })),
+    ...(sipData.allotmentHistory || []).map(r => ({ ...r, _type: 'auto' })),
+  ].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200 }} onClick={onCancel} />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+        zIndex: 201, width: 'calc(100% - 48px)', maxWidth: 520,
+        maxHeight: 'calc(100vh - 80px)', overflowY: 'auto',
+        backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 16, padding: 28,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>SIP Configuration</h3>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+        </div>
+        <p style={{ margin: '0 0 20px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{inv.name}</p>
+
+        {/* Mode toggle */}
+        <div style={{ marginBottom: 16 }}>
+          <span style={mlbl}>Investment Mode</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {['lumpsum', 'sip'].map(mode => (
+              <button key={mode} type="button" onClick={() => setForm({ ...form, investmentMode: mode })} style={{
+                flex: 1, padding: '8px 16px', borderRadius: 8, cursor: 'pointer',
+                border: `1.5px solid ${form.investmentMode === mode ? 'var(--accent)' : 'var(--border)'}`,
+                backgroundColor: form.investmentMode === mode ? 'var(--accent-faint)' : 'transparent',
+                color: form.investmentMode === mode ? 'var(--accent)' : 'var(--text-secondary)',
+                fontWeight: form.investmentMode === mode ? 600 : 400, fontSize: '0.875rem',
+              }}>
+                {mode === 'lumpsum' ? 'Lumpsum' : 'SIP'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isSIP && (
+          <>
+            <p style={sectionHead}>SIP Schedule</p>
+
+            <div style={{ marginBottom: 12 }}>
+              <span style={mlbl}>Frequency</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {FREQUENCIES.map(f => (
+                  <button key={f} type="button" onClick={() => setForm({ ...form, frequency: f })} style={{
+                    padding: '5px 12px', borderRadius: 8, cursor: 'pointer', fontSize: '0.8rem',
+                    border: `1.5px solid ${form.frequency === f ? 'var(--accent)' : 'var(--border)'}`,
+                    backgroundColor: form.frequency === f ? 'var(--accent-faint)' : 'transparent',
+                    color: form.frequency === f ? 'var(--accent)' : 'var(--text-secondary)',
+                    fontWeight: form.frequency === f ? 600 : 400,
+                  }}>{f}</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div>
+                <span style={mlbl}>SIP Amount (₹)</span>
+                <input type="number" style={minp} placeholder="e.g. 5000" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
+              </div>
+              <div>
+                <span style={mlbl}>First SIP Date</span>
+                <input type="date" style={minp} value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
+              </div>
+            </div>
+
+            {form.frequency === 'Weekly' && (
+              <div style={{ marginBottom: 12 }}>
+                <span style={mlbl}>Day of Week</span>
+                <select style={minp} value={form.dayOfWeek} onChange={e => setForm({ ...form, dayOfWeek: e.target.value })}>
+                  {DAYS_OF_WEEK.map(d => <option key={d}>{d}</option>)}
+                </select>
+              </div>
+            )}
+
+            {(form.frequency === 'Monthly' || form.frequency === 'Quarterly') && (
+              <div style={{ display: 'grid', gridTemplateColumns: form.frequency === 'Quarterly' ? '1fr 1fr' : '1fr', gap: 10, marginBottom: 12 }}>
+                <div>
+                  <span style={mlbl}>Day of Month (1–28)</span>
+                  <input type="number" min={1} max={28} style={minp} value={form.dayOfMonth} onChange={e => setForm({ ...form, dayOfMonth: e.target.value })} />
+                </div>
+                {form.frequency === 'Quarterly' && (
+                  <div>
+                    <span style={mlbl}>Starting Month</span>
+                    <select style={minp} value={form.startingMonth} onChange={e => setForm({ ...form, startingMonth: e.target.value })}>
+                      {START_MONTHS.map(m => <option key={m}>{m}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+              <div>
+                <span style={mlbl}>Status</span>
+                <select style={minp} value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+                  {['Active', 'Paused', 'Completed'].map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+              {nextDate && (
+                <div>
+                  <span style={mlbl}>Next Instalment</span>
+                  <p style={{ margin: '4px 0 10px', fontSize: '0.875rem', color: 'var(--accent)', fontWeight: 600 }}>
+                    {new Date(nextDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Step-up */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0', padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 8 }}>
+              <input
+                type="checkbox" id="sipHasStepUp"
+                checked={form.hasStepUp || false}
+                onChange={e => setForm({ ...form, hasStepUp: e.target.checked, stepUpPct: e.target.checked ? (form.stepUpPct || 10) : 0 })}
+                style={{ cursor: 'pointer' }}
+              />
+              <label htmlFor="sipHasStepUp" style={{ fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer', flex: 1 }}>
+                Step-up SIP (increase amount annually)
+              </label>
+            </div>
+            {form.hasStepUp && (
+              <div style={{ marginBottom: 12 }}>
+                <span style={mlbl}>Annual step-up %</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="number" min="1" max="50"
+                    value={form.stepUpPct || 10}
+                    onChange={e => setForm({ ...form, stepUpPct: parseFloat(e.target.value) || 10 })}
+                    style={{ ...minp, marginBottom: 0, width: 80, textAlign: 'right' }}
+                  />
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>% per year</span>
+                </div>
+                {form.amount && (
+                  <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Current effective: {formatINR(getCurrentSIPAmount({ ...form, monthlyAmount: parseFloat(form.amount) || 0 }))}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Instalment date */}
+            <div style={{ marginBottom: 16 }}>
+              <span style={mlbl}>Instalment Date (day of month)</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <select
+                  value={form.instalmentDate}
+                  onChange={e => setForm({ ...form, instalmentDate: e.target.value })}
+                  style={{ ...minp, marginBottom: 0, width: 100 }}
+                >
+                  <option value="">— none —</option>
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Units allotted T+1 after this date</span>
+              </div>
+              {sipData.lastAllotmentDate && (
+                <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Last allotment: {sipData.lastAllotmentDate}
+                  {sipData.allotmentHistory?.length > 0 && ` · ${sipData.allotmentHistory.length} recorded`}
+                </p>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* History */}
+        {allRows.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ ...mlbl, marginBottom: 8 }}>History ({allRows.length})</p>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+                    {['Date','Amount','NAV','Units',''].map(h => (
+                      <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Date' || h === '' ? 'left' : 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.7rem' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {allRows.map((r, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '6px 10px' }}>{r.date}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>{formatINR(r.amount)}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>{r.nav != null ? r.nav.toFixed(4) : '—'}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>{r.units > 0 ? r.units.toFixed(4) : '—'}</td>
+                      <td style={{ padding: '6px 10px', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        {r._type === 'auto' ? 'auto' : ''}{r.note ? ` · ${r.note}` : ''}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleSave} style={mbtnP}>Save</button>
+          <button onClick={onCancel} style={mbtnG}>Cancel</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── SIP Instalment Modal ───────────────────────────────────────────────────
+
+function SIPInstalmentModal({ inv, onConfirm, onCancel }) {
+  const today = new Date().toISOString().split('T')[0]
+  const [date, setDate]     = useState(today)
+  const [amount, setAmount] = useState(String(inv.sip?.monthlyAmount || ''))
+  const [fetching, setFetching] = useState(false)
+  const [result, setResult] = useState(null)
+  const [error, setError]   = useState(null)
+
+  async function handleFetchNav() {
+    if (!date || !amount || !inv.mfCode) return
+    setFetching(true); setError(null); setResult(null)
+    try {
+      const res = await fetch(`/api/price?mf=${encodeURIComponent(inv.mfCode)}&date=${date}`)
+      const data = await res.json()
+      if (!data.nav) throw new Error(data.error || 'NAV not found for this date')
+      setResult({ nav: data.nav, date: data.date || date, units: parseFloat(amount) / data.nav })
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  function handleConfirm() {
+    if (!result) return
+    const newUnits  = parseFloat(amount) / result.nav
+    const totalUnits = (inv.units || 0) + newUnits
+    const totalCost  = (inv.units || 0) * (inv.buyPrice || 0) + parseFloat(amount)
+    onConfirm({
+      ...inv,
+      units:    totalUnits,
+      buyPrice: totalCost / totalUnits,
+      sip: {
+        ...inv.sip,
+        instalments: [...(inv.sip?.instalments || []), {
+          date: result.date, amount: parseFloat(amount), nav: result.nav, units: newUnits,
+        }],
+      },
+    })
+  }
+
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 200 }} onClick={onCancel} />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+        zIndex: 201, width: 'calc(100% - 48px)', maxWidth: 420,
+        backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 16, padding: 28,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Add SIP Instalment</h3>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+        </div>
+        <p style={{ margin: '0 0 20px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{inv.name}</p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+          <div>
+            <span style={mlbl}>Instalment Date</span>
+            <input type="date" style={minp} value={date} onChange={e => { setDate(e.target.value); setResult(null) }} />
+          </div>
+          <div>
+            <span style={mlbl}>Amount (₹)</span>
+            <input type="number" style={minp} placeholder={String(inv.sip?.monthlyAmount || '0')} value={amount} onChange={e => { setAmount(e.target.value); setResult(null) }} />
+          </div>
+        </div>
+
+        {!result && (
+          <button
+            onClick={handleFetchNav} disabled={fetching || !date || !amount}
+            style={{ ...mbtnG, width: '100%', marginBottom: 12, color: 'var(--accent)' }}
+          >
+            {fetching ? 'Fetching NAV…' : 'Look up NAV for Date →'}
+          </button>
+        )}
+        {error && <p style={{ color: 'var(--loss)', fontSize: '0.8rem', margin: '0 0 12px' }}>{error}</p>}
+        {result && (
+          <div style={{ backgroundColor: 'var(--accent-faint)', border: '1px solid var(--accent)', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            <div><p style={mlbl}>NAV (₹)</p><p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem' }}>{result.nav.toFixed(4)}</p></div>
+            <div><p style={mlbl}>Units</p><p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem' }}>{result.units.toFixed(4)}</p></div>
+            <div><p style={mlbl}>Date Used</p><p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>{result.date}</p></div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleConfirm} disabled={!result} style={{ ...mbtnP, opacity: result ? 1 : 0.5, cursor: result ? 'pointer' : 'not-allowed' }}>
+            Confirm Instalment
+          </button>
+          <button onClick={onCancel} style={mbtnG}>Cancel</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── Price fetch helpers ────────────────────────────────────────────────────
+
+function getCacheKey(inv) {
+  return inv.isMF ? `mf:${inv.mfCode}` : `stock:${inv.ticker}`
+}
+
+async function fetchStockPrice(ticker) {
+  try {
+    const res  = await fetch(`/api/price?ticker=${encodeURIComponent(ticker)}`)
+    const data = await res.json()
+    return data.price ?? null
+  } catch { return null }
+}
+
+async function fetchSingleMFNav(mfCode, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`/api/price?mf=${encodeURIComponent(mfCode)}`, {
+        signal: AbortSignal.timeout(8000), cache: 'no-store',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      const nav  = data.price
+      if (!nav || nav <= 0 || isNaN(nav)) throw new Error(`Invalid NAV: ${nav}`)
+      return nav
+    } catch (e) {
+      console.warn(`[MF] ${mfCode} attempt ${attempt}/${retries}: ${e.message}`)
+      if (attempt < retries) await new Promise(r => setTimeout(r, attempt * 1000))
+    }
+  }
+  return null
+}
+
+function isNAVReasonable(newNAV, previousNAV) {
+  if (!newNAV || newNAV <= 0 || isNaN(newNAV)) return false
+  if (previousNAV && previousNAV > 0) {
+    if (Math.abs((newNAV - previousNAV) / previousNAV) * 100 > 20) return false
+  }
+  return true
+}
+
+// ── Shared style helpers ──────────────────────────────────────────────────
 
 function Th({ children, flex, align = 'right' }) {
   return (
@@ -45,11 +520,7 @@ function Td({ children, flex, align = 'right', style = {} }) {
 
 function Badge({ label, color, bg }) {
   return (
-    <span style={{
-      fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
-      color, background: bg, borderRadius: 3, padding: '1px 4px',
-      marginLeft: 5, flexShrink: 0,
-    }}>
+    <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color, background: bg, borderRadius: 3, padding: '1px 4px', marginLeft: 5, flexShrink: 0 }}>
       {label}
     </span>
   )
@@ -57,7 +528,7 @@ function Badge({ label, color, bg }) {
 
 function ChangeCell({ value }) {
   if (value == null) return <Td flex="0 0 70px">—</Td>
-  const color = value >= 0 ? '#10B981' : '#EF4444'
+  const color = value >= 0 ? 'var(--color-positive)' : 'var(--color-negative)'
   return (
     <Td flex="0 0 70px" style={{ color, fontWeight: 500 }}>
       {value >= 0 ? '+' : ''}{formatShort(value)}
@@ -67,12 +538,7 @@ function ChangeCell({ value }) {
 
 function SectionHeader({ label, count, total }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '10px 14px 6px',
-      borderTop: '0.5px solid var(--color-border-primary)',
-      marginTop: 12,
-    }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px 6px', borderTop: '0.5px solid var(--color-border-primary)', marginTop: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-primary)' }}>
           {label}
@@ -86,13 +552,13 @@ function SectionHeader({ label, count, total }) {
   )
 }
 
-// ── Member matching (mirrors metrics.js) ─────────────────────────────────
+// ── Member matching ────────────────────────────────────────────────────────
 
 function matchesMember(item, activeMember) {
   if (!activeMember || activeMember === 'All') return true
-  const m = String(item.member || item.memberId || item.owner || '').toLowerCase()
+  const m      = String(item.member || item.memberId || item.owner || '').toLowerCase()
   const search = activeMember.toLowerCase()
-  const fn = search.split(' ')[0]
+  const fn     = search.split(' ')[0]
   return m === search || m.includes(fn) || search.includes(m.split(' ')[0])
 }
 
@@ -100,10 +566,9 @@ function matchesMember(item, activeMember) {
 
 function buildInvestmentRows(investments, activeMember, latestSnap) {
   const filtered = investments.filter(i => matchesMember(i, activeMember))
-  const stocks = filtered.filter(i => !i.isMF)
-  const mfs    = filtered.filter(i => i.isMF)
+  const stocks   = filtered.filter(i => !i.isMF)
+  const mfs      = filtered.filter(i => i.isMF)
 
-  // Group MFs by mfCode
   const mfGroups = {}
   for (const mf of mfs) {
     const key = mf.mfCode || String(mf.id)
@@ -123,28 +588,29 @@ function buildInvestmentRows(investments, activeMember, latestSnap) {
     const isSIP  = group.some(g => g.investmentMode === 'sip')
     const sipInv = isSIP ? group.find(g => g.investmentMode === 'sip') : null
     return {
-      key:     `mf-${group[0].mfCode || group[0].id}`,
-      name:    group[0].name,
-      badge:   'MF',
-      isMF:    true,
-      members: group.map(g => g.member),
-      units:   totalUnits,
+      key:      `mf-${group[0].mfCode || group[0].id}`,
+      name:     group[0].name,
+      badge:    'MF',
+      isMF:     true,
+      members:  group.map(g => g.member),
+      units:    totalUnits,
       price,
-      value:   totalUnits * price,
-      todayChange: hasChange ? totalChange : null,
+      value:    totalUnits * price,
+      todayChange:  hasChange ? totalChange : null,
       isSIP,
       sipAmount:    sipInv?.sip?.monthlyAmount || sipInv?.sip?.amount || 0,
       sipFreq:      sipInv?.sip?.frequency || 'Monthly',
       sipDay:       sipInv?.sip?.instalmentDate,
       hasVerify:    group.some(g => (g.flags || []).includes('VERIFY_AMFI')),
       isMulti:      group.length > 1,
+      invId:        group.length === 1 ? group[0].id : null,
       children:     group.length > 1
         ? group.map(g => ({
-            member:     g.member,
-            units:      g.units || 0,
-            value:      (g.units || 0) * price,
+            member:      g.member,
+            units:       g.units || 0,
+            value:       (g.units || 0) * price,
             todayChange: computeTodayChange(g, latestSnap),
-            isSIP:      g.investmentMode === 'sip',
+            isSIP:       g.investmentMode === 'sip',
           }))
         : [],
     }
@@ -163,6 +629,7 @@ function buildInvestmentRows(investments, activeMember, latestSnap) {
     isSIP:      false,
     hasVerify:  (s.flags || []).includes('VERIFY_AMFI'),
     isMulti:    false,
+    invId:      null,
     children:   [],
   }))
 
@@ -171,7 +638,7 @@ function buildInvestmentRows(investments, activeMember, latestSnap) {
 
 // ── Investment rows ────────────────────────────────────────────────────────
 
-function InvestmentRow({ row, expanded, onToggle, members }) {
+function InvestmentRow({ row, expanded, onToggle, members, onSIPConfig }) {
   const memberMap = Object.fromEntries(members.map(m => [m.name, m]))
 
   return (
@@ -179,15 +646,12 @@ function InvestmentRow({ row, expanded, onToggle, members }) {
       <div
         onClick={row.isMulti ? () => onToggle(row.key) : undefined}
         style={{
-          display: 'flex', alignItems: 'center',
-          padding: '9px 14px',
-          borderRadius: 6,
+          display: 'flex', alignItems: 'center', padding: '9px 14px', borderRadius: 6,
           background: expanded ? 'var(--color-background-tertiary)' : 'transparent',
-          cursor: row.isMulti ? 'pointer' : 'default',
-          transition: 'background 0.1s',
+          cursor: row.isMulti ? 'pointer' : 'default', transition: 'background 0.1s',
         }}
       >
-        {/* Name */}
+        {/* Name + badges */}
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           <span style={{ fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.name}
@@ -195,36 +659,32 @@ function InvestmentRow({ row, expanded, onToggle, members }) {
           <Badge label={row.badge} color="#7D8590" bg="var(--color-border-primary)" />
           {row.isSIP && <Badge label="SIP" color="#60A5FA" bg="rgba(96,165,250,0.12)" />}
           {row.hasVerify && <Badge label="VERIFY" color="#F59E0B" bg="rgba(245,158,11,0.12)" />}
+          {row.isSIP && row.invId && onSIPConfig && (
+            <button
+              onClick={e => { e.stopPropagation(); onSIPConfig(row.invId) }}
+              style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: 11, padding: '0 2px', flexShrink: 0 }}
+              title="SIP configuration"
+            >
+              ⚙
+            </button>
+          )}
         </div>
 
         {/* Member(s) */}
         <Td flex="0 0 90px" align="center">
           {row.isMulti
-            ? <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                {row.members.length} members {expanded ? '▲' : '▼'}
-              </span>
-            : <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                {firstName(row.members[0] || '')}
-              </span>
+            ? <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{row.members.length} members {expanded ? '▲' : '▼'}</span>
+            : <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{firstName(row.members[0] || '')}</span>
           }
         </Td>
 
-        {/* Units */}
         <Td flex="0 0 72px">
           {row.units > 0 ? row.units.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—'}
         </Td>
-
-        {/* Price */}
-        <Td flex="0 0 80px">
-          {row.price > 0 ? formatShort(row.price) : '—'}
-        </Td>
-
-        {/* Value */}
+        <Td flex="0 0 80px">{row.price > 0 ? formatShort(row.price) : '—'}</Td>
         <Td flex="0 0 80px" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>
           {row.value > 0 ? formatShort(row.value) : '—'}
         </Td>
-
-        {/* Today */}
         <ChangeCell value={row.todayChange} />
       </div>
 
@@ -243,26 +703,15 @@ function InvestmentRow({ row, expanded, onToggle, members }) {
       {expanded && row.children.map((child, i) => {
         const m = memberMap[child.member] || {}
         return (
-          <div key={i} style={{
-            display: 'flex', alignItems: 'center',
-            padding: '6px 14px 6px 32px',
-            borderLeft: `2px solid ${m.color || '#3B82F6'}22`,
-            marginLeft: 14,
-          }}>
+          <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '6px 14px 6px 32px', borderLeft: `2px solid ${m.color || '#3B82F6'}22`, marginLeft: 14 }}>
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 10, color: m.color || 'var(--color-text-muted)', fontWeight: 600 }}>
-                {firstName(child.member)}
-              </span>
+              <span style={{ fontSize: 10, color: m.color || 'var(--color-text-muted)', fontWeight: 600 }}>{firstName(child.member)}</span>
               {child.isSIP && <Badge label="SIP" color="#60A5FA" bg="rgba(96,165,250,0.12)" />}
             </div>
             <Td flex="0 0 90px" align="center" />
-            <Td flex="0 0 72px">
-              {child.units.toLocaleString('en-IN', { maximumFractionDigits: 3 })}
-            </Td>
+            <Td flex="0 0 72px">{child.units.toLocaleString('en-IN', { maximumFractionDigits: 3 })}</Td>
             <Td flex="0 0 80px" />
-            <Td flex="0 0 80px" style={{ color: 'var(--color-text-secondary)' }}>
-              {formatShort(child.value)}
-            </Td>
+            <Td flex="0 0 80px" style={{ color: 'var(--color-text-secondary)' }}>{formatShort(child.value)}</Td>
             <ChangeCell value={child.todayChange} />
           </div>
         )
@@ -271,9 +720,7 @@ function InvestmentRow({ row, expanded, onToggle, members }) {
   )
 }
 
-// ── Investment section ────────────────────────────────────────────────────
-
-function InvestmentsSection({ rows, sort, members }) {
+function InvestmentsSection({ rows, sort, members, onSIPConfig }) {
   const [expanded, setExpanded] = useState({})
 
   const sorted = useMemo(() => {
@@ -285,17 +732,11 @@ function InvestmentsSection({ rows, sort, members }) {
   }, [rows, sort])
 
   if (sorted.length === 0) return null
-
   const total = sorted.reduce((s, r) => s + r.value, 0)
-
-  function toggle(key) {
-    setExpanded(prev => ({ ...prev, [key]: !prev[key] }))
-  }
 
   return (
     <>
       <SectionHeader label="Investments" count={sorted.length} total={total} />
-      {/* Column headers */}
       <div style={{ display: 'flex', alignItems: 'center', padding: '4px 14px 6px' }}>
         <Th flex={1} align="left">Name</Th>
         <Th flex="0 0 90px" align="center">Member</Th>
@@ -306,11 +747,11 @@ function InvestmentsSection({ rows, sort, members }) {
       </div>
       {sorted.map(row => (
         <InvestmentRow
-          key={row.key}
-          row={row}
+          key={row.key} row={row}
           expanded={!!expanded[row.key]}
-          onToggle={toggle}
+          onToggle={key => setExpanded(p => ({ ...p, [key]: !p[key] }))}
           members={members}
+          onSIPConfig={onSIPConfig}
         />
       ))}
     </>
@@ -487,9 +928,7 @@ function CashSection({ items, activeMember, sort }) {
       </div>
       {rows.map((a, i) => (
         <div key={a.id || i} style={{ display: 'flex', alignItems: 'center', padding: '9px 14px' }}>
-          <div style={{ flex: 1, fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500 }}>
-            {a.name}
-          </div>
+          <div style={{ flex: 1, fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500 }}>{a.name}</div>
           <Td flex="0 0 90px" align="center">{firstName(a.member)}</Td>
           <Td flex="0 0 90px" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatShort(a.value || 0)}</Td>
         </div>
@@ -500,11 +939,138 @@ function CashSection({ items, activeMember, sort }) {
 
 // ── Main component ────────────────────────────────────────────────────────
 
-export default function Holdings({ activeMember, isReadOnly }) {
-  const { data } = useStore()
-  const [assetFilter, setAssetFilter] = useState('all')
+export default function Holdings({ activeMember, isReadOnly, activeView = 'all' }) {
+  const { data, set } = useStore()
+  const storeSetRef   = useRef(null)
+  storeSetRef.current = set
+
+  const [assetFilter, setAssetFilter] = useState(VIEW_TO_FILTER[activeView] || 'all')
   const [sort, setSort] = useState('value')
 
+  // Sync internal filter when sidebar navigates with a view
+  useEffect(() => {
+    setAssetFilter(VIEW_TO_FILTER[activeView] || 'all')
+  }, [activeView])
+
+  // ── Action state ──────────────────────────────────────────
+  const [fetchingPrices, setFetchingPrices] = useState(false)
+  const [fetchingGold,   setFetchingGold]   = useState(false)
+  const [showImport,     setShowImport]     = useState(false)
+  const [sipModal,       setSipModal]       = useState(null)
+  const [lastPriceUpdate, setLastPriceUpdate] = useState(() => load(KEYS.PRICE_UPDATED, null))
+
+  // ── Gold price refresh ────────────────────────────────────
+  const handleRefreshGoldPrices = useCallback(async () => {
+    setFetchingGold(true)
+    try {
+      const res  = await fetch('/api/gold-price')
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || 'Failed')
+      storeSetRef.current(KEYS.GOLD_PRICES, json.prices)
+      save(KEYS.GOLD_PRICE_UPDATED, new Date().toISOString())
+    } catch (err) {
+      console.error('[Gold] Price refresh failed:', err.message)
+    } finally {
+      setFetchingGold(false)
+    }
+  }, [])
+
+  // Auto-refresh gold if stale (>12h)
+  useEffect(() => {
+    const lastUpdated = load(KEYS.GOLD_PRICE_UPDATED, null)
+    const isStale = !lastUpdated || Date.now() - new Date(lastUpdated).getTime() > 12 * 60 * 60 * 1000
+    if (isStale) handleRefreshGoldPrices()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Investment price refresh ──────────────────────────────
+  const refreshPrices = useCallback(async (forceAll = false) => {
+    const investments = data?.investments ?? []
+    if (investments.length === 0) return
+    const cache = { ...(data?.priceCache ?? {}) }
+    const map   = new Map(investments.map(inv => [inv.id, { ...inv }]))
+    const now   = Date.now()
+
+    const toFetch = forceAll
+      ? investments
+      : investments.filter(inv => {
+          const entry = cache[getCacheKey(inv)]
+          return !entry || entry.status === 'error' || (now - entry.fetchedAt) >= PRICE_TTL_MS
+        })
+
+    if (toFetch.length === 0) return
+    setFetchingPrices(true)
+
+    // MFs — sequential, deduplicated
+    const mfToFetch = toFetch.filter(inv => inv.isMF && inv.mfCode)
+    const uniqueCodes = [...new Set(mfToFetch.map(inv => inv.mfCode))]
+    const navMap = {}
+
+    for (const code of uniqueCodes) {
+      const rep    = mfToFetch.find(inv => inv.mfCode === code)
+      const newNAV = await fetchSingleMFNav(code)
+      if (newNAV && isNAVReasonable(newNAV, rep?.currentPrice || 0)) {
+        navMap[code] = newNAV
+        cache[`mf:${code}`] = { fetchedAt: now, status: 'ok' }
+      } else {
+        cache[`mf:${code}`] = { fetchedAt: cache[`mf:${code}`]?.fetchedAt ?? 0, status: 'error' }
+      }
+      await new Promise(r => setTimeout(r, 400))
+    }
+
+    for (const inv of investments) {
+      if (!inv.isMF || !inv.mfCode) continue
+      const entry = map.get(inv.id)
+      const nav   = navMap[inv.mfCode]
+      if (nav && entry) {
+        entry.currentPrice = nav
+        entry.flags = (entry.flags || []).filter(f => f !== 'manual')
+      }
+    }
+
+    // Stocks — parallel batches
+    const stocksToFetch = toFetch.filter(inv => !inv.isMF && inv.ticker)
+    for (let i = 0; i < stocksToFetch.length; i += 5) {
+      await Promise.all(stocksToFetch.slice(i, i + 5).map(async inv => {
+        const key   = getCacheKey(inv)
+        const price = await fetchStockPrice(inv.ticker)
+        if (price != null) {
+          const entry = map.get(inv.id)
+          if (entry) { entry.currentPrice = price; entry.flags = (entry.flags || []).filter(f => f !== 'manual') }
+          cache[key] = { fetchedAt: now, status: 'ok' }
+        } else {
+          cache[key] = { fetchedAt: cache[key]?.fetchedAt ?? 0, status: 'error' }
+        }
+      }))
+      if (i + 5 < stocksToFetch.length) await new Promise(r => setTimeout(r, 500))
+    }
+
+    storeSetRef.current(KEYS.INVESTMENTS, investments.map(inv => map.get(inv.id) || inv))
+    storeSetRef.current(KEYS.PRICE_CACHE, cache)
+    setFetchingPrices(false)
+    const ts = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    setLastPriceUpdate(ts)
+    save(KEYS.PRICE_UPDATED, ts)
+  }, [data?.investments, data?.priceCache]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh prices on mount, every 15 min
+  useEffect(() => {
+    refreshPrices()
+    const interval = setInterval(() => refreshPrices(), 15 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── SIP config ────────────────────────────────────────────
+  function handleSIPConfig(invId) {
+    const inv = (data?.investments ?? []).find(i => i.id === invId)
+    if (inv) setSipModal({ type: 'config', inv })
+  }
+  function handleSaveInvestment(updated) {
+    const investments = data?.investments ?? []
+    set(KEYS.INVESTMENTS, investments.map(i => i.id === updated.id ? updated : i))
+    setSipModal(null)
+  }
+
+  // ── Derived data ──────────────────────────────────────────
   const latestSnap = useMemo(() => {
     const snaps = data?.snapshots ?? []
     return snaps.length > 0 ? snaps[snaps.length - 1] : null
@@ -519,41 +1085,76 @@ export default function Holdings({ activeMember, isReadOnly }) {
 
   const goldPrices = data?.goldPrices ?? { 24: 15496, 22: 14205, 18: 9386 }
 
-  const show = (id) => assetFilter === 'all' || assetFilter === id
+  // 'deposits' shows both FD and Cash sections
+  const show = (id) => {
+    if (assetFilter === 'all')      return true
+    if (assetFilter === 'deposits') return id === 'fd' || id === 'cash'
+    return assetFilter === id
+  }
+
+  const chipBtn = (active) => ({
+    padding: '5px 12px', borderRadius: 20, border: '0.5px solid',
+    borderColor: active ? 'var(--color-accent)' : 'var(--color-border-primary)',
+    background:  active ? 'var(--color-accent-bg)' : 'transparent',
+    color:       active ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+    fontSize: 12, fontWeight: active ? 600 : 400, cursor: 'pointer',
+  })
+
+  const actionBtn = (variant = 'ghost', disabled = false) => ({
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '6px 12px', borderRadius: 7, fontSize: 12,
+    border:      variant === 'primary' ? 'none' : '0.5px solid var(--color-border-primary)',
+    background:  variant === 'primary' ? 'var(--color-accent)' : 'var(--color-background-secondary)',
+    color:       variant === 'primary' ? '#fff' : 'var(--color-text-secondary)',
+    cursor:      disabled ? 'not-allowed' : 'pointer',
+    opacity:     disabled ? 0.6 : 1,
+  })
 
   return (
     <div style={{ padding: '24px', maxWidth: 1000, margin: '0 auto', fontFamily: 'var(--font-sans)' }}>
 
-      {/* Header */}
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.3px' }}>
-          Holdings
-        </h1>
-        <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--color-text-muted)' }}>
-          Unified view of all positions
-          {activeMember !== 'All' ? ` · ${activeMember}` : ''}
-        </p>
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.3px' }}>
+            Holdings
+          </h1>
+          <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--color-text-muted)' }}>
+            {lastPriceUpdate ? `Prices updated ${lastPriceUpdate}` : 'Unified view · all positions'}
+            {activeMember !== 'All' ? ` · ${activeMember}` : ''}
+          </p>
+        </div>
+        {!isReadOnly && (
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button onClick={() => setShowImport(true)} style={actionBtn('primary')}>
+              <i className="ti ti-upload" style={{ fontSize: 13 }} aria-hidden="true" />
+              Import
+            </button>
+            <button
+              onClick={() => refreshPrices()}
+              disabled={fetchingPrices}
+              style={{ ...actionBtn('ghost', fetchingPrices), color: fetchingPrices ? 'var(--color-text-muted)' : 'var(--color-accent)' }}
+            >
+              <i className="ti ti-refresh" style={{ fontSize: 13, animation: fetchingPrices ? 'spin 1s linear infinite' : 'none' }} aria-hidden="true" />
+              {fetchingPrices ? 'Refreshing…' : 'Prices'}
+            </button>
+            <button
+              onClick={handleRefreshGoldPrices}
+              disabled={fetchingGold}
+              style={{ ...actionBtn('ghost', fetchingGold), color: fetchingGold ? 'var(--color-text-muted)' : 'var(--color-gold)' }}
+            >
+              <i className="ti ti-refresh" style={{ fontSize: 13, animation: fetchingGold ? 'spin 1s linear infinite' : 'none' }} aria-hidden="true" />
+              {fetchingGold ? 'Fetching…' : 'Gold'}
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Filter strip + sort */}
+      {/* ── Filter strip + sort ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ display: 'flex', gap: 4 }}>
           {CLASS_FILTERS.map(f => (
-            <button
-              key={f.id}
-              onClick={() => setAssetFilter(f.id)}
-              style={{
-                padding: '5px 12px',
-                borderRadius: 20,
-                border: '0.5px solid',
-                borderColor: assetFilter === f.id ? 'var(--color-accent)' : 'var(--color-border-primary)',
-                background: assetFilter === f.id ? 'var(--color-accent-bg)' : 'transparent',
-                color: assetFilter === f.id ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                fontSize: 12,
-                fontWeight: assetFilter === f.id ? 600 : 400,
-                cursor: 'pointer',
-              }}
-            >
+            <button key={f.id} onClick={() => setAssetFilter(f.id)} style={chipBtn(assetFilter === f.id)}>
               {f.label}
             </button>
           ))}
@@ -561,68 +1162,57 @@ export default function Holdings({ activeMember, isReadOnly }) {
         <select
           value={sort}
           onChange={e => setSort(e.target.value)}
-          style={{
-            padding: '5px 10px',
-            borderRadius: 6,
-            border: '0.5px solid var(--color-border-primary)',
-            background: 'var(--color-background-secondary)',
-            color: 'var(--color-text-secondary)',
-            fontSize: 12,
-            cursor: 'pointer',
-          }}
+          style={{ padding: '5px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer' }}
         >
           {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
       </div>
 
-      {/* Sections */}
-      <div style={{
-        background: 'var(--color-background-secondary)',
-        border: '0.5px solid var(--color-border-primary)',
-        borderRadius: 10,
-        overflow: 'hidden',
-        paddingBottom: 8,
-      }}>
+      {/* ── Sections ── */}
+      <div style={{ background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-primary)', borderRadius: 10, overflow: 'hidden', paddingBottom: 8 }}>
         {show('invest') && (
-          <InvestmentsSection rows={invRows} sort={sort} members={members} />
+          <InvestmentsSection rows={invRows} sort={sort} members={members} onSIPConfig={handleSIPConfig} />
         )}
         {show('gold') && (
-          <GoldSection
-            items={data?.gold ?? []}
-            activeMember={activeMember}
-            goldPrices={goldPrices}
-            sort={sort}
-          />
+          <GoldSection items={data?.gold ?? []} activeMember={activeMember} goldPrices={goldPrices} sort={sort} />
         )}
         {show('realty') && (
-          <RealEstateSection
-            items={data?.realEstate ?? []}
-            activeMember={activeMember}
-            sort={sort}
-          />
+          <RealEstateSection items={data?.realEstate ?? []} activeMember={activeMember} sort={sort} />
         )}
         {show('fd') && (
-          <FixedIncomeSection
-            items={data?.fixedIncome ?? []}
-            activeMember={activeMember}
-            sort={sort}
-          />
+          <FixedIncomeSection items={data?.fixedIncome ?? []} activeMember={activeMember} sort={sort} />
         )}
         {show('cash') && (
-          <CashSection
-            items={data?.cashAssets ?? []}
-            activeMember={activeMember}
-            sort={sort}
-          />
+          <CashSection items={data?.cashAssets ?? []} activeMember={activeMember} sort={sort} />
         )}
 
-        {/* Empty state */}
         {invRows.length === 0 && (data?.gold ?? []).length === 0 && (
           <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>
             No holdings to display
           </div>
         )}
       </div>
+
+      {/* ── Modals ── */}
+      {showImport && (
+        <UpdateHoldingsModal activeMember={activeMember} onClose={() => setShowImport(false)} />
+      )}
+      {sipModal?.type === 'config' && (
+        <SIPConfigModal
+          inv={sipModal.inv}
+          onSave={handleSaveInvestment}
+          onCancel={() => setSipModal(null)}
+        />
+      )}
+      {sipModal?.type === 'instalment' && (
+        <SIPInstalmentModal
+          inv={sipModal.inv}
+          onConfirm={handleSaveInvestment}
+          onCancel={() => setSipModal(null)}
+        />
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }
