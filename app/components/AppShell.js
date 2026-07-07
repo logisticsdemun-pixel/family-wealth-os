@@ -17,6 +17,7 @@ import RealEstate from '../realestate'
 import Artha from '../artha'
 import Goals from '../goals'
 import UserManagement from './UserManagement'
+import { NetWorthPage, LiquidityPage, ObligationsPage, LiabilitiesPage } from './CommandSubPages'
 
 export default function AppShell() {
   const { user, isLoaded, isSignedIn } = useUser()
@@ -84,6 +85,7 @@ export default function AppShell() {
     } else {
       setActivePage(target.page)
       setActiveView(target.view || 'all')
+      if (target.member !== undefined) setActiveMember(target.member)
     }
   }
 
@@ -171,6 +173,10 @@ export default function AppShell() {
             {activePage === 'users'       && isAdmin && (
               <UserManagement onBack={() => navigate('command')} />
             )}
+            {activePage === 'networth'     && <NetWorthPage    onNavigate={navigate} />}
+            {activePage === 'liquidity'    && <LiquidityPage   onNavigate={navigate} />}
+            {activePage === 'obligations'  && <ObligationsPage onNavigate={navigate} />}
+            {activePage === 'liabilities'  && <LiabilitiesPage onNavigate={navigate} />}
             {/* legacy routes — unlinked from nav, kept for safety */}
             {activePage === 'dashboard'   && <Dashboard   {...pageProps} />}
             {activePage === 'investments' && <Investments {...pageProps} />}

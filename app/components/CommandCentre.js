@@ -64,9 +64,18 @@ function card(children, style = {}) {
 
 // ── Hero cards (Row 1) ──────────────────────────────────────────────────────
 
-function HeroCard({ label, value, sub, subColor, icon }) {
-  return card(
-    <>
+function HeroCard({ label, value, sub, subColor, icon, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        background: 'var(--color-background-secondary)',
+        border: '0.5px solid var(--color-border-primary)',
+        borderRadius: 10,
+        padding: '16px 18px',
+        cursor: onClick ? 'pointer' : 'default',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <span style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
           {label}
@@ -81,7 +90,7 @@ function HeroCard({ label, value, sub, subColor, icon }) {
           {sub}
         </div>
       )}
-    </>
+    </div>
   )
 }
 
@@ -133,12 +142,15 @@ function InsightChip({ insight, onNavigate }) {
 
 // ── Member bar (Row 3 left) ─────────────────────────────────────────────────
 
-function MemberBar({ member, netWorth, maxNetWorth, total }) {
+function MemberBar({ member, netWorth, maxNetWorth, total, onClick }) {
   const pct   = maxNetWorth > 0 ? (netWorth / maxNetWorth) * 100 : 0
   const share = total > 0 ? Math.round((netWorth / total) * 100) : 0
 
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div
+      onClick={onClick}
+      style={{ marginBottom: 12, cursor: onClick ? 'pointer' : 'default' }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{
@@ -182,7 +194,7 @@ function MemberBar({ member, netWorth, maxNetWorth, total }) {
 
 // ── Goal row (Row 3 right) ──────────────────────────────────────────────────
 
-function GoalRow({ goal }) {
+function GoalRow({ goal, onClick }) {
   const pct     = goal.targetAmount > 0 ? Math.min(100, Math.round((goal.currentAmount || 0) / goal.targetAmount * 100)) : 0
   const icon    = GOAL_ICONS[goal.type] || 'ti-target'
   const years   = goal.targetDate
@@ -192,7 +204,7 @@ function GoalRow({ goal }) {
   const barColor = pct >= 80 ? 'var(--color-positive)' : pct >= 40 ? 'var(--color-accent)' : 'var(--color-warning)'
 
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div onClick={onClick} style={{ marginBottom: 14, cursor: onClick ? 'pointer' : 'default' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <i className={`ti ${icon}`} style={{ fontSize: 13, color: 'var(--color-text-muted)' }} aria-hidden="true" />
@@ -350,6 +362,7 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
             todayDelta == null ? undefined
             : todayDelta >= 0  ? 'var(--color-positive)' : 'var(--color-negative)'
           }
+          onClick={() => onNavigate('networth')}
         />
         <HeroCard
           label="Liquidity"
@@ -365,12 +378,14 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
             : runway !== Infinity && runway < 6 ? 'var(--color-warning)'
             : 'var(--color-positive)'
           }
+          onClick={() => onNavigate('liquidity')}
         />
         <HeroCard
           label="Monthly Obligation"
           icon="ti-calendar-due"
           value={obligation.total > 0 ? formatShort(obligation.total) + '/mo' : '—'}
           sub={oblParts.length > 0 ? oblParts.join(' · ') : 'No active obligations'}
+          onClick={() => onNavigate('obligations')}
         />
       </div>
 
@@ -403,6 +418,7 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
                 netWorth={m.netWorth}
                 maxNetWorth={maxMemberNW}
                 total={totalNW}
+                onClick={() => onNavigate({ page: 'holdings', member: m.name })}
               />
             ))}
             <div style={{
@@ -424,7 +440,7 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
         {goals.length > 0 && card(
           <>
             {sectionLabel('Goals')}
-            {goals.map((g, i) => <GoalRow key={g.id || i} goal={g} />)}
+            {goals.map((g, i) => <GoalRow key={g.id || i} goal={g} onClick={() => onNavigate('goals')} />)}
           </>
         )}
       </div>
@@ -437,7 +453,10 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
           gap: 12,
         }}>
           {card(
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div
+              onClick={() => onNavigate('liabilities')}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+            >
               <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
                 Debt · {formatINR(metrics.liabilities)} outstanding
               </span>

@@ -544,6 +544,7 @@ export default function RealEstate({ activeMember }) {
   return (
     <PageScaffold
       title="Real Estate"
+      context="Properties, linked loans, ownership structure, and appreciation"
       actions={<>
         <button
           onClick={async () => {

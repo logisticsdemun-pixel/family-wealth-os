@@ -306,7 +306,7 @@ export default function Goals({ activeMember }) {
   return (
     <PageScaffold
       title="Goals"
-      subtitle={`${goalsWithMetrics.length} goal${goalsWithMetrics.length !== 1 ? 's' : ''} · ${formatINR(totalTarget)} total target`}
+      context={`Financial goals · ${goalsWithMetrics.length} active · ${formatINR(totalTarget)} total target corpus`}
       actions={
         <button
           onClick={() => { setEditingGoal(null); setShowForm(true) }}

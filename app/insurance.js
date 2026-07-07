@@ -180,6 +180,7 @@ export default function Insurance({ activeMember }) {
   return (
     <PageScaffold
       title="Insurance"
+      context="Policy coverage, annual premiums, and renewal tracking"
       actions={<>
         <button
           onClick={async () => {

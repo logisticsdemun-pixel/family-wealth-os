@@ -318,7 +318,7 @@ export default function Artha() {
   return (
     <PageScaffold
       title="ARTHA Advisor"
-      subtitle="Rule-based insights generated from your actual data. Updated on every visit."
+      context="Rule-based insights generated from your actual data. Updated on every visit."
       actions={
         editingExpenses ? (
           <>

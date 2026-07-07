@@ -238,6 +238,7 @@ export default function Loans({ activeMember }) {
   return (
     <PageScaffold
       title="Loans"
+      context="Track EMIs, outstanding balances, and amortization progress"
       actions={<>
         <button
           onClick={async () => {
