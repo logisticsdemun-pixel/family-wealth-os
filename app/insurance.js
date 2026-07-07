@@ -4,7 +4,7 @@ import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS } from './lib/format'
 import { useStore } from './lib/store'
 import MetricCards from './components/MetricCards'
-import PageLayout from './components/PageLayout'
+import PageScaffold from './components/PageScaffold'
 
 const POLICY_TYPES = ['Term Life', 'Health', 'Vehicle', 'Endowment', 'ULIP', 'Critical Illness', 'Other']
 
@@ -178,32 +178,29 @@ export default function Insurance({ activeMember }) {
   const healthCover = filtered.filter(p => p.type === 'Health' || p.type === 'Critical Illness').reduce((s, p) => s + (p.cover || 0), 0)
   const annualPremium = filtered.reduce((s, p) => s + (p.premium || 0), 0)
   return (
-    <PageLayout>
-
-      {/* ── Header ────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <h2 style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>Insurance</h2>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
-          <button
-            onClick={async () => {
-              setSaveStatus('saving')
-              await flush()
-              setSaveStatus('saved')
-              setTimeout(() => setSaveStatus('idle'), 2000)
-            }}
-            disabled={saveStatus !== 'idle'}
-            style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 72 }}
-          >
-            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
-          </button>
-          <button
-            onClick={() => { setShowAdd(v => !v); setEditPolicy(null) }}
-            style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem', color: 'var(--accent)' }}
-          >
-            {showAdd ? 'Cancel' : '+ Add Policy'}
-          </button>
-        </div>
-      </div>
+    <PageScaffold
+      title="Insurance"
+      actions={<>
+        <button
+          onClick={async () => {
+            setSaveStatus('saving')
+            await flush()
+            setSaveStatus('saved')
+            setTimeout(() => setSaveStatus('idle'), 2000)
+          }}
+          disabled={saveStatus !== 'idle'}
+          style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 72 }}
+        >
+          {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
+        </button>
+        <button
+          onClick={() => { setShowAdd(v => !v); setEditPolicy(null) }}
+          style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem', color: 'var(--accent)' }}
+        >
+          {showAdd ? 'Cancel' : '+ Add Policy'}
+        </button>
+      </>}
+    >
 
       {/* ── Summary cards ─────────────────────────────────── */}
       <MetricCards cards={[
@@ -265,6 +262,6 @@ export default function Insurance({ activeMember }) {
           </div>
         </div>
       )}
-    </PageLayout>
+    </PageScaffold>
   )
 }

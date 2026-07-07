@@ -186,7 +186,7 @@ export function generateInsights(data, metrics) {
       title:       `High ${overConcentrated.category} concentration`,
       body:        `${overConcentrated.category} is ${overConcentrated.pct.toFixed(1)}% of total assets — exceeds the 60% threshold.`,
       actionLabel: 'View Holdings',
-      targetPage:  'investments',
+      targetPage:  { page: 'holdings', view: 'investments' },
     })
   }
 
@@ -198,7 +198,7 @@ export function generateInsights(data, metrics) {
       title:       'Gold above 15% of assets',
       body:        `Gold is ${goldEntry.pct.toFixed(1)}% of assets (${fmtINR(goldEntry.value)}). Consider rebalancing toward equity.`,
       actionLabel: 'View Gold',
-      targetPage:  'gold',
+      targetPage:  { page: 'holdings', view: 'gold' },
     })
   }
 
@@ -220,7 +220,7 @@ export function generateInsights(data, metrics) {
         title:       `SIP due ${diff === 0 ? 'today' : `in ${diff} day${diff === 1 ? '' : 's'}`}`,
         body:        `${inv.name}: ${fmtINR(amount)} on the ${day}${ordinal(day)}.`,
         actionLabel: 'View Investments',
-        targetPage:  'investments',
+        targetPage:  { page: 'holdings', view: 'investments' },
       })
       break
     }
@@ -254,7 +254,7 @@ export function generateInsights(data, metrics) {
       title:       'Cost basis missing',
       body:        `${unknownCost.length} holding${unknownCost.length === 1 ? '' : 's'} (e.g. ${unknownCost[0].name}) have no purchase price — total gain can't be computed.`,
       actionLabel: 'Update Holdings',
-      targetPage:  'investments',
+      targetPage:  { page: 'holdings', view: 'investments' },
     })
   }
 

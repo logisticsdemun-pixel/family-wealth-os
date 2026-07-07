@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react'
 import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS } from './lib/format'
 import { useStore } from './lib/store'
-import PageLayout from './components/PageLayout'
+import PageScaffold from './components/PageScaffold'
 import MetricCards from './components/MetricCards'
 
 const GOAL_TYPES = [
@@ -304,25 +304,18 @@ export default function Goals({ activeMember }) {
   }
 
   return (
-    <PageLayout>
-
-      {/* ── Header ────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-        <div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 4px', color: 'var(--color-text-primary)' }}>
-            Goals
-          </h2>
-          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>
-            {goalsWithMetrics.length} goal{goalsWithMetrics.length !== 1 ? 's' : ''} · {formatINR(totalTarget)} total target
-          </p>
-        </div>
+    <PageScaffold
+      title="Goals"
+      subtitle={`${goalsWithMetrics.length} goal${goalsWithMetrics.length !== 1 ? 's' : ''} · ${formatINR(totalTarget)} total target`}
+      actions={
         <button
           onClick={() => { setEditingGoal(null); setShowForm(true) }}
           style={{ padding: '8px 16px', borderRadius: 8, background: 'var(--color-accent)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
         >
           + Add Goal
         </button>
-      </div>
+      }
+    >
 
       {/* ── Metric cards ──────────────────────────────────── */}
       <MetricCards cards={[
@@ -683,6 +676,6 @@ export default function Goals({ activeMember }) {
         </div>
       )}
 
-    </PageLayout>
+    </PageScaffold>
   )
 }

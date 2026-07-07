@@ -4,7 +4,7 @@ import { KEYS } from './lib/storage'
 import { formatINR, firstName, MEMBERS, computeOutstanding, loanMonthsRemaining, totalInterestPaid, monthsElapsed } from './lib/format'
 import { useStore } from './lib/store'
 import MetricCards from './components/MetricCards'
-import PageLayout from './components/PageLayout'
+import PageScaffold from './components/PageScaffold'
 
 const LOAN_TYPES = ['Home Loan', 'Car Loan', 'Personal Loan', 'Education Loan', 'Business Loan', 'Other']
 
@@ -236,32 +236,29 @@ export default function Loans({ activeMember }) {
   const totalPrincipal = filtered.reduce((s, l) => s + (l.principal || 0), 0)
 
   return (
-    <PageLayout>
-
-      {/* ── Header ────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <h2 style={{ margin: '0 0 4px', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>Loans</h2>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
-          <button
-            onClick={async () => {
-              setSaveStatus('saving')
-              await flush()
-              setSaveStatus('saved')
-              setTimeout(() => setSaveStatus('idle'), 2000)
-            }}
-            disabled={saveStatus !== 'idle'}
-            style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 72 }}
-          >
-            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
-          </button>
-          <button
-            onClick={() => { setShowAdd(v => !v); setEditLoan(null) }}
-            style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem', color: 'var(--accent)' }}
-          >
-            {showAdd ? 'Cancel' : '+ Add Loan'}
-          </button>
-        </div>
-      </div>
+    <PageScaffold
+      title="Loans"
+      actions={<>
+        <button
+          onClick={async () => {
+            setSaveStatus('saving')
+            await flush()
+            setSaveStatus('saved')
+            setTimeout(() => setSaveStatus('idle'), 2000)
+          }}
+          disabled={saveStatus !== 'idle'}
+          style={{ ...btnGhost, fontSize: '0.82rem', color: saveStatus === 'saved' ? 'var(--gain)' : 'var(--text-secondary)', minWidth: 72 }}
+        >
+          {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : 'Save'}
+        </button>
+        <button
+          onClick={() => { setShowAdd(v => !v); setEditLoan(null) }}
+          style={{ ...btnGhost, padding: '7px 14px', fontSize: '0.85rem', color: 'var(--accent)' }}
+        >
+          {showAdd ? 'Cancel' : '+ Add Loan'}
+        </button>
+      </>}
+    >
 
       {/* ── Summary cards ─────────────────────────────────── */}
       <MetricCards cards={[
@@ -310,6 +307,6 @@ export default function Loans({ activeMember }) {
           />
         ))
       )}
-    </PageLayout>
+    </PageScaffold>
   )
 }
