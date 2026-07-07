@@ -1,7 +1,8 @@
 'use client'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { useStore } from '../lib/store'
-import { computeTodayChange } from '../lib/wealthMetrics'
+import { computeTodayChange, classifyFund } from '../lib/wealthMetrics'
 import { formatShort } from '../lib/metrics'
 import { formatINR, firstName } from '../lib/format'
 import { getMembers } from '../lib/members'
@@ -579,6 +580,7 @@ function buildInvestmentRows(investments, activeMember, latestSnap) {
   const mfRows = Object.values(mfGroups).map(group => {
     const price      = group[0].currentPrice || group[0].buyPrice || 0
     const totalUnits = group.reduce((s, g) => s + (g.units || 0), 0)
+    const totalCost  = group.reduce((s, g) => s + (g.units || 0) * (g.buyPrice || 0), 0)
     let totalChange  = 0
     let hasChange    = false
     for (const g of group) {
@@ -596,6 +598,7 @@ function buildInvestmentRows(investments, activeMember, latestSnap) {
       units:    totalUnits,
       price,
       value:    totalUnits * price,
+      cost:     totalCost,
       todayChange:  hasChange ? totalChange : null,
       isSIP,
       sipAmount:    sipInv?.sip?.monthlyAmount || sipInv?.sip?.amount || 0,
@@ -617,6 +620,7 @@ function buildInvestmentRows(investments, activeMember, latestSnap) {
   })
 
   const stockRows = stocks.map(s => ({
+    cost: (s.units || 0) * (s.buyPrice || 0),
     key:        `stk-${s.id}`,
     name:       s.name,
     badge:      'STK',
@@ -758,10 +762,115 @@ function InvestmentsSection({ rows, sort, members, onSIPConfig }) {
   )
 }
 
+// ── Stat row (3 cards) ────────────────────────────────────────────────────
+
+function StatRow({ cards }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 12 }}>
+      {cards.map((c, i) => (
+        <div
+          key={i}
+          onClick={c.onClick}
+          style={{
+            background: 'var(--color-background-secondary)',
+            border: '0.5px solid var(--color-border-primary)',
+            borderRadius: 8, padding: '12px 14px',
+            cursor: c.onClick ? 'pointer' : 'default',
+          }}
+        >
+          <div style={{ fontSize: 10, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
+            {c.label}
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: c.valueColor || 'var(--color-text-primary)', letterSpacing: '-0.3px' }}>
+            {c.value}
+          </div>
+          {c.sub && (
+            <div style={{ fontSize: 11, color: c.subColor || 'var(--color-text-secondary)', marginTop: 2 }}>
+              {c.sub}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Allocation donut (investments view only) ───────────────────────────────
+
+const DONUT_COLORS = { Stocks: '#4F8EF7', 'Equity MFs': '#34D399', 'Debt MFs': '#FBBF24' }
+
+function AllocationDonut({ rows }) {
+  const segments = useMemo(() => {
+    const stocks    = rows.filter(r => !r.isMF).reduce((s, r) => s + r.value, 0)
+    const equityMFs = rows.filter(r => r.isMF && classifyFund(r.name) === 'equity').reduce((s, r) => s + r.value, 0)
+    const debtMFs   = rows.filter(r => r.isMF && classifyFund(r.name) === 'debt').reduce((s, r) => s + r.value, 0)
+    return [
+      { name: 'Stocks',     value: stocks },
+      { name: 'Equity MFs', value: equityMFs },
+      { name: 'Debt MFs',   value: debtMFs },
+    ].filter(s => s.value > 0)
+  }, [rows])
+
+  const total = segments.reduce((s, seg) => s + seg.value, 0)
+  if (total === 0 || segments.length < 2) return null
+
+  return (
+    <div style={{
+      background: 'var(--color-background-secondary)',
+      border: '0.5px solid var(--color-border-primary)',
+      borderRadius: 10, padding: '16px 20px', marginBottom: 8,
+      display: 'flex', alignItems: 'center', gap: 28,
+    }}>
+      {/* Donut */}
+      <div style={{ width: 140, height: 140, flexShrink: 0, position: 'relative' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={segments} cx="50%" cy="50%" innerRadius={42} outerRadius={62} paddingAngle={2} dataKey="value" strokeWidth={0}>
+              {segments.map(seg => (
+                <Cell key={seg.name} fill={DONUT_COLORS[seg.name] || '#94A3B8'} />
+              ))}
+            </Pie>
+            <Tooltip
+              formatter={v => [formatShort(v)]}
+              contentStyle={{
+                background: 'var(--color-background-secondary)',
+                border: '1px solid var(--color-border-primary)',
+                borderRadius: 6, fontSize: 11,
+              }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center', pointerEvents: 'none' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-primary)' }}>{formatShort(total)}</div>
+          <div style={{ fontSize: 9, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</div>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-muted)', marginBottom: 10 }}>
+          Allocation
+        </div>
+        {segments.map(seg => {
+          const pct = ((seg.value / total) * 100).toFixed(1)
+          return (
+            <div key={seg.name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: DONUT_COLORS[seg.name] || '#94A3B8', flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text-secondary)' }}>{seg.name}</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>{formatShort(seg.value)}</span>
+              <span style={{ fontSize: 11, color: 'var(--color-text-muted)', width: 40, textAlign: 'right' }}>{pct}%</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Gold section ──────────────────────────────────────────────────────────
 
-function GoldSection({ items, activeMember, goldPrices, sort }) {
-  const filtered = items.filter(g => matchesMember(g, activeMember))
+function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter }) {
+  const filtered = items.filter(g => matchesMember(g, activeMember) && (goldTypeFilter === 'all' || (g.category || '').toLowerCase() === goldTypeFilter))
 
   const rows = useMemo(() => {
     const r = filtered.map(g => ({
@@ -792,7 +901,7 @@ function GoldSection({ items, activeMember, goldPrices, sort }) {
         <div key={g.id || i} style={{ display: 'flex', alignItems: 'center', padding: '9px 14px' }}>
           <div style={{ flex: 1, fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {g.name}
-            {g.category === 'Jewellery' && <Badge label="Jewellery" color="#D4A85A" bg="rgba(212,168,90,0.12)" />}
+            {g.category === 'Jewellery' && <Badge label="Jewellery" color="var(--color-gold)" bg="var(--color-gold-bg)" />}
           </div>
           <Td flex="0 0 70px" align="left">{g.category}</Td>
           <Td flex="0 0 90px" align="center">{firstName(g.member)}</Td>
@@ -946,6 +1055,7 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
 
   const [assetFilter, setAssetFilter] = useState(VIEW_TO_FILTER[activeView] || 'all')
   const [sort, setSort] = useState('value')
+  const [goldTypeFilter, setGoldTypeFilter] = useState('all')
 
   // Sync internal filter when sidebar navigates with a view
   useEffect(() => {
@@ -1085,6 +1195,61 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
 
   const goldPrices = data?.goldPrices ?? { 24: 15496, 22: 14205, 18: 9386 }
 
+  // ── Per-view stat computations ────────────────────────────
+  const statCards = useMemo(() => {
+    const invValue = invRows.reduce((s, r) => s + r.value, 0)
+    const invCost  = invRows.reduce((s, r) => s + (r.cost || 0), 0)
+    const invGain  = invValue - invCost
+    const sipCount = invRows.filter(r => r.isSIP).length
+
+    const fdRaw   = (data?.fixedIncome ?? []).filter(f => matchesMember(f, activeMember))
+    const cashRaw = (data?.cashAssets  ?? []).filter(a => matchesMember(a, activeMember))
+    const fdTotal    = fdRaw.reduce((s, f)  => s + (f.maturityValue || f.principal || 0), 0)
+    const cashTotal  = cashRaw.reduce((s, a) => s + (a.value || 0), 0)
+    const depTotal   = fdTotal + cashTotal
+    const fdCount    = fdRaw.length
+
+    const goldAll = (data?.gold ?? []).filter(g => matchesMember(g, activeMember))
+    const goldValue  = goldAll.reduce((s, g) => s + (g.grams || 0) * (goldPrices[g.carat] || 0), 0)
+    const goldCost   = goldAll.reduce((s, g) => s + (g.grams || 0) * (g.purchasePricePerGram || 0), 0)
+    const goldGain   = goldCost > 0 ? goldValue - goldCost : null
+
+    const g24 = goldPrices[24] || 0
+    const g22 = goldPrices[22] || 0
+
+    if (assetFilter === 'invest') return [
+      { label: 'Portfolio Value',  value: formatShort(invValue) },
+      { label: 'Invested / Cost',  value: invCost > 0 ? formatShort(invCost) : '—' },
+      { label: 'Total Gain',       value: invCost > 0 ? formatShort(invGain) : '—',
+        valueColor: invGain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)',
+        sub: sipCount > 0 ? `${sipCount} active SIP${sipCount !== 1 ? 's' : ''}` : null },
+    ]
+    if (assetFilter === 'gold') return [
+      { label: 'Gold Value',       value: formatShort(goldValue), valueColor: 'var(--color-gold)' },
+      { label: 'Purchase Cost',    value: goldCost > 0 ? formatShort(goldCost) : '—' },
+      { label: 'Appreciation',     value: goldGain != null ? formatShort(goldGain) : '—',
+        valueColor: goldGain != null && goldGain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)',
+        sub: `24K ₹${(g24/1000).toFixed(0)}K · 22K ₹${(g22/1000).toFixed(0)}K per g` },
+    ]
+    if (assetFilter === 'deposits') return [
+      { label: 'Total Balance',    value: formatShort(depTotal) },
+      { label: 'Fixed Deposits',   value: formatShort(fdTotal),
+        sub: fdCount > 0 ? `${fdCount} FD${fdCount !== 1 ? 's' : ''}` : 'None' },
+      { label: 'Cash & Accounts',  value: formatShort(cashTotal),
+        sub: 'Included in liquidity' },
+    ]
+    // all
+    const totalVal  = invValue + goldValue + fdTotal + cashTotal
+    const totalCost = invCost + goldCost
+    const totalGain = totalCost > 0 ? totalVal - totalCost : null
+    return [
+      { label: 'Portfolio Value',  value: formatShort(totalVal) },
+      { label: 'Invested / Cost',  value: totalCost > 0 ? formatShort(totalCost) : '—' },
+      { label: 'Total Gain',       value: totalGain != null ? formatShort(totalGain) : '—',
+        valueColor: totalGain != null && totalGain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)' },
+    ]
+  }, [invRows, data, assetFilter, goldPrices, activeMember])
+
   // 'deposits' shows both FD and Cash sections
   const show = (id) => {
     if (assetFilter === 'all')      return true
@@ -1150,14 +1315,31 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
         )}
       </div>
 
+      {/* ── Stat cards ── */}
+      <StatRow cards={statCards} />
+
       {/* ── Filter strip + sort ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {CLASS_FILTERS.map(f => (
             <button key={f.id} onClick={() => setAssetFilter(f.id)} style={chipBtn(assetFilter === f.id)}>
               {f.label}
             </button>
           ))}
+          {(assetFilter === 'gold' || assetFilter === 'all') && (
+            <>
+              <span style={{ width: 1, background: 'var(--color-border-primary)', margin: '0 4px', alignSelf: 'stretch' }} />
+              {[
+                { id: 'all',         label: 'All Gold' },
+                { id: 'investment',  label: 'Investment' },
+                { id: 'jewellery',   label: 'Jewellery' },
+              ].map(g => (
+                <button key={g.id} onClick={() => setGoldTypeFilter(g.id)} style={chipBtn(goldTypeFilter === g.id)}>
+                  {g.label}
+                </button>
+              ))}
+            </>
+          )}
         </div>
         <select
           value={sort}
@@ -1168,13 +1350,18 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
         </select>
       </div>
 
+      {/* ── Allocation donut (investments view only) ── */}
+      {assetFilter === 'invest' && invRows.length > 0 && (
+        <AllocationDonut rows={invRows} />
+      )}
+
       {/* ── Sections ── */}
       <div style={{ background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-primary)', borderRadius: 10, overflow: 'hidden', paddingBottom: 8 }}>
         {show('invest') && (
           <InvestmentsSection rows={invRows} sort={sort} members={members} onSIPConfig={handleSIPConfig} />
         )}
         {show('gold') && (
-          <GoldSection items={data?.gold ?? []} activeMember={activeMember} goldPrices={goldPrices} sort={sort} />
+          <GoldSection items={data?.gold ?? []} activeMember={activeMember} goldPrices={goldPrices} sort={sort} goldTypeFilter={goldTypeFilter} />
         )}
         {show('realty') && (
           <RealEstateSection items={data?.realEstate ?? []} activeMember={activeMember} sort={sort} />
