@@ -143,7 +143,9 @@ export default function AppShell() {
         minWidth: 0,
       }}>
         <TopBar activeMember={activeMember} />
-        <MemberFilter selected={activeMember} onChange={setActiveMember} />
+        {!['command', 'networth', 'liquidity', 'obligations', 'liabilities'].includes(activePage) && (
+          <MemberFilter selected={activeMember} onChange={setActiveMember} />
+        )}
         {isReadOnly && (
           <div style={{
             backgroundColor: '#FBF5E0',
