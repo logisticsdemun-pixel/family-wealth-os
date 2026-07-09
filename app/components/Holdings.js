@@ -1434,54 +1434,56 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
       <StatRow cards={statCards} />
 
       {/* ── Filter strip + controls ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {CLASS_FILTERS.map(f => (
-            <button key={f.id} onClick={() => { setAssetFilter(f.id); if (f.id !== 'gold') setGoldTypeFilter('all') }} style={chipBtn(assetFilter === f.id)}>
-              {f.label}
-            </button>
-          ))}
-          {/* Gold sub-filter: only in gold view */}
-          {assetFilter === 'gold' && (
-            <>
-              <span style={{ width: 1, background: 'var(--color-border-primary)', margin: '0 4px', alignSelf: 'stretch' }} />
-              {[
-                { id: 'all',         label: 'All Gold' },
-                { id: 'investment',  label: 'Investment' },
-                { id: 'jewellery',   label: 'Jewellery' },
-              ].map(g => (
-                <button key={g.id} onClick={() => setGoldTypeFilter(g.id)} style={chipBtn(goldTypeFilter === g.id)}>
-                  {g.label}
-                </button>
-              ))}
-            </>
-          )}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Change basis toggle */}
-          <div style={{ display: 'flex', border: '0.5px solid var(--color-border-primary)', borderRadius: 6, overflow: 'hidden' }}>
-            {[{ id: 'since', label: 'Since purchase' }, { id: 'today', label: 'Today' }].map(opt => (
-              <button
-                key={opt.id}
-                onClick={() => setChangeBasis(opt.id)}
-                style={{
-                  padding: '5px 10px', border: 'none', fontSize: 11, cursor: 'pointer',
-                  background: changeBasis === opt.id ? 'var(--color-accent)' : 'transparent',
-                  color: changeBasis === opt.id ? '#fff' : 'var(--color-text-secondary)',
-                }}
-              >
-                {opt.label}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+        {/* Row 1: category pills + right-side controls */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {CLASS_FILTERS.map(f => (
+              <button key={f.id} onClick={() => { setAssetFilter(f.id); if (f.id !== 'gold') setGoldTypeFilter('all') }} style={chipBtn(assetFilter === f.id)}>
+                {f.label}
               </button>
             ))}
           </div>
-          <select
-            value={sort}
-            onChange={e => setSort(e.target.value)}
-            style={{ padding: '5px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer' }}
-          >
-            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Change basis toggle */}
+            <div style={{ display: 'flex', border: '0.5px solid var(--color-border-primary)', borderRadius: 6, overflow: 'hidden' }}>
+              {[{ id: 'since', label: 'Since purchase' }, { id: 'today', label: 'Today' }].map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => setChangeBasis(opt.id)}
+                  style={{
+                    padding: '5px 10px', border: 'none', fontSize: 11, cursor: 'pointer',
+                    background: changeBasis === opt.id ? 'var(--color-accent)' : 'transparent',
+                    color: changeBasis === opt.id ? '#fff' : 'var(--color-text-secondary)',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={sort}
+              onChange={e => setSort(e.target.value)}
+              style={{ padding: '5px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer' }}
+            >
+              {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+          </div>
         </div>
+        {/* Row 2: gold sub-filter — only in gold view, indented */}
+        {assetFilter === 'gold' && (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', paddingLeft: 10 }}>
+            {[
+              { id: 'all',        label: 'All Gold' },
+              { id: 'investment', label: 'Investment' },
+              { id: 'jewellery',  label: 'Jewellery' },
+            ].map(g => (
+              <button key={g.id} onClick={() => setGoldTypeFilter(g.id)} style={chipBtn(goldTypeFilter === g.id)}>
+                {g.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Allocation donut (investments view only) ── */}
