@@ -11,6 +11,7 @@ import {
   generateInsights,
 } from '../lib/wealthMetrics'
 import { formatINR, firstName } from '../lib/format'
+import { Sparkline } from './charts'
 
 // ── Severity palette ────────────────────────────────────────────────────────
 
@@ -64,7 +65,7 @@ function card(children, style = {}) {
 
 // ── Hero cards (Row 1) ──────────────────────────────────────────────────────
 
-function HeroCard({ label, value, sub, subColor, icon, onClick }) {
+function HeroCard({ label, value, sub, subColor, icon, onClick, sparklinePoints }) {
   return (
     <div
       onClick={onClick}
@@ -82,9 +83,14 @@ function HeroCard({ label, value, sub, subColor, icon, onClick }) {
         </span>
         <i className={`ti ${icon}`} style={{ fontSize: 15, color: 'var(--color-text-muted)' }} aria-hidden="true" />
       </div>
-      <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.5px', marginBottom: 4 }}>
+      <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text-primary)', letterSpacing: '-0.5px', marginBottom: sparklinePoints ? 4 : 4 }}>
         {value}
       </div>
+      {sparklinePoints && sparklinePoints.length >= 2 && (
+        <div style={{ margin: '4px 0 4px' }}>
+          <Sparkline points={sparklinePoints} height={28} />
+        </div>
+      )}
       {sub && (
         <div style={{ fontSize: 12, color: subColor || 'var(--color-text-secondary)' }}>
           {sub}
@@ -289,6 +295,11 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
   const prevSnap  = snapshots.length >= 2 ? snapshots[snapshots.length - 2] : null
   const todayDelta = prevSnap != null ? metrics.netWorth - prevSnap.netWorth : null
 
+  const sparklinePoints = useMemo(
+    () => snapshots.slice(-30).map(s => s.netWorth).filter(v => v > 0),
+    [snapshots]
+  )
+
   // ── Per-member wealth ─────────────────────────────────────────────────────
 
   const members = getMembers(data)
@@ -353,6 +364,7 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
           label="Total Wealth"
           icon="ti-chart-donut"
           value={formatShort(metrics.netWorth)}
+          sparklinePoints={sparklinePoints.length >= 2 ? sparklinePoints : null}
           sub={
             todayDelta != null
               ? `${todayDelta >= 0 ? '+' : ''}${formatShort(todayDelta)} vs previous snapshot`

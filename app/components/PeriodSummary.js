@@ -1,6 +1,7 @@
 'use client'
 import { formatINR } from '../lib/format'
 import PageLayout from './PageLayout'
+import { WaterfallChart } from './charts'
 
 const MEMBER_AVATARS = {
   'Aseem Saxena':     { initials: 'AS', bg: '#E6F1FB', color: '#185FA5' },
@@ -8,6 +9,8 @@ const MEMBER_AVATARS = {
   'Devashish Saxena': { initials: 'DS', bg: '#EAF3DE', color: '#3B6D11' },
   'Shivansh Saxena':  { initials: 'SS', bg: '#FBEAF0', color: '#993556' },
 }
+
+const MEMBER_BAR_COLORS = ['var(--color-accent)', 'var(--color-warning)', 'var(--color-positive)', 'var(--color-info)']
 
 const MEMBERS = ['Aseem Saxena', 'Poonam Saxena', 'Devashish Saxena', 'Shivansh Saxena']
 
@@ -65,6 +68,24 @@ export default function PeriodSummary({ periodData, periodLabel, onBack, onSelec
               {formatINR(periodData.toNW)} on {fmtDate(periodData.toDate)}
             </p>
           </div>
+
+          {/* Waterfall: member contributions */}
+          {periodData.byMember && MEMBERS.some(n => periodData.byMember?.[n]?.change != null) && (
+            <div style={{ marginBottom: 20 }}>
+              <WaterfallChart
+                items={MEMBERS.map((name, i) => ({
+                  label: name.split(' ')[0],
+                  value: periodData.byMember?.[name]?.change ?? 0,
+                  color: MEMBER_BAR_COLORS[i % MEMBER_BAR_COLORS.length],
+                }))}
+                total={periodData.change}
+                onBarClick={(bar) => {
+                  const name = MEMBERS.find(n => n.split(' ')[0] === bar.label)
+                  if (name) onSelectMember(name)
+                }}
+              />
+            </div>
+          )}
 
           {/* Member cards */}
           <p style={{ fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>

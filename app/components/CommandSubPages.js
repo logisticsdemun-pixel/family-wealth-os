@@ -1,10 +1,11 @@
 'use client'
 import { useMemo } from 'react'
 import { useStore } from '../lib/store'
-import { computeAllMetrics, formatShort } from '../lib/metrics'
+import { computeAllMetrics, formatShort, getValidSnapshots } from '../lib/metrics'
 import { computeLiquidity, computeMonthlyObligation, computeRunway, computeDebtRatio } from '../lib/wealthMetrics'
 import { formatINR, firstName } from '../lib/format'
 import PageScaffold from './PageScaffold'
+import { StackedAreaChart, BulletGauge, DayBars } from './charts'
 
 // ── Shared primitives ───────────────────────────────────────────────────────
 
@@ -46,9 +47,35 @@ function EmptyState({ text }) {
 
 // ── Net Worth sub-page ──────────────────────────────────────────────────────
 
+const AREA_CAT_CONFIG = {
+  investments: { label: 'Investments', color: 'var(--color-accent)' },
+  gold:        { label: 'Gold',        color: 'var(--color-gold)' },
+  realEstate:  { label: 'Real Estate', color: 'var(--color-positive)' },
+  cash:        { label: 'Deposits & Cash', color: 'var(--color-text-secondary)' },
+}
+
 export function NetWorthPage({ onNavigate }) {
-  const { data } = useStore()
+  const { data, snapshots } = useStore()
   const m = useMemo(() => computeAllMetrics(data), [data])
+
+  const validSnaps = useMemo(() => getValidSnapshots(snapshots ?? []), [snapshots])
+  const areaChartData = useMemo(() => {
+    const snapsWithCat = validSnaps.filter(s => s.byCategory && Object.keys(s.byCategory).length > 0)
+    if (snapsWithCat.length < 5) return null
+    const xLabels = snapsWithCat.map(s => {
+      const d = new Date(s.date)
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    })
+    const series = Object.keys(AREA_CAT_CONFIG)
+      .filter(cat => snapsWithCat.some(s => (s.byCategory[cat] ?? 0) > 0))
+      .map(cat => ({
+        key: cat,
+        label: AREA_CAT_CONFIG[cat].label,
+        color: AREA_CAT_CONFIG[cat].color,
+        data: snapsWithCat.map(s => s.byCategory[cat] ?? 0),
+      }))
+    return { series, xLabels }
+  }, [validSnaps])
 
   const categories = [
     { label: 'Investments',  value: m.investments, color: 'var(--color-accent)' },
@@ -68,6 +95,11 @@ export function NetWorthPage({ onNavigate }) {
         { label: 'Net Worth',        value: formatShort(m.netWorth),     valueColor: 'var(--color-accent)' },
       ]}
     >
+      {areaChartData && (
+        <div style={{ marginBottom: 20 }}>
+          <StackedAreaChart series={areaChartData.series} xLabels={areaChartData.xLabels} />
+        </div>
+      )}
       <div style={{ background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-primary)', borderRadius: 10, padding: '4px 18px 12px' }}>
         <SectionHead label="Asset Breakdown" />
         {categories.length === 0
@@ -114,6 +146,8 @@ export function LiquidityPage({ onNavigate }) {
     : runway !== Infinity && runway < 6 ? 'var(--color-warning)'
     : 'var(--color-positive)'
 
+  const runwayGaugeValue = runway === Infinity ? 12 : Math.min(runway, 12)
+
   const cashItems   = liquidity.breakdown.filter(b => b.type === 'cash')
   const fdItems     = liquidity.breakdown.filter(b => b.type === 'fd')
 
@@ -129,6 +163,15 @@ export function LiquidityPage({ onNavigate }) {
         { label: 'Monthly Obligation',value: formatShort(obligation.total) },
       ]}
     >
+      <div style={{ marginBottom: 20 }}>
+        <BulletGauge
+          value={runwayGaugeValue}
+          target={6}
+          max={12}
+          label={runway === Infinity ? 'Runway: ∞ months' : `Runway: ${runway.toFixed(1)} months`}
+          color={runwayColor}
+        />
+      </div>
       <div style={{ background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-primary)', borderRadius: 10, padding: '4px 18px 12px' }}>
         {cashItems.length > 0 && (
           <>
@@ -170,6 +213,29 @@ export function ObligationsPage({ onNavigate }) {
   const insurance = data?.insurance ?? []
   const activeSIPs = (data?.investments ?? []).filter(i => i.investmentMode === 'sip' && i.sip?.status === 'Active')
 
+  const now = new Date()
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+
+  const dayItems = useMemo(() => {
+    const byDay = {}
+    activeSIPs.forEach(inv => {
+      const day = inv.sip?.instalmentDate || inv.sip?.dayOfMonth || null
+      if (!day) return
+      const amount = inv.sip?.monthlyAmount || inv.sip?.amount || 0
+      byDay[day] = (byDay[day] || 0) + amount
+    })
+    loans.filter(l => l.emi > 0).forEach(l => {
+      const day = l.emiDate || null
+      if (!day) return
+      byDay[day] = (byDay[day] || 0) + l.emi
+    })
+    return Object.entries(byDay).map(([day, amount]) => ({
+      day: Number(day),
+      amount,
+      color: 'var(--color-accent)',
+    }))
+  }, [activeSIPs, loans])
+
   return (
     <PageScaffold
       title="Monthly Obligations"
@@ -181,6 +247,11 @@ export function ObligationsPage({ onNavigate }) {
         { label: 'SIPs + Premiums', value: formatShort(obligation.sips + obligation.premiums), sub: `${activeSIPs.length} SIP · premiums /12` },
       ]}
     >
+      {dayItems.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <DayBars items={dayItems} daysInMonth={daysInMonth} />
+        </div>
+      )}
       <div style={{ background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-primary)', borderRadius: 10, padding: '4px 18px 12px' }}>
         {loans.filter(l => l.emi > 0).length > 0 && (
           <>

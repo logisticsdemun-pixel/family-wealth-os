@@ -1,7 +1,7 @@
 'use client'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { useStore } from '../lib/store'
+import { DonutChart } from './charts'
 import { computeTodayChange, classifyFund } from '../lib/wealthMetrics'
 import { formatShort } from '../lib/metrics'
 import { formatINR, firstName } from '../lib/format'
@@ -924,19 +924,12 @@ function StatRow({ cards }) {
 
 // ── Allocation donut (investments view only) ───────────────────────────────
 
-const DONUT_COLORS = { Stocks: '#4F8EF7', 'Equity MFs': '#34D399', 'Debt MFs': '#FBBF24' }
-
 function AllocationDonut({ rows }) {
-  const segments = useMemo(() => {
-    const stocks    = rows.filter(r => !r.isMF).reduce((s, r) => s + r.value, 0)
-    const equityMFs = rows.filter(r => r.isMF && classifyFund(r.name) === 'equity').reduce((s, r) => s + r.value, 0)
-    const debtMFs   = rows.filter(r => r.isMF && classifyFund(r.name) === 'debt').reduce((s, r) => s + r.value, 0)
-    return [
-      { name: 'Stocks',     value: stocks },
-      { name: 'Equity MFs', value: equityMFs },
-      { name: 'Debt MFs',   value: debtMFs },
-    ].filter(s => s.value > 0)
-  }, [rows])
+  const segments = useMemo(() => [
+    { label: 'Stocks',    value: rows.filter(r => !r.isMF).reduce((s, r) => s + r.value, 0),                                        color: 'var(--color-accent)' },
+    { label: 'Equity MFs', value: rows.filter(r => r.isMF && classifyFund(r.name) === 'equity').reduce((s, r) => s + r.value, 0),   color: 'var(--color-positive)' },
+    { label: 'Debt MFs',   value: rows.filter(r => r.isMF && classifyFund(r.name) === 'debt').reduce((s, r) => s + r.value, 0),     color: 'var(--color-warning)' },
+  ].filter(s => s.value > 0), [rows])
 
   const total = segments.reduce((s, seg) => s + seg.value, 0)
   if (total === 0 || segments.length < 2) return null
@@ -945,48 +938,61 @@ function AllocationDonut({ rows }) {
     <div style={{
       background: 'var(--color-background-secondary)',
       border: '0.5px solid var(--color-border-primary)',
-      borderRadius: 10, padding: '16px 20px', marginBottom: 8,
-      display: 'flex', alignItems: 'center', gap: 28,
+      borderRadius: 10, padding: '8px 20px 8px', marginBottom: 8,
+      display: 'flex', alignItems: 'center', gap: 20,
     }}>
-      {/* Donut */}
-      <div style={{ width: 140, height: 140, flexShrink: 0, position: 'relative' }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie data={segments} cx="50%" cy="50%" innerRadius={42} outerRadius={62} paddingAngle={2} dataKey="value" strokeWidth={0}>
-              {segments.map(seg => (
-                <Cell key={seg.name} fill={DONUT_COLORS[seg.name] || '#94A3B8'} />
-              ))}
-            </Pie>
-            <Tooltip
-              formatter={v => [formatShort(v)]}
-              contentStyle={{
-                background: 'var(--color-background-secondary)',
-                border: '1px solid var(--color-border-primary)',
-                borderRadius: 6, fontSize: 11,
-              }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center', pointerEvents: 'none' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-primary)' }}>{formatShort(total)}</div>
-          <div style={{ fontSize: 9, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</div>
-        </div>
+      <div style={{ width: 160, flexShrink: 0 }}>
+        <DonutChart data={segments} centerLabel={formatShort(total)} centerSub="Total" />
       </div>
-
-      {/* Legend */}
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-muted)', marginBottom: 10 }}>
-          Allocation
-        </div>
+        <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-muted)', marginBottom: 10 }}>Allocation</div>
         {segments.map(seg => {
           const pct = ((seg.value / total) * 100).toFixed(1)
           return (
-            <div key={seg.name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: DONUT_COLORS[seg.name] || '#94A3B8', flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text-secondary)' }}>{seg.name}</span>
+            <div key={seg.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: seg.color, flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text-secondary)' }}>{seg.label}</span>
               <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>{formatShort(seg.value)}</span>
               <span style={{ fontSize: 11, color: 'var(--color-text-muted)', width: 40, textAlign: 'right' }}>{pct}%</span>
             </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Portfolio donut (all-assets view) ─────────────────────────────────────
+
+function PortfolioDonut({ data, onSegmentClick }) {
+  const total = data.reduce((s, d) => s + d.value, 0)
+  if (total === 0 || data.length < 2) return null
+
+  return (
+    <div style={{
+      background: 'var(--color-background-secondary)',
+      border: '0.5px solid var(--color-border-primary)',
+      borderRadius: 10, padding: '8px 20px 8px', marginBottom: 8,
+      display: 'flex', alignItems: 'center', gap: 20,
+    }}>
+      <div style={{ width: 160, flexShrink: 0 }}>
+        <DonutChart data={data} centerLabel={formatShort(total)} centerSub="Net Worth" onSegmentClick={onSegmentClick} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-muted)', marginBottom: 10 }}>Assets</div>
+        {data.map(seg => {
+          const pct = ((seg.value / total) * 100).toFixed(1)
+          return (
+            <button
+              key={seg.label}
+              onClick={() => onSegmentClick?.(seg)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, background: 'none', border: 'none', width: '100%', cursor: 'pointer', padding: 0, textAlign: 'left' }}
+            >
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: seg.color, flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text-secondary)' }}>{seg.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>{formatShort(seg.value)}</span>
+              <span style={{ fontSize: 11, color: 'var(--color-text-muted)', width: 40, textAlign: 'right' }}>{pct}%</span>
+            </button>
           )
         })}
       </div>
@@ -1310,6 +1316,33 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
 
   const goldPrices = data?.goldPrices ?? { 24: 15496, 22: 14205, 18: 9386 }
 
+  // ── Portfolio donut data (all view) ──────────────────────
+  const portfolioDonutData = useMemo(() => {
+    const invValue   = invRows.reduce((s, r) => s + r.value, 0)
+    const goldAll    = (data?.gold ?? []).filter(g => matchesMember(g, activeMember))
+    const goldValue  = goldAll.reduce((s, g) => s + (g.grams || 0) * (goldPrices[g.carat] || 0), 0)
+    const reAll      = activeMember === 'All' ? (data?.realEstate ?? []) : (data?.realEstate ?? []).filter(p => matchesMember(p, activeMember) || (p.coOwners || []).some(c => matchesMember({ member: c.member }, activeMember)))
+    const realtyValue = reAll.reduce((s, p) => {
+      let v = p.currentValue || 0
+      if (activeMember !== 'All') {
+        if (matchesMember(p, activeMember)) v = v * ((p.ownershipPct ?? 100) / 100)
+        else {
+          const co = (p.coOwners || []).find(c => matchesMember({ member: c.member }, activeMember))
+          v = co ? v * ((co.pct || 0) / 100) : 0
+        }
+      }
+      return s + v
+    }, 0)
+    const fdValue    = (data?.fixedIncome ?? []).filter(f => matchesMember(f, activeMember)).reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
+    const cashValue  = (data?.cashAssets  ?? []).filter(a => matchesMember(a, activeMember)).reduce((s, a) => s + (a.value || 0), 0)
+    return [
+      { label: 'Investments',   value: invValue,            color: 'var(--color-accent)',    viewId: 'invest' },
+      { label: 'Gold',          value: goldValue,           color: 'var(--color-gold)',       viewId: 'gold' },
+      { label: 'Real Estate',   value: realtyValue,         color: 'var(--color-info)',       viewId: 'realty' },
+      { label: 'Deposits & Cash', value: fdValue + cashValue, color: 'var(--color-positive)', viewId: 'deposits' },
+    ].filter(d => d.value > 0)
+  }, [invRows, data, activeMember, goldPrices])
+
   // ── Per-view stat computations ────────────────────────────
   const statCards = useMemo(() => {
     const invValue = invRows.reduce((s, r) => s + r.value, 0)
@@ -1485,6 +1518,11 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
           </div>
         )}
       </div>
+
+      {/* ── Portfolio donut (all assets view) ── */}
+      {assetFilter === 'all' && portfolioDonutData.length >= 2 && (
+        <PortfolioDonut data={portfolioDonutData} onSegmentClick={(d) => setAssetFilter(d.viewId)} />
+      )}
 
       {/* ── Allocation donut (investments view only) ── */}
       {assetFilter === 'invest' && invRows.length > 0 && (
