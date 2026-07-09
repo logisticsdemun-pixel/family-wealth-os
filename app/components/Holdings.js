@@ -22,7 +22,7 @@ const CLASS_FILTERS = [
 const SORT_OPTIONS = [
   { id: 'value',  label: 'Value ↓' },
   { id: 'name',   label: 'Name A–Z' },
-  { id: 'change', label: 'Today ↓' },
+  { id: 'change', label: 'Change ↓' },
 ]
 
 const PRICE_TTL_MS = 5 * 60 * 1000
@@ -553,6 +553,107 @@ function SectionHeader({ label, count, total }) {
   )
 }
 
+// ── Change cell for new Holding|Member|Invested|Current value|Change layout ─
+
+function RowChangeCell({ value, cost, todayChange, costBasisUnknown, changeBasis, isGold, goldFreshToday }) {
+  const flex = '0 0 110px'
+  if (changeBasis === 'today') {
+    if (isGold) {
+      return (
+        <Td flex={flex} style={{ color: 'var(--color-text-muted)', fontSize: 10 }}>
+          {goldFreshToday ? '—' : '— Not refreshed today'}
+        </Td>
+      )
+    }
+    if (todayChange == null) return <Td flex={flex}>—</Td>
+    const color = todayChange >= 0 ? 'var(--color-positive)' : 'var(--color-negative)'
+    return <Td flex={flex} style={{ color, fontWeight: 500 }}>{todayChange >= 0 ? '+' : ''}{formatShort(todayChange)}</Td>
+  }
+  // Since purchase
+  if (costBasisUnknown) return <Td flex={flex} style={{ color: 'var(--color-text-muted)', fontSize: 10 }}>cost basis unknown</Td>
+  if (!cost) return <Td flex={flex}>—</Td>
+  const gain  = (value || 0) - cost
+  const pct   = cost > 0 ? (gain / cost) * 100 : 0
+  const color = gain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)'
+  return (
+    <Td flex={flex} style={{ color, fontWeight: 500 }}>
+      <span>{gain >= 0 ? '+' : ''}{formatShort(gain)}</span>
+      <span style={{ fontSize: 9, background: gain >= 0 ? 'var(--color-positive-bg)' : 'var(--color-negative-bg)', color, borderRadius: 3, padding: '1px 4px', marginLeft: 4 }}>
+        {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+      </span>
+    </Td>
+  )
+}
+
+// ── Collapsible group band with subtotal ──────────────────────────────────
+
+const COL_TH = { textAlign: 'right', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', padding: '0 6px' }
+
+function GroupBand({ label, rows, changeBasis, goldFreshToday, children }) {
+  const [collapsed, setCollapsed] = useState(false)
+
+  const totalValue    = rows.reduce((s, r) => s + (r.value ?? 0), 0)
+  const validCosts    = rows.filter(r => !r.costBasisUnknown && r.cost != null)
+  const totalInvested = validCosts.reduce((s, r) => s + r.cost, 0)
+  const hasPartial    = rows.some(r => r.costBasisUnknown)
+  const hasTodayChg   = rows.some(r => r.todayChange != null)
+  const totalTodayChg = hasTodayChg ? rows.reduce((s, r) => s + (r.todayChange ?? 0), 0) : null
+
+  const changeVal     = changeBasis === 'today' ? totalTodayChg : (validCosts.length > 0 ? totalValue - totalInvested : null)
+  const isPos         = changeVal != null && changeVal >= 0
+  const sinceGainPct  = (changeVal != null && changeBasis === 'since' && totalInvested > 0) ? (changeVal / totalInvested) * 100 : null
+
+  return (
+    <div>
+      {/* Tinted band header */}
+      <div
+        onClick={() => setCollapsed(c => !c)}
+        style={{ display: 'flex', alignItems: 'center', padding: '7px 14px', gap: 6, background: 'var(--color-background-tertiary)', borderTop: '0.5px solid var(--color-border-primary)', cursor: 'pointer', userSelect: 'none' }}
+      >
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-primary)', flex: 1 }}>
+          {label}
+          <span style={{ fontWeight: 400, color: 'var(--color-text-muted)', marginLeft: 6 }}>({rows.length})</span>
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{collapsed ? '▶' : '▼'}</span>
+      </div>
+
+      {/* Column headers + rows when expanded */}
+      {!collapsed && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '4px 14px 4px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+            <div style={{ flex: 1, ...COL_TH, textAlign: 'left' }}>Holding</div>
+            <div style={{ flex: '0 0 80px', ...COL_TH, textAlign: 'center' }}>Member</div>
+            <div style={{ flex: '0 0 90px', ...COL_TH, opacity: changeBasis === 'today' ? 0.5 : 1 }}>Invested</div>
+            <div style={{ flex: '0 0 90px', ...COL_TH }}>Current value</div>
+            <div style={{ flex: '0 0 110px', ...COL_TH }}>{changeBasis === 'today' ? 'Change · today' : 'Change'}</div>
+          </div>
+          {children}
+        </>
+      )}
+
+      {/* Subtotal row — always visible */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px', borderTop: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)' }}>
+        <div style={{ flex: 1, fontSize: 11, color: 'var(--color-text-muted)', fontStyle: collapsed ? 'normal' : 'italic' }}>
+          {collapsed ? `${label} (${rows.length})` : 'Subtotal'}
+        </div>
+        <Td flex="0 0 80px" />
+        <Td flex="0 0 90px" style={{ opacity: changeBasis === 'today' ? 0.35 : 1, fontSize: 11 }}>
+          {validCosts.length > 0 ? formatShort(totalInvested) : '—'}{hasPartial && validCosts.length > 0 ? '*' : ''}
+        </Td>
+        <Td flex="0 0 90px" style={{ color: 'var(--color-text-primary)', fontWeight: 600, fontSize: 11 }}>
+          {formatShort(totalValue)}
+        </Td>
+        <Td flex="0 0 110px" style={{ color: changeVal != null ? (isPos ? 'var(--color-positive)' : 'var(--color-negative)') : 'var(--color-text-muted)', fontWeight: changeVal != null ? 500 : 400, fontSize: 11 }}>
+          {changeVal != null
+            ? `${changeVal >= 0 ? '+' : ''}${formatShort(changeVal)}${sinceGainPct != null ? ` (${sinceGainPct >= 0 ? '+' : ''}${sinceGainPct.toFixed(1)}%)` : ''}`
+            : '—'
+          }{hasPartial && changeBasis === 'since' ? '*' : ''}
+        </Td>
+      </div>
+    </div>
+  )
+}
+
 // ── Member matching ────────────────────────────────────────────────────────
 
 function matchesMember(item, activeMember) {
@@ -578,9 +679,10 @@ function buildInvestmentRows(investments, activeMember, latestSnap) {
   }
 
   const mfRows = Object.values(mfGroups).map(group => {
-    const price      = group[0].currentPrice || group[0].buyPrice || 0
-    const totalUnits = group.reduce((s, g) => s + (g.units || 0), 0)
-    const totalCost  = group.reduce((s, g) => s + (g.units || 0) * (g.buyPrice || 0), 0)
+    const price          = group[0].currentPrice || group[0].buyPrice || 0
+    const totalUnits     = group.reduce((s, g) => s + (g.units || 0), 0)
+    const hasUnknownCost = group.some(g => g.buyPrice == null || g.buyPrice === 0)
+    const totalCost      = group.reduce((s, g) => s + (g.units || 0) * (g.buyPrice || 0), 0)
     let totalChange  = 0
     let hasChange    = false
     for (const g of group) {
@@ -597,9 +699,10 @@ function buildInvestmentRows(investments, activeMember, latestSnap) {
       members:  group.map(g => g.member),
       units:    totalUnits,
       price,
-      value:    totalUnits * price,
-      cost:     totalCost,
-      todayChange:  hasChange ? totalChange : null,
+      value:            totalUnits * price,
+      cost:             hasUnknownCost ? null : totalCost,
+      costBasisUnknown: hasUnknownCost,
+      todayChange:      hasChange ? totalChange : null,
       isSIP,
       sipAmount:    sipInv?.sip?.monthlyAmount || sipInv?.sip?.amount || 0,
       sipFreq:      sipInv?.sip?.frequency || 'Monthly',
@@ -608,94 +711,107 @@ function buildInvestmentRows(investments, activeMember, latestSnap) {
       isMulti:      group.length > 1,
       invId:        group.length === 1 ? group[0].id : null,
       children:     group.length > 1
-        ? group.map(g => ({
-            member:      g.member,
-            units:       g.units || 0,
-            value:       (g.units || 0) * price,
-            todayChange: computeTodayChange(g, latestSnap),
-            isSIP:       g.investmentMode === 'sip',
-          }))
+        ? group.map(g => {
+            const childUnknown = g.buyPrice == null || g.buyPrice === 0
+            return {
+              member:           g.member,
+              units:            g.units || 0,
+              value:            (g.units || 0) * price,
+              cost:             childUnknown ? null : (g.units || 0) * g.buyPrice,
+              costBasisUnknown: childUnknown,
+              todayChange:      computeTodayChange(g, latestSnap),
+              isSIP:            g.investmentMode === 'sip',
+            }
+          })
         : [],
     }
   })
 
-  const stockRows = stocks.map(s => ({
-    cost: (s.units || 0) * (s.buyPrice || 0),
-    key:        `stk-${s.id}`,
-    name:       s.name,
-    badge:      'STK',
-    isMF:       false,
-    members:    [s.member],
-    units:      s.units || 0,
-    price:      s.currentPrice || s.buyPrice || 0,
-    value:      (s.units || 0) * (s.currentPrice || s.buyPrice || 0),
-    todayChange: computeTodayChange(s, latestSnap),
-    isSIP:      false,
-    hasVerify:  (s.flags || []).includes('VERIFY_AMFI'),
-    isMulti:    false,
-    invId:      null,
-    children:   [],
-  }))
+  const stockRows = stocks.map(s => {
+    const costBasisUnknown = s.buyPrice == null || s.buyPrice === 0
+    return {
+      key:              `stk-${s.id}`,
+      name:             s.name,
+      badge:            'STK',
+      isMF:             false,
+      members:          [s.member],
+      units:            s.units || 0,
+      price:            s.currentPrice || s.buyPrice || 0,
+      value:            (s.units || 0) * (s.currentPrice || s.buyPrice || 0),
+      cost:             costBasisUnknown ? null : (s.units || 0) * s.buyPrice,
+      costBasisUnknown,
+      todayChange:      computeTodayChange(s, latestSnap),
+      isSIP:            false,
+      hasVerify:        (s.flags || []).includes('VERIFY_AMFI'),
+      isMulti:          false,
+      invId:            null,
+      children:         [],
+    }
+  })
 
   return [...mfRows, ...stockRows]
 }
 
 // ── Investment rows ────────────────────────────────────────────────────────
 
-function InvestmentRow({ row, expanded, onToggle, members, onSIPConfig }) {
-  const memberMap = Object.fromEntries(members.map(m => [m.name, m]))
+function InvestmentRow({ row, expanded, onToggle, members, onSIPConfig, changeBasis }) {
+  const memberMap    = Object.fromEntries(members.map(m => [m.name, m]))
+  const investedOpacity = changeBasis === 'today' ? 0.35 : 1
 
   return (
     <>
       <div
         onClick={row.isMulti ? () => onToggle(row.key) : undefined}
         style={{
-          display: 'flex', alignItems: 'center', padding: '9px 14px', borderRadius: 6,
+          display: 'flex', alignItems: 'center', padding: '9px 14px', borderRadius: 4,
           background: expanded ? 'var(--color-background-tertiary)' : 'transparent',
           cursor: row.isMulti ? 'pointer' : 'default', transition: 'background 0.1s',
         }}
       >
-        {/* Name + badges */}
+        {/* Holding name + badges */}
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           <span style={{ fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.name}
           </span>
-          <Badge label={row.badge} color="#7D8590" bg="var(--color-border-primary)" />
-          {row.isSIP && <Badge label="SIP" color="#60A5FA" bg="rgba(96,165,250,0.12)" />}
-          {row.hasVerify && <Badge label="VERIFY" color="#F59E0B" bg="rgba(245,158,11,0.12)" />}
+          <Badge label={row.badge} color="var(--color-text-muted)" bg="var(--color-border-primary)" />
+          {row.isSIP && <Badge label="SIP" color="var(--color-info)" bg="var(--color-info-bg)" />}
+          {row.hasVerify && <Badge label="VERIFY" color="var(--color-warning)" bg="var(--color-warning-bg)" />}
           {row.isSIP && row.invId && onSIPConfig && (
             <button
               onClick={e => { e.stopPropagation(); onSIPConfig(row.invId) }}
               style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: 11, padding: '0 2px', flexShrink: 0 }}
-              title="SIP configuration"
-            >
-              ⚙
-            </button>
+            >⚙</button>
           )}
         </div>
 
-        {/* Member(s) */}
-        <Td flex="0 0 90px" align="center">
+        {/* Member */}
+        <Td flex="0 0 80px" align="center">
           {row.isMulti
-            ? <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{row.members.length} members {expanded ? '▲' : '▼'}</span>
+            ? <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{row.members.length} mbrs {expanded ? '▲' : '▼'}</span>
             : <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{firstName(row.members[0] || '')}</span>
           }
         </Td>
 
-        <Td flex="0 0 72px">
-          {row.units > 0 ? row.units.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—'}
+        {/* Invested */}
+        <Td flex="0 0 90px" style={{ opacity: investedOpacity }}>
+          {row.costBasisUnknown
+            ? <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 11 }}>n/a</span>
+            : (row.cost != null ? formatShort(row.cost) : '—')
+          }
         </Td>
-        <Td flex="0 0 80px">{row.price > 0 ? formatShort(row.price) : '—'}</Td>
-        <Td flex="0 0 80px" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>
+
+        {/* Current value */}
+        <Td flex="0 0 90px" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>
           {row.value > 0 ? formatShort(row.value) : '—'}
         </Td>
-        <ChangeCell value={row.todayChange} />
+
+        {/* Change */}
+        <RowChangeCell value={row.value} cost={row.cost} todayChange={row.todayChange} costBasisUnknown={row.costBasisUnknown} changeBasis={changeBasis} />
       </div>
 
       {/* SIP sub-line */}
       {row.isSIP && row.sipAmount > 0 && (
         <div style={{ padding: '0 14px 6px 18px', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <i className="ti ti-refresh" style={{ fontSize: 10, color: 'var(--color-text-muted)' }} />
           <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>
             {formatShort(row.sipAmount)}/{row.sipFreq?.toLowerCase() || 'mo'}
             {row.sipDay ? ` · ${row.sipDay}th` : ''}
@@ -703,20 +819,24 @@ function InvestmentRow({ row, expanded, onToggle, members, onSIPConfig }) {
         </div>
       )}
 
-      {/* Expanded member breakdown */}
+      {/* Expanded per-member breakdown */}
       {expanded && row.children.map((child, i) => {
         const m = memberMap[child.member] || {}
         return (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '6px 14px 6px 32px', borderLeft: `2px solid ${m.color || '#3B82F6'}22`, marginLeft: 14 }}>
+          <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '6px 14px 6px 32px', borderLeft: `2px solid ${m.color || 'var(--color-accent)'}33`, marginLeft: 14 }}>
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 10, color: m.color || 'var(--color-text-muted)', fontWeight: 600 }}>{firstName(child.member)}</span>
-              {child.isSIP && <Badge label="SIP" color="#60A5FA" bg="rgba(96,165,250,0.12)" />}
+              {child.isSIP && <Badge label="SIP" color="var(--color-info)" bg="var(--color-info-bg)" />}
             </div>
-            <Td flex="0 0 90px" align="center" />
-            <Td flex="0 0 72px">{child.units.toLocaleString('en-IN', { maximumFractionDigits: 3 })}</Td>
             <Td flex="0 0 80px" />
-            <Td flex="0 0 80px" style={{ color: 'var(--color-text-secondary)' }}>{formatShort(child.value)}</Td>
-            <ChangeCell value={child.todayChange} />
+            <Td flex="0 0 90px" style={{ opacity: investedOpacity, fontSize: 11 }}>
+              {child.costBasisUnknown
+                ? <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 10 }}>n/a</span>
+                : (child.cost != null ? formatShort(child.cost) : '—')
+              }
+            </Td>
+            <Td flex="0 0 90px" style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>{formatShort(child.value)}</Td>
+            <RowChangeCell value={child.value} cost={child.cost} todayChange={child.todayChange} costBasisUnknown={child.costBasisUnknown} changeBasis={changeBasis} />
           </div>
         )
       })}
@@ -724,40 +844,47 @@ function InvestmentRow({ row, expanded, onToggle, members, onSIPConfig }) {
   )
 }
 
-function InvestmentsSection({ rows, sort, members, onSIPConfig }) {
-  const [expanded, setExpanded] = useState({})
+function InvestmentsSection({ rows, sort, members, onSIPConfig, changeBasis }) {
+  const [expandedRows, setExpandedRows] = useState({})
 
-  const sorted = useMemo(() => {
-    const r = [...rows]
-    if (sort === 'name')   r.sort((a, b) => a.name.localeCompare(b.name))
-    else if (sort === 'change') r.sort((a, b) => (b.todayChange ?? -Infinity) - (a.todayChange ?? -Infinity))
+  function sortRows(arr) {
+    const r = [...arr]
+    if (sort === 'name') r.sort((a, b) => a.name.localeCompare(b.name))
+    else if (sort === 'change') {
+      if (changeBasis === 'since') r.sort((a, b) => {
+        const da = (!a.costBasisUnknown && a.cost) ? a.value - a.cost : -Infinity
+        const db = (!b.costBasisUnknown && b.cost) ? b.value - b.cost : -Infinity
+        return db - da
+      })
+      else r.sort((a, b) => (b.todayChange ?? -Infinity) - (a.todayChange ?? -Infinity))
+    }
     else r.sort((a, b) => b.value - a.value)
     return r
-  }, [rows, sort])
+  }
 
-  if (sorted.length === 0) return null
-  const total = sorted.reduce((s, r) => s + r.value, 0)
+  const stockRows = useMemo(() => sortRows(rows.filter(r => !r.isMF)), [rows, sort, changeBasis])
+  const mfRows    = useMemo(() => sortRows(rows.filter(r => r.isMF)),  [rows, sort, changeBasis])
+
+  if (rows.length === 0) return null
+
+  const toggleRow = (key) => setExpandedRows(p => ({ ...p, [key]: !p[key] }))
+
+  const renderRow = (row) => (
+    <InvestmentRow key={row.key} row={row} expanded={!!expandedRows[row.key]} onToggle={toggleRow} members={members} onSIPConfig={onSIPConfig} changeBasis={changeBasis} />
+  )
 
   return (
     <>
-      <SectionHeader label="Investments" count={sorted.length} total={total} />
-      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 14px 6px' }}>
-        <Th flex={1} align="left">Name</Th>
-        <Th flex="0 0 90px" align="center">Member</Th>
-        <Th flex="0 0 72px">Units</Th>
-        <Th flex="0 0 80px">Price</Th>
-        <Th flex="0 0 80px">Value</Th>
-        <Th flex="0 0 70px">Today</Th>
-      </div>
-      {sorted.map(row => (
-        <InvestmentRow
-          key={row.key} row={row}
-          expanded={!!expanded[row.key]}
-          onToggle={key => setExpanded(p => ({ ...p, [key]: !p[key] }))}
-          members={members}
-          onSIPConfig={onSIPConfig}
-        />
-      ))}
+      {stockRows.length > 0 && (
+        <GroupBand label="Stocks" rows={stockRows} changeBasis={changeBasis}>
+          {stockRows.map(renderRow)}
+        </GroupBand>
+      )}
+      {mfRows.length > 0 && (
+        <GroupBand label="Mutual Funds" rows={mfRows} changeBasis={changeBasis}>
+          {mfRows.map(renderRow)}
+        </GroupBand>
+      )}
     </>
   )
 }
@@ -869,48 +996,47 @@ function AllocationDonut({ rows }) {
 
 // ── Gold section ──────────────────────────────────────────────────────────
 
-function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter }) {
+function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, changeBasis, goldFreshToday }) {
   const filtered = items.filter(g => matchesMember(g, activeMember) && (goldTypeFilter === 'all' || (g.category || '').toLowerCase() === goldTypeFilter))
 
   const rows = useMemo(() => {
-    const r = filtered.map(g => ({
-      ...g,
-      price: goldPrices[g.carat] || 0,
-      value: (g.grams || 0) * (goldPrices[g.carat] || 0),
-    }))
+    const r = filtered.map(g => {
+      const pricePerGram     = goldPrices[g.carat] || 0
+      const value            = (g.grams || 0) * pricePerGram
+      const costBasisUnknown = !g.purchasePricePerGram
+      const cost             = costBasisUnknown ? null : (g.grams || 0) * g.purchasePricePerGram
+      return { ...g, price: pricePerGram, value, cost, costBasisUnknown, todayChange: null }
+    })
     if (sort === 'name') r.sort((a, b) => a.name.localeCompare(b.name))
     else r.sort((a, b) => b.value - a.value)
     return r
   }, [filtered, goldPrices, sort])
 
   if (rows.length === 0) return null
-  const total = rows.reduce((s, r) => s + r.value, 0)
 
   return (
-    <>
-      <SectionHeader label="Gold" count={rows.length} total={total} />
-      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 14px 6px' }}>
-        <Th flex={1} align="left">Name</Th>
-        <Th flex="0 0 70px" align="left">Category</Th>
-        <Th flex="0 0 90px" align="center">Member</Th>
-        <Th flex="0 0 56px">Grams</Th>
-        <Th flex="0 0 40px">Carat</Th>
-        <Th flex="0 0 80px">Value</Th>
-      </div>
+    <GroupBand label="Gold" rows={rows} changeBasis={changeBasis} goldFreshToday={goldFreshToday}>
       {rows.map((g, i) => (
         <div key={g.id || i} style={{ display: 'flex', alignItems: 'center', padding: '9px 14px' }}>
-          <div style={{ flex: 1, fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {g.name}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {g.name}
+            </span>
             {g.category === 'Jewellery' && <Badge label="Jewellery" color="var(--color-gold)" bg="var(--color-gold-bg)" />}
+            <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{g.grams?.toFixed(2)}g · {g.carat}K</span>
           </div>
-          <Td flex="0 0 70px" align="left">{g.category}</Td>
-          <Td flex="0 0 90px" align="center">{firstName(g.member)}</Td>
-          <Td flex="0 0 56px">{(g.grams || 0).toFixed(2)}g</Td>
-          <Td flex="0 0 40px">{g.carat}K</Td>
-          <Td flex="0 0 80px" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatShort(g.value)}</Td>
+          <Td flex="0 0 80px" align="center">{firstName(g.member)}</Td>
+          <Td flex="0 0 90px" style={{ opacity: changeBasis === 'today' ? 0.35 : 1 }}>
+            {g.costBasisUnknown
+              ? <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 11 }}>n/a</span>
+              : (g.cost != null ? formatShort(g.cost) : '—')
+            }
+          </Td>
+          <Td flex="0 0 90px" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatShort(g.value)}</Td>
+          <RowChangeCell value={g.value} cost={g.cost} todayChange={null} costBasisUnknown={g.costBasisUnknown} changeBasis={changeBasis} isGold goldFreshToday={goldFreshToday} />
         </div>
       ))}
-    </>
+    </GroupBand>
   )
 }
 
@@ -972,77 +1098,60 @@ function RealEstateSection({ items, activeMember, sort }) {
   )
 }
 
-// ── Fixed Income section ──────────────────────────────────────────────────
+// ── Deposits section (FD + Cash combined) ────────────────────────────────
 
-function FixedIncomeSection({ items, activeMember, sort }) {
+function DepositsSection({ fixedIncome, cashAssets, activeMember, sort, changeBasis }) {
   const rows = useMemo(() => {
-    const filtered = items.filter(f => matchesMember(f, activeMember))
-    const r = filtered.map(f => ({ ...f, value: f.maturityValue || f.principal || 0 }))
-    if (sort === 'name') r.sort((a, b) => a.name.localeCompare(b.name))
-    else r.sort((a, b) => b.value - a.value)
-    return r
-  }, [items, activeMember, sort])
+    const fdRows   = fixedIncome.filter(f => matchesMember(f, activeMember)).map(f => ({
+      id:    f.id, name: f.name, member: f.member,
+      value: f.maturityValue || f.principal || 0,
+      cost:  f.principal || 0,
+      costBasisUnknown: !f.principal,
+      todayChange: null,
+      sub:   f.maturityDate ? `Matures ${f.maturityDate}${f.rate ? ` · ${f.rate}%` : ''}` : (f.rate ? `${f.rate}%` : null),
+      badge: 'FD',
+    }))
+    const cashRows = cashAssets.filter(a => matchesMember(a, activeMember)).map(a => ({
+      id:    a.id, name: a.name, member: a.member,
+      value: a.value || 0,
+      cost:  a.value || 0,
+      costBasisUnknown: false,
+      todayChange: null,
+      sub:   null,
+      badge: 'CASH',
+    }))
+    const all = [...fdRows, ...cashRows]
+    if (sort === 'name')   all.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    else if (sort === 'change' && changeBasis === 'since') all.sort((a, b) => (b.value - b.cost) - (a.value - a.cost))
+    else all.sort((a, b) => b.value - a.value)
+    return all
+  }, [fixedIncome, cashAssets, activeMember, sort, changeBasis])
 
   if (rows.length === 0) return null
-  const total = rows.reduce((s, r) => s + r.value, 0)
 
   return (
-    <>
-      <SectionHeader label="Fixed Income" count={rows.length} total={total} />
-      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 14px 6px' }}>
-        <Th flex={1} align="left">Name</Th>
-        <Th flex="0 0 90px" align="center">Member</Th>
-        <Th flex="0 0 76px">Principal</Th>
-        <Th flex="0 0 80px">Mat. Value</Th>
-        <Th flex="0 0 80px">Mat. Date</Th>
-        <Th flex="0 0 50px">Rate</Th>
-      </div>
-      {rows.map((f, i) => (
-        <div key={f.id || i} style={{ display: 'flex', alignItems: 'center', padding: '9px 14px' }}>
-          <div style={{ flex: 1, fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {f.name}
+    <GroupBand label="Deposits & Cash" rows={rows} changeBasis={changeBasis}>
+      {rows.map((r, i) => (
+        <div key={r.id || i} style={{ display: 'flex', alignItems: 'center', padding: '9px 14px' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+              <Badge label={r.badge} color="var(--color-text-muted)" bg="var(--color-border-primary)" />
+            </div>
+            {r.sub && <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 1 }}>{r.sub}</div>}
           </div>
-          <Td flex="0 0 90px" align="center">{firstName(f.member)}</Td>
-          <Td flex="0 0 76px">{formatShort(f.principal || 0)}</Td>
-          <Td flex="0 0 80px" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatShort(f.maturityValue || f.principal || 0)}</Td>
-          <Td flex="0 0 80px" style={{ fontSize: 11 }}>{f.maturityDate || '—'}</Td>
-          <Td flex="0 0 50px">{f.rate ? `${f.rate}%` : '—'}</Td>
+          <Td flex="0 0 80px" align="center">{firstName(r.member)}</Td>
+          <Td flex="0 0 90px" style={{ opacity: changeBasis === 'today' ? 0.35 : 1 }}>
+            {r.costBasisUnknown
+              ? <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 11 }}>n/a</span>
+              : formatShort(r.cost)
+            }
+          </Td>
+          <Td flex="0 0 90px" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatShort(r.value)}</Td>
+          <RowChangeCell value={r.value} cost={r.cost} todayChange={null} costBasisUnknown={r.costBasisUnknown} changeBasis={changeBasis} />
         </div>
       ))}
-    </>
-  )
-}
-
-// ── Cash section ──────────────────────────────────────────────────────────
-
-function CashSection({ items, activeMember, sort }) {
-  const rows = useMemo(() => {
-    const filtered = items.filter(a => matchesMember(a, activeMember))
-    const r = [...filtered]
-    if (sort === 'name') r.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    else r.sort((a, b) => (b.value || 0) - (a.value || 0))
-    return r
-  }, [items, activeMember, sort])
-
-  if (rows.length === 0) return null
-  const total = rows.reduce((s, r) => s + (r.value || 0), 0)
-
-  return (
-    <>
-      <SectionHeader label="Cash & Accounts" count={rows.length} total={total} />
-      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 14px 6px' }}>
-        <Th flex={1} align="left">Account</Th>
-        <Th flex="0 0 90px" align="center">Member</Th>
-        <Th flex="0 0 90px">Balance</Th>
-      </div>
-      {rows.map((a, i) => (
-        <div key={a.id || i} style={{ display: 'flex', alignItems: 'center', padding: '9px 14px' }}>
-          <div style={{ flex: 1, fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500 }}>{a.name}</div>
-          <Td flex="0 0 90px" align="center">{firstName(a.member)}</Td>
-          <Td flex="0 0 90px" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatShort(a.value || 0)}</Td>
-        </div>
-      ))}
-    </>
+    </GroupBand>
   )
 }
 
@@ -1056,6 +1165,12 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
   const [assetFilter, setAssetFilter] = useState(VIEW_TO_FILTER[activeView] || 'all')
   const [sort, setSort] = useState('value')
   const [goldTypeFilter, setGoldTypeFilter] = useState('all')
+  const [changeBasis, setChangeBasis] = useState('since')
+
+  const goldFreshToday = useMemo(() => {
+    const updated = load(KEYS.GOLD_PRICE_UPDATED, null)
+    return updated ? new Date(updated).toDateString() === new Date().toDateString() : false
+  }, [])
 
   // Sync internal filter when sidebar navigates with a view
   useEffect(() => {
@@ -1253,7 +1368,7 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
   // 'deposits' shows both FD and Cash sections
   const show = (id) => {
     if (assetFilter === 'all')      return true
-    if (assetFilter === 'deposits') return id === 'fd' || id === 'cash'
+    if (assetFilter === 'deposits') return id === 'deposits'
     return assetFilter === id
   }
 
@@ -1318,15 +1433,16 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
       {/* ── Stat cards ── */}
       <StatRow cards={statCards} />
 
-      {/* ── Filter strip + sort ── */}
+      {/* ── Filter strip + controls ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {CLASS_FILTERS.map(f => (
-            <button key={f.id} onClick={() => setAssetFilter(f.id)} style={chipBtn(assetFilter === f.id)}>
+            <button key={f.id} onClick={() => { setAssetFilter(f.id); if (f.id !== 'gold') setGoldTypeFilter('all') }} style={chipBtn(assetFilter === f.id)}>
               {f.label}
             </button>
           ))}
-          {(assetFilter === 'gold' || assetFilter === 'all') && (
+          {/* Gold sub-filter: only in gold view */}
+          {assetFilter === 'gold' && (
             <>
               <span style={{ width: 1, background: 'var(--color-border-primary)', margin: '0 4px', alignSelf: 'stretch' }} />
               {[
@@ -1341,13 +1457,31 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
             </>
           )}
         </div>
-        <select
-          value={sort}
-          onChange={e => setSort(e.target.value)}
-          style={{ padding: '5px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer' }}
-        >
-          {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-        </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Change basis toggle */}
+          <div style={{ display: 'flex', border: '0.5px solid var(--color-border-primary)', borderRadius: 6, overflow: 'hidden' }}>
+            {[{ id: 'since', label: 'Since purchase' }, { id: 'today', label: 'Today' }].map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setChangeBasis(opt.id)}
+                style={{
+                  padding: '5px 10px', border: 'none', fontSize: 11, cursor: 'pointer',
+                  background: changeBasis === opt.id ? 'var(--color-accent)' : 'transparent',
+                  color: changeBasis === opt.id ? '#fff' : 'var(--color-text-secondary)',
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <select
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+            style={{ padding: '5px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-secondary)', color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer' }}
+          >
+            {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        </div>
       </div>
 
       {/* ── Allocation donut (investments view only) ── */}
@@ -1358,19 +1492,16 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
       {/* ── Sections ── */}
       <div style={{ background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-primary)', borderRadius: 10, overflow: 'hidden', paddingBottom: 8 }}>
         {show('invest') && (
-          <InvestmentsSection rows={invRows} sort={sort} members={members} onSIPConfig={handleSIPConfig} />
+          <InvestmentsSection rows={invRows} sort={sort} members={members} onSIPConfig={handleSIPConfig} changeBasis={changeBasis} />
         )}
         {show('gold') && (
-          <GoldSection items={data?.gold ?? []} activeMember={activeMember} goldPrices={goldPrices} sort={sort} goldTypeFilter={goldTypeFilter} />
+          <GoldSection items={data?.gold ?? []} activeMember={activeMember} goldPrices={goldPrices} sort={sort} goldTypeFilter={goldTypeFilter} changeBasis={changeBasis} goldFreshToday={goldFreshToday} />
         )}
         {show('realty') && (
           <RealEstateSection items={data?.realEstate ?? []} activeMember={activeMember} sort={sort} />
         )}
-        {show('fd') && (
-          <FixedIncomeSection items={data?.fixedIncome ?? []} activeMember={activeMember} sort={sort} />
-        )}
-        {show('cash') && (
-          <CashSection items={data?.cashAssets ?? []} activeMember={activeMember} sort={sort} />
+        {show('deposits') && (
+          <DepositsSection fixedIncome={data?.fixedIncome ?? []} cashAssets={data?.cashAssets ?? []} activeMember={activeMember} sort={sort} changeBasis={changeBasis} />
         )}
 
         {invRows.length === 0 && (data?.gold ?? []).length === 0 && (
