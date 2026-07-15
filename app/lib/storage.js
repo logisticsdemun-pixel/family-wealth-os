@@ -21,7 +21,7 @@ export const KEYS = {
 }
 
 // Only theme is stored as plaintext; everything else goes through the encrypted memory store
-const PLAINTEXT = new Set(['fwos-theme'])
+const PLAINTEXT = new Set(['fwos-theme', KEYS.GOLD_PRICE_UPDATED])
 
 export function load(key, fallback = null) {
   if (typeof window === 'undefined') return fallback
