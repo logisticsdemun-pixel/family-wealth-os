@@ -1184,23 +1184,30 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
   }, [activeView])
 
   // ── Action state ──────────────────────────────────────────
-  const [fetchingPrices, setFetchingPrices] = useState(false)
-  const [fetchingGold,   setFetchingGold]   = useState(false)
-  const [showImport,     setShowImport]     = useState(false)
-  const [sipModal,       setSipModal]       = useState(null)
+  const [fetchingPrices,  setFetchingPrices]  = useState(false)
+  const [fetchingGold,    setFetchingGold]    = useState(false)
+  const [goldPriceError,  setGoldPriceError]  = useState(null)
+  const [goldPriceMeta,   setGoldPriceMeta]   = useState(null)
+  const [showImport,      setShowImport]      = useState(false)
+  const [sipModal,        setSipModal]        = useState(null)
   const [lastPriceUpdate, setLastPriceUpdate] = useState(() => load(KEYS.PRICE_UPDATED, null))
 
   // ── Gold price refresh ────────────────────────────────────
   const handleRefreshGoldPrices = useCallback(async () => {
     setFetchingGold(true)
+    setGoldPriceError(null)
     try {
       const res  = await fetch('/api/gold-price')
       const json = await res.json()
-      if (!json.success) throw new Error(json.error || 'Failed')
+      if (!res.ok || !json.success) {
+        setGoldPriceError(json.error || 'Unable to fetch gold price. Enter manually.')
+        return
+      }
       storeSetRef.current(KEYS.GOLD_PRICES, json.prices)
       save(KEYS.GOLD_PRICE_UPDATED, new Date().toISOString())
+      setGoldPriceMeta(json.meta || null)
     } catch (err) {
-      console.error('[Gold] Price refresh failed:', err.message)
+      setGoldPriceError('Network error. Check connection and try again.')
     } finally {
       setFetchingGold(false)
     }
@@ -1462,6 +1469,26 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
           </div>
         )}
       </div>
+
+      {/* ── Gold price error / meta ── */}
+      {goldPriceError && (
+        <div style={{
+          fontSize: 12,
+          color: 'var(--color-negative)',
+          background: 'var(--color-negative-bg)',
+          border: '0.5px solid var(--color-negative)',
+          borderRadius: 6,
+          padding: '6px 10px',
+          marginBottom: 10,
+        }}>
+          ⚠ {goldPriceError}
+        </div>
+      )}
+      {!goldPriceError && goldPriceMeta?.source && (
+        <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 10 }}>
+          Gold · {goldPriceMeta.source} · {goldPriceMeta.fetchedAt ? new Date(goldPriceMeta.fetchedAt).toLocaleTimeString('en-IN') : ''}
+        </div>
+      )}
 
       {/* ── Stat cards ── */}
       <StatRow cards={statCards} />

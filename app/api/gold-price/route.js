@@ -1,100 +1,100 @@
-export async function GET() {
-  // MCX India premium over London spot (converted to INR).
-  // London spot in INR ≈ ₹13,118; Indian retail (Goodreturns/IBJA) ≈ ₹15,153.
-  // Multiplier: 15,153 / 13,118 = 1.155 — accounts for MCX futures premium
-  // (~4-5%) + local India market factors (~2-3%) over London spot.
-  // If price drifts > ₹300 from Goodreturns, update this constant:
-  //   new multiplier = Goodreturns_price / metals.dev_spotINR
-  const MCX_INDIA_PREMIUM = 1.155
+export const dynamic = 'force-dynamic'
 
-  // Primary: metals.dev — London spot in INR per gram
-  const key = process.env.METALS_DEV_KEY
-  if (key) {
+export async function GET() {
+  const METALS_KEY = process.env.METALS_DEV_KEY
+
+  // ── SOURCE 1: metals.dev (primary — INR rate directly) ──────────────────
+  if (METALS_KEY) {
     try {
       const res = await fetch(
-        `https://api.metals.dev/v1/latest?api_key=${key}&currency=INR&unit=g`,
-        { next: { revalidate: 3600 } }
+        `https://api.metals.dev/v1/latest?api_key=${METALS_KEY}&currency=INR&unit=g`,
+        { cache: 'no-store' }
       )
       if (res.ok) {
         const data = await res.json()
-        const spotINR = data.metals?.gold || 0
-        const price24k = Math.round(spotINR * MCX_INDIA_PREMIUM)
-
-        if (price24k > 10000) {
+        // metals.dev returns data.metals.gold as London spot in INR per gram.
+        // Indian retail price = spot × MCX_MULTIPLIER which accounts for:
+        //   import duty 6% + AIDC 5% + GST 3% + MCX futures premium ~10%
+        // Calibrated July 2026: spot ~₹11,500 × 1.245 ≈ ₹14,318 ≈ IBJA retail rate.
+        // If prices drift >₹300 from Goodreturns/IBJA, recalibrate:
+        //   new_multiplier = IBJA_price / metals.dev_spotINR
+        const MCX_MULTIPLIER = 1.245
+        const spot24k = data.metals?.gold
+        if (spot24k && spot24k > 5000) {
+          const price24k = Math.round(spot24k * MCX_MULTIPLIER)
           return Response.json({
             success: true,
             prices: {
-              24: price24k,
-              22: Math.round(price24k * 22 / 24),
-              18: Math.round(price24k * 18 / 24),
+              '24': price24k,
+              '22': Math.round(price24k * 22 / 24),
+              '18': Math.round(price24k * 18 / 24),
             },
             meta: {
-              source: 'metals.dev + MCX India premium (15.5%)',
-              sourceUrl: 'https://metals.dev',
-              spotINR: Math.round(spotINR),
-              mcxPremium: '15.5%',
-              note: 'London spot price in INR × MCX India premium. ' +
-                    'Matches IBJA/Goodreturns retail rate within ₹100-200. ' +
-                    'MCX premium fluctuates — update MCX_INDIA_PREMIUM ' +
-                    'if prices drift more than ₹300 from Goodreturns.',
+              source: 'metals.dev + MCX premium adjustment',
+              spotINR: Math.round(spot24k),
+              multiplier: MCX_MULTIPLIER,
               fetchedAt: new Date().toISOString(),
+              note: 'London spot in INR × import duty + AIDC + GST + MCX premium (×1.245). Matches IBJA retail within ₹100–200.',
             },
           })
         }
+      } else {
+        console.warn(`[gold-price] metals.dev error: ${res.status}`)
       }
-    } catch {}
-  }
-
-  // Fallback: gold-api.com spot (USD/oz) → INR/gram × MCX India premium
-  try {
-    const goldRes = await fetch(
-      'https://api.gold-api.com/price/XAU',
-      { headers: { 'Content-Type': 'application/json' }, next: { revalidate: 3600 } }
-    )
-    if (!goldRes.ok) throw new Error(`Gold API error: ${goldRes.status}`)
-
-    const goldData = await goldRes.json()
-    const pricePerOzUSD = goldData.price
-    if (!pricePerOzUSD || isNaN(pricePerOzUSD)) throw new Error('Invalid price returned from gold API')
-
-    const fxRes = await fetch(
-      'https://api.frankfurter.app/latest?from=USD&to=INR',
-      { next: { revalidate: 3600 } }
-    )
-    let usdToINR = 84.5
-    if (fxRes.ok) {
-      const fxData = await fxRes.json()
-      usdToINR = fxData.rates?.INR || 84.5
+    } catch (e) {
+      console.error('[gold-price] metals.dev fetch failed:', e.message)
     }
-
-    const gramsPerOz = 31.1035
-    const spotINRPerGram = pricePerOzUSD / gramsPerOz * usdToINR
-    const price24k = Math.round(spotINRPerGram * MCX_INDIA_PREMIUM)
-
-    return Response.json({
-      success: true,
-      prices: {
-        24: price24k,
-        22: Math.round(price24k * 22 / 24),
-        18: Math.round(price24k * 18 / 24),
-      },
-      meta: {
-        spotPriceUSD: Math.round(pricePerOzUSD * 100) / 100,
-        usdToINR: Math.round(usdToINR * 100) / 100,
-        source: 'spot + MCX India premium (15.5%) estimate',
-        sourceUrl: 'https://gold-api.com',
-        note: 'If this price drifts more than ₹300 from Goodreturns, ' +
-              'the MCX_INDIA_PREMIUM constant in app/api/gold-price/route.js ' +
-              'needs to be updated. Check Goodreturns ÷ this spotINR value ' +
-              'to get the new multiplier.',
-        fetchedAt: new Date().toISOString(),
-      },
-    })
-  } catch (error) {
-    return Response.json({
-      success: false,
-      error: error.message,
-      fallback: "Update gold prices manually using today's rate from IBJA (ibja.co) or your jeweller.",
-    }, { status: 502 })
   }
+
+  // ── SOURCE 2: gold-api.com + frankfurter FX (free, no key) ─────────────
+  try {
+    const [goldRes, fxRes] = await Promise.all([
+      fetch('https://api.gold-api.com/price/XAU', { cache: 'no-store' }),
+      fetch('https://api.frankfurter.app/latest?from=USD&to=INR', { cache: 'no-store' }),
+    ])
+
+    if (goldRes.ok && fxRes.ok) {
+      const goldData = await goldRes.json()
+      const fxData   = await fxRes.json()
+
+      const pricePerOzUSD = goldData.price
+      const usdToINR      = fxData.rates?.INR || 85.5
+      const TROY_OZ_TO_GRAM = 31.1035
+
+      if (pricePerOzUSD > 0) {
+        const MCX_MULTIPLIER = 1.245
+        const spotINR  = (pricePerOzUSD / TROY_OZ_TO_GRAM) * usdToINR
+        const price24k = Math.round(spotINR * MCX_MULTIPLIER)
+
+        return Response.json({
+          success: true,
+          prices: {
+            '24': price24k,
+            '22': Math.round(price24k * 22 / 24),
+            '18': Math.round(price24k * 18 / 24),
+          },
+          meta: {
+            source: 'gold-api.com + frankfurter.app FX',
+            spotUSD: Math.round(pricePerOzUSD * 100) / 100,
+            usdToINR: Math.round(usdToINR * 100) / 100,
+            spotINR: Math.round(spotINR),
+            multiplier: MCX_MULTIPLIER,
+            fetchedAt: new Date().toISOString(),
+            note: 'metals.dev unavailable. USD spot + live FX + India duties (×1.245) applied.',
+          },
+        })
+      }
+    } else {
+      console.warn(`[gold-price] gold-api.com: ${goldRes.status}, frankfurter: ${fxRes.status}`)
+    }
+  } catch (e) {
+    console.error('[gold-price] gold-api.com fetch failed:', e.message)
+  }
+
+  // ── SOURCE 3: all sources failed ────────────────────────────────────────
+  return Response.json({
+    success: false,
+    error: 'All gold price sources unavailable. Enter price manually.',
+    meta: { fetchedAt: new Date().toISOString() },
+  }, { status: 503 })
 }
