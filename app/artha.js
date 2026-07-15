@@ -1,8 +1,9 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { load, KEYS } from './lib/storage'
 import { formatINR, computeOutstanding, firstName } from './lib/format'
 import { SEED_INVESTMENTS, SEED_GOLD, DEFAULT_GOLD_PRICES, SEED_LOANS, SEED_FIXED_INCOME, SEED_CASH_ASSETS } from './lib/seedData'
+import { STATIC_MARKET_KNOWLEDGE } from './lib/marketContext'
 import PageScaffold from './components/PageScaffold'
 
 const DEFAULT_MONTHLY_EXPENSES = 180000
@@ -260,6 +261,312 @@ function generateInsights({ investments, gold, goldPrices, loans, fixedIncome, c
   return insights
 }
 
+// ── Compute a structured snapshot for the advisor LLM ─────
+function computeMetricsForAdvisor(data, monthlyExpenses) {
+  if (!data) return {}
+  const {
+    investments = [], gold = [], goldPrices = {}, loans = [],
+    fixedIncome = [], cashAssets = [], insurance = [],
+  } = data
+
+  const equityVal    = investments.filter(i => i.type !== 'Short Term Fund').reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
+  const shortTermVal = investments.filter(i => i.type === 'Short Term Fund').reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
+  const goldVal      = gold.reduce((s, g) => s + (g.grams || 0) * (goldPrices[g.carat] || goldPrices[String(g.carat)] || 0), 0)
+  const fdVal        = fixedIncome.reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
+  const cashVal      = cashAssets.reduce((s, a) => s + (a.value || 0), 0)
+  const totalAssets  = equityVal + shortTermVal + goldVal + fdVal + cashVal
+
+  const loanDetails = loans.map(l => ({
+    name:        l.name || l.type,
+    type:        l.type,
+    rate:        l.rate,
+    emi:         l.emi,
+    outstanding: Math.round(computeOutstanding(l) || 0),
+  }))
+  const totalLiabilities = loanDetails.reduce((s, l) => s + l.outstanding, 0)
+  const totalEMI         = loanDetails.reduce((s, l) => s + (l.emi || 0), 0)
+  const liquidFunds      = cashVal + fdVal + shortTermVal
+  const emergencyMonths  = monthlyExpenses > 0 ? parseFloat((liquidFunds / monthlyExpenses).toFixed(1)) : null
+
+  const p = (v) => totalAssets > 0 ? parseFloat((v / totalAssets * 100).toFixed(1)) : 0
+
+  const allHoldings = investments.map(i => ({
+    name:    i.name,
+    member:  i.member,
+    type:    i.type,
+    value:   Math.round(i.units * (i.currentPrice ?? i.buyPrice)),
+    gainPct: i.currentPrice != null && i.buyPrice > 0
+               ? parseFloat(((i.currentPrice - i.buyPrice) / i.buyPrice * 100).toFixed(1))
+               : null,
+  })).sort((a, b) => b.value - a.value)
+
+  return {
+    totalAssets:     Math.round(totalAssets),
+    totalLiabilities,
+    netWorth:        Math.round(totalAssets - totalLiabilities),
+    allocation: {
+      equity:         { value: Math.round(equityVal),    pct: p(equityVal) },
+      shortTermFunds: { value: Math.round(shortTermVal), pct: p(shortTermVal) },
+      gold:           { value: Math.round(goldVal),      pct: p(goldVal) },
+      fixedDeposits:  { value: Math.round(fdVal),        pct: p(fdVal) },
+      cash:           { value: Math.round(cashVal),      pct: p(cashVal) },
+    },
+    goldPrice24kPerGram: goldPrices[24] || goldPrices['24'] || null,
+    emergencyFund: {
+      liquidTotal:    Math.round(liquidFunds),
+      months:         emergencyMonths,
+      monthlyExpenses,
+      targetMonths:   6,
+      adequate:       emergencyMonths != null && emergencyMonths >= 6,
+    },
+    loans:     loanDetails,
+    totalEMI:  Math.round(totalEMI),
+    topHoldings: allHoldings.slice(0, 8),
+    insurance: insurance.map(pol => ({
+      name:        pol.name,
+      type:        pol.type,
+      member:      pol.member,
+      coverAmount: pol.coverAmount,
+      premium:     pol.premium,
+      renewalDate: pol.renewalDate,
+    })),
+    goldHoldings: gold.map(g => ({
+      name:   g.name,
+      grams:  g.grams,
+      carat:  g.carat,
+      member: g.member,
+      value:  Math.round((g.grams || 0) * (goldPrices[g.carat] || 0)),
+    })),
+    fixedDeposits: fixedIncome.map(f => ({
+      name:          f.name,
+      principal:     f.principal,
+      maturityValue: f.maturityValue,
+      rate:          f.rate,
+      maturityDate:  f.maturityDate,
+      member:        f.member,
+    })),
+  }
+}
+
+// ── Market Pulse panel ─────────────────────────────────────
+function MarketPulse({ goldPrice24k }) {
+  const [open, setOpen] = useState(true)
+  const mk = STATIC_MARKET_KNOWLEDGE
+
+  const metricCards = [
+    { label: 'Repo Rate',  value: `${mk.macroIndia.repoRate}%`,                                      sub: `CPI ${mk.macroIndia.cpi}%` },
+    { label: 'Nifty 50',  value: `~${mk.equity.nifty50Level.toLocaleString('en-IN')}`,               sub: `PE ${mk.equity.niftyPE}×` },
+    { label: '10Y G-Sec', value: `${mk.macroIndia.tenYearGSec}%`,                                    sub: 'yield' },
+    { label: 'Gold 24K',  value: goldPrice24k ? `₹${Math.round(goldPrice24k / 1000)}K/g` : '—',     sub: 'live price' },
+  ]
+
+  const pillColors = {
+    overweight:  { bg: 'var(--color-positive-bg)', text: 'var(--color-positive)', border: 'var(--color-positive)' },
+    neutral:     { bg: 'var(--color-info-bg)',     text: 'var(--color-info)',     border: 'var(--color-info)' },
+    underweight: { bg: 'var(--color-warning-bg)',  text: 'var(--color-warning)',  border: 'var(--color-warning)' },
+  }
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, marginBottom: 20, overflow: 'hidden' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 18px', background: 'var(--surface)', border: 'none', cursor: 'pointer',
+          borderBottom: open ? '1px solid var(--border)' : 'none',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+            Market Pulse
+          </span>
+          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 400 }}>{mk.asOf}</span>
+        </div>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div style={{ padding: '14px 18px', backgroundColor: 'var(--surface)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
+            {metricCards.map(card => (
+              <div key={card.label} style={{
+                backgroundColor: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 8, padding: '10px 12px', textAlign: 'center',
+              }}>
+                <p style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>{card.value}</p>
+                <p style={{ margin: '2px 0 0', fontSize: '0.68rem', color: 'var(--text-muted)' }}>{card.label}</p>
+                <p style={{ margin: '1px 0 0', fontSize: '0.65rem', color: 'var(--text-muted)', opacity: 0.7 }}>{card.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {Object.entries(mk.equity.sectorOutlook).map(([stance, sectors]) => {
+              const c = pillColors[stance]
+              return (
+                <div key={stance} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.63rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: c.text, minWidth: 80 }}>
+                    {stance}
+                  </span>
+                  {sectors.map(s => (
+                    <span key={s} style={{
+                      fontSize: '0.72rem', padding: '2px 8px', borderRadius: 20,
+                      backgroundColor: c.bg, color: c.text, border: `1px solid ${c.border}`, fontWeight: 500,
+                    }}>
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Artha Chat ─────────────────────────────────────────────
+function ArthaChat({ data, monthlyExpenses }) {
+  const [messages, setMessages] = useState([])
+  const [input, setInput]       = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState(null)
+  const bottomRef = useRef(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    const text = input.trim()
+    if (!text || loading) return
+
+    const userMsg = { role: 'user', content: text }
+    setMessages(prev => [...prev, userMsg])
+    setInput('')
+    setLoading(true)
+    setError(null)
+
+    try {
+      const familySnapshot = computeMetricsForAdvisor(data, monthlyExpenses)
+      const res = await fetch('/api/advisor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, history: messages, familySnapshot }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.error) {
+        setError(json.error || 'Something went wrong. Please try again.')
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: json.reply }])
+      }
+    } catch {
+      setError('Network error. Please check your connection and try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, marginTop: 28, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{
+        padding: '12px 18px', borderBottom: '1px solid var(--border)',
+        backgroundColor: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+          Ask Artha
+        </span>
+        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>AI advisor · powered by your live data</span>
+      </div>
+
+      {/* Message history */}
+      {messages.length > 0 && (
+        <div style={{
+          maxHeight: 420, overflowY: 'auto', padding: '16px 18px',
+          display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: 'var(--bg)',
+        }}>
+          {messages.map((msg, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div style={{
+                maxWidth: '80%', padding: '10px 14px',
+                borderRadius: msg.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
+                backgroundColor: msg.role === 'user' ? 'var(--accent)' : 'var(--surface)',
+                border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
+                color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
+                fontSize: '0.865rem', lineHeight: 1.55, whiteSpace: 'pre-wrap',
+              }}>
+                {msg.content}
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+              <div style={{
+                padding: '10px 14px', borderRadius: '12px 12px 12px 4px',
+                backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
+                color: 'var(--text-muted)', fontSize: '0.865rem',
+              }}>
+                Artha is thinking…
+              </div>
+            </div>
+          )}
+          {error && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 8,
+              backgroundColor: 'var(--color-negative-bg)', border: '1px solid var(--color-negative)',
+              color: 'var(--color-negative)', fontSize: '0.8rem',
+            }}>
+              {error}
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+      )}
+
+      {/* Input */}
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          display: 'flex', gap: 8, padding: '12px 14px',
+          borderTop: messages.length > 0 ? '1px solid var(--border)' : 'none',
+          backgroundColor: 'var(--surface)',
+        }}
+      >
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder={messages.length === 0
+            ? 'Ask about your portfolio, allocation, loans, gold…'
+            : 'Follow-up question…'}
+          disabled={loading}
+          style={{
+            flex: 1, padding: '9px 13px', borderRadius: 8,
+            border: '1px solid var(--border)', backgroundColor: 'var(--bg)',
+            color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none',
+          }}
+        />
+        <button
+          type="submit"
+          disabled={loading || !input.trim()}
+          style={{
+            padding: '9px 16px', borderRadius: 8, border: 'none',
+            backgroundColor: 'var(--accent)', color: '#fff',
+            fontSize: '0.875rem', fontWeight: 600,
+            cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
+            opacity: loading || !input.trim() ? 0.5 : 1,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Ask
+        </button>
+      </form>
+    </div>
+  )
+}
+
 // ── Main ARTHA component ───────────────────────────────────
 export default function Artha() {
   const [data, setData] = useState(null)
@@ -315,6 +622,8 @@ export default function Artha() {
     return (cashVal + fdVal + shortTermVal) / monthlyExpenses
   }, [data, monthlyExpenses])
 
+  const goldPrice24k = data?.goldPrices?.[24] ?? data?.goldPrices?.['24'] ?? null
+
   return (
     <PageScaffold
       title="ARTHA Advisor"
@@ -347,7 +656,7 @@ export default function Artha() {
       {data && (
         <div style={{
           backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
-          borderRadius: 12, padding: '16px 24px', marginBottom: 24,
+          borderRadius: 12, padding: '16px 24px', marginBottom: 20,
           display: 'flex', gap: 0, flexWrap: 'wrap',
         }}>
           {[
@@ -370,6 +679,9 @@ export default function Artha() {
           )}
         </div>
       )}
+
+      {/* ── Market Pulse ──────────────────────────────────── */}
+      <MarketPulse goldPrice24k={goldPrice24k} />
 
       {/* ── Insights ──────────────────────────────────────── */}
       {!data ? (
@@ -399,6 +711,9 @@ export default function Artha() {
           </div>
         ))
       )}
+
+      {/* ── AI Chat ───────────────────────────────────────── */}
+      {data && <ArthaChat data={data} monthlyExpenses={monthlyExpenses} />}
 
       {/* ── Disclaimer ────────────────────────────────────── */}
       <div style={{

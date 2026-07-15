@@ -1,5 +1,6 @@
 // Pure wealth metric functions — no DOM or store dependencies.
 // Safe to import from server routes and client components alike.
+import { STATIC_MARKET_KNOWLEDGE } from './marketContext'
 
 // ── Fund classification ────────────────────────────────────────────────────
 
@@ -266,7 +267,45 @@ export function generateInsights(data, metrics) {
     })
   }
 
+  // ── Market-aware insights (additive) ─────────────────────────────────────
+
+  // 7. Gold near multi-year highs — contextualise the existing gold allocation
+  const goldConc = (concentration || []).find(c => c.category === 'gold')
+  if (goldConc && goldConc.pct > 15) {
+    insights.push({
+      severity:    'opportunity',
+      title:       'Gold near multi-year highs — consider rebalancing',
+      body:        `Gold is ${goldConc.pct.toFixed(1)}% of total assets (${fmtINR(goldConc.value)}). ${STATIC_MARKET_KNOWLEDGE.gold.narrativeContext}. ${STATIC_MARKET_KNOWLEDGE.gold.outlook}.`,
+      actionLabel: 'View Gold',
+      targetPage:  { page: 'holdings', view: 'gold' },
+    })
+  }
+
+  // 8. Real estate liquidity risk — fires at >40% (below the generic >60% threshold)
+  const realEstateConc = (concentration || []).find(c => c.category === 'realEstate')
+  if (realEstateConc && realEstateConc.pct > 40) {
+    insights.push({
+      severity:    'warning',
+      title:       'Real estate concentration — liquidity risk',
+      body:        `Real estate is ${realEstateConc.pct.toFixed(1)}% of total assets (${fmtINR(realEstateConc.value)}). ${STATIC_MARKET_KNOWLEDGE.realEstate.outlook}`,
+      actionLabel: 'View Holdings',
+      targetPage:  'holdings',
+    })
+  }
+
+  // 9. Rate-cut cycle — prompt locking in FD rates before cuts arrive
+  const cashConc = (concentration || []).find(c => c.category === 'cash')
+  if (cashConc && cashConc.pct > 10) {
+    insights.push({
+      severity:    'info',
+      title:       'Lock in FD rates before rate cuts',
+      body:        `Repo rate at ${STATIC_MARKET_KNOWLEDGE.macroIndia.repoRate}%. ${STATIC_MARKET_KNOWLEDGE.fixedIncome.outlook}`,
+      actionLabel: 'View Fixed Income',
+      targetPage:  'fixedIncome',
+    })
+  }
+
   return insights
     .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
-    .slice(0, 6)
+    .slice(0, 9)
 }
