@@ -179,12 +179,20 @@ export function generateInsights(data, metrics) {
   }
 
   // 2. Any asset category > 60% → risk
+  const CAT_LABELS = {
+    investments: 'investments',
+    gold:        'gold',
+    realEstate:  'real estate',
+    cash:        'deposits & cash',
+  }
   const overConcentrated = (concentration || []).find(c => c.pct > 60)
   if (overConcentrated) {
+    const catLabel = CAT_LABELS[overConcentrated.category] || overConcentrated.category
+    const catLabelCap = catLabel.charAt(0).toUpperCase() + catLabel.slice(1)
     insights.push({
       severity:    'risk',
-      title:       `High ${overConcentrated.category} concentration`,
-      body:        `${overConcentrated.category} is ${overConcentrated.pct.toFixed(1)}% of total assets — exceeds the 60% threshold.`,
+      title:       `High ${catLabel} concentration`,
+      body:        `${catLabelCap} is ${overConcentrated.pct.toFixed(1)}% of total assets — exceeds the 60% threshold.`,
       actionLabel: 'View Holdings',
       targetPage:  { page: 'holdings', view: 'investments' },
     })

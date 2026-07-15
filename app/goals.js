@@ -5,59 +5,22 @@ import { formatINR, firstName, MEMBERS } from './lib/format'
 import { useStore } from './lib/store'
 import PageScaffold from './components/PageScaffold'
 import MetricCards from './components/MetricCards'
+import { linkedCurrentValue, inflatedTarget, monthlySIPNeeded } from './lib/goalUtils'
 
 const GOAL_TYPES = [
-  { id: 'retirement', label: 'Retirement',     icon: 'ti-beach'  },
-  { id: 'education',  label: 'Child Education', icon: 'ti-school' },
-  { id: 'house',      label: 'House Purchase',  icon: 'ti-home'   },
-  { id: 'marriage',   label: 'Marriage',        icon: 'ti-heart'  },
-  { id: 'vehicle',    label: 'Vehicle',         icon: 'ti-car'    },
-  { id: 'travel',     label: 'Travel',          icon: 'ti-plane'  },
-  { id: 'custom',     label: 'Custom',          icon: 'ti-target' },
+  { id: 'retirement',       label: 'Retirement',      icon: 'ti-beach'      },
+  { id: 'education',        label: 'Child Education',  icon: 'ti-school'     },
+  { id: 'house',            label: 'House Purchase',   icon: 'ti-home'       },
+  { id: 'marriage',         label: 'Marriage',         icon: 'ti-heart'      },
+  { id: 'vehicle',          label: 'Vehicle',          icon: 'ti-car'        },
+  { id: 'travel',           label: 'Travel',           icon: 'ti-plane'      },
+  { id: 'portfolio_target', label: 'Portfolio Target', icon: 'ti-chart-line' },
+  { id: 'custom',           label: 'Custom',           icon: 'ti-target'     },
 ]
 
 const ALL_MEMBERS = [...MEMBERS, 'Family']
 
 // ── Calculation helpers ────────────────────────────────────────
-
-function inflatedTarget(targetAmount, targetDate, inflationPct) {
-  const years = Math.max(0,
-    (new Date(targetDate) - new Date()) / (365.25 * 24 * 60 * 60 * 1000)
-  )
-  return targetAmount * Math.pow(1 + inflationPct / 100, years)
-}
-
-function linkedCurrentValue(goal, allInvestments, allGold, goldPrices, allCashAccounts) {
-  const invValue = (allInvestments || [])
-    .filter(h => (goal.linkedInvestmentIds || []).includes(String(h.id)))
-    .reduce((s, h) => s + (h.units || 0) * (h.currentPrice || h.buyPrice || 0), 0)
-
-  const goldValue = (allGold || [])
-    .filter(g => (goal.linkedGoldIds || []).includes(String(g.id)))
-    .reduce((s, g) => {
-      const grams = g.grams || 0
-      const price = goldPrices[g.carat] || goldPrices[24] || 0
-      return s + grams * price
-    }, 0)
-
-  const cashValue = (allCashAccounts || [])
-    .filter(a => (goal.linkedCashIds || []).includes(String(a.id)))
-    .reduce((s, a) => s + (a.value || 0), 0)
-
-  return invValue + goldValue + cashValue
-}
-
-function monthlySIPNeeded(currentValue, targetCorpus, targetDate, annualReturnPct) {
-  const monthsLeft = Math.max(1,
-    Math.round((new Date(targetDate) - new Date()) / (30.44 * 24 * 60 * 60 * 1000))
-  )
-  const r = annualReturnPct / 100 / 12
-  const fvCurrent = currentValue * Math.pow(1 + r, monthsLeft)
-  const gap = targetCorpus - fvCurrent
-  if (gap <= 0) return 0
-  if (r === 0) return gap / monthsLeft
-  return Math.max(0, Math.round(gap * r / (Math.pow(1 + r, monthsLeft) - 1)))
-}
 
 function goalStatus(fundedPct, monthsLeft) {
   if (fundedPct >= 100) return { label: 'Achieved',        color: 'var(--color-positive)', bg: 'var(--color-positive-bg)' }
@@ -116,26 +79,29 @@ const btnGhost = {
 
 function GoalForm({ goal, onSave, onCancel }) {
   const [form, setForm] = useState(() => goal ? {
-    name: goal.name || '',
-    type: goal.type || 'retirement',
-    memberId: goal.memberId || 'Family',
-    targetAmount: goal.targetAmount ?? '',
-    targetDate: goal.targetDate || '',
-    inflationPct: goal.inflationPct ?? 6,
+    name:              goal.name || '',
+    type:              goal.type || 'retirement',
+    goalMode:          goal.goalMode || (goal.type === 'portfolio_target' ? 'portfolio_target' : 'standard'),
+    memberId:          goal.memberId || 'Family',
+    targetAmount:      goal.targetAmount ?? '',
+    targetDate:        goal.targetDate || '',
+    inflationPct:      goal.inflationPct ?? 6,
     expectedReturnPct: goal.expectedReturnPct ?? 12,
-    notes: goal.notes || '',
+    notes:             goal.notes || '',
   } : {
-    name: '', type: 'retirement', memberId: 'Family',
+    name: '', type: 'retirement', goalMode: 'standard', memberId: 'Family',
     targetAmount: '', targetDate: '',
     inflationPct: 6, expectedReturnPct: 12, notes: '',
   })
+
+  const isPortfolio = form.goalMode === 'portfolio_target'
 
   function handleSubmit(e) {
     e.preventDefault()
     onSave({
       ...form,
-      targetAmount: parseFloat(form.targetAmount) || 0,
-      inflationPct: parseFloat(form.inflationPct) || 6,
+      targetAmount:      parseFloat(form.targetAmount) || 0,
+      inflationPct:      parseFloat(form.inflationPct) || 6,
       expectedReturnPct: parseFloat(form.expectedReturnPct) || 12,
     })
   }
@@ -152,7 +118,15 @@ function GoalForm({ goal, onSave, onCancel }) {
         </div>
         <div>
           <span style={lbl}>Goal type</span>
-          <select style={inp} value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+          <select
+            style={inp}
+            value={form.type}
+            onChange={e => setForm({
+              ...form,
+              type: e.target.value,
+              goalMode: e.target.value === 'portfolio_target' ? 'portfolio_target' : 'standard',
+            })}
+          >
             {GOAL_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
         </div>
@@ -163,7 +137,7 @@ function GoalForm({ goal, onSave, onCancel }) {
           </select>
         </div>
         <div>
-          <span style={lbl}>Target amount (today&apos;s ₹)</span>
+          <span style={lbl}>Target amount (₹)</span>
           <input
             required type="number" style={inp} placeholder="e.g. 20000000"
             value={form.targetAmount} onChange={e => setForm({ ...form, targetAmount: e.target.value })}
@@ -176,20 +150,24 @@ function GoalForm({ goal, onSave, onCancel }) {
             value={form.targetDate} onChange={e => setForm({ ...form, targetDate: e.target.value })}
           />
         </div>
-        <div>
-          <span style={lbl}>Inflation % (default 6)</span>
-          <input
-            type="number" step="0.5" style={inp}
-            value={form.inflationPct} onChange={e => setForm({ ...form, inflationPct: e.target.value })}
-          />
-        </div>
-        <div>
-          <span style={lbl}>Expected return % (default 12)</span>
-          <input
-            type="number" step="0.5" style={inp}
-            value={form.expectedReturnPct} onChange={e => setForm({ ...form, expectedReturnPct: e.target.value })}
-          />
-        </div>
+        {!isPortfolio && (
+          <div>
+            <span style={lbl}>Inflation % (default 6)</span>
+            <input
+              type="number" step="0.5" style={inp}
+              value={form.inflationPct} onChange={e => setForm({ ...form, inflationPct: e.target.value })}
+            />
+          </div>
+        )}
+        {!isPortfolio && (
+          <div>
+            <span style={lbl}>Expected return % (default 12)</span>
+            <input
+              type="number" step="0.5" style={inp}
+              value={form.expectedReturnPct} onChange={e => setForm({ ...form, expectedReturnPct: e.target.value })}
+            />
+          </div>
+        )}
         <div style={{ gridColumn: '1 / -1' }}>
           <span style={lbl}>Notes (optional)</span>
           <textarea
@@ -232,14 +210,14 @@ export default function Goals({ activeMember }) {
 
   const goalsWithMetrics = useMemo(() =>
     filteredGoals.map(g => {
-      const corpus = inflatedTarget(g.targetAmount, g.targetDate, g.inflationPct || 6)
+      const corpus = inflatedTarget(g)
       const current = linkedCurrentValue(g, data?.investments, data?.gold, goldPrices, data?.cashAssets)
       const gap = Math.max(0, corpus - current)
       const fundedPct = corpus > 0 ? Math.min(100, (current / corpus) * 100) : 0
       const monthsLeft = Math.max(0, Math.round(
         (new Date(g.targetDate) - new Date()) / (30.44 * 24 * 60 * 60 * 1000)
       ))
-      const sipNeeded = monthlySIPNeeded(current, corpus, g.targetDate, g.expectedReturnPct || 12)
+      const sipNeeded = monthlySIPNeeded(g, current, corpus)
       const status = goalStatus(fundedPct, monthsLeft)
       return { ...g, corpus, current, gap, fundedPct, monthsLeft, sipNeeded, status }
     }),
@@ -460,13 +438,17 @@ export default function Goals({ activeMember }) {
               </div>
             </div>
 
-            {/* Four stat columns */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+            {/* Stat columns */}
+            <div style={{ display: 'grid', gridTemplateColumns: goal.goalMode === 'portfolio_target' ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
               {[
-                { label: 'Target corpus',      value: formatINR(goal.corpus),  color: 'var(--color-text-primary)' },
-                { label: 'Current value',       value: formatINR(goal.current), color: 'var(--color-accent)' },
-                { label: 'Gap remaining',       value: formatINR(goal.gap),     color: goal.gap > 0 ? 'var(--color-negative)' : 'var(--color-positive)' },
-                { label: 'Monthly SIP needed',  value: goal.sipNeeded > 0 ? formatINR(goal.sipNeeded) : 'Goal reached', color: 'var(--color-text-primary)' },
+                { label: goal.goalMode === 'portfolio_target' ? 'Target amount' : 'Target corpus', value: formatINR(goal.corpus),  color: 'var(--color-text-primary)' },
+                { label: 'Current value',  value: formatINR(goal.current), color: 'var(--color-accent)' },
+                { label: 'Gap remaining',  value: formatINR(goal.gap),     color: goal.gap > 0 ? 'var(--color-negative)' : 'var(--color-positive)' },
+                ...(goal.goalMode !== 'portfolio_target' ? [{
+                  label: 'Monthly SIP needed',
+                  value: goal.sipNeeded == null ? '—' : goal.sipNeeded > 0 ? formatINR(goal.sipNeeded) : 'Goal reached',
+                  color: 'var(--color-text-primary)',
+                }] : []),
               ].map((stat, i) => (
                 <div key={i}>
                   <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: '0 0 4px' }}>{stat.label}</p>
@@ -487,7 +469,7 @@ export default function Goals({ activeMember }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--color-text-secondary)' }}>
               <span>{goal.fundedPct.toFixed(1)}% funded</span>
-              <span>{formatINR(goal.corpus)} goal</span>
+              <span>{goal.goalMode === 'portfolio_target' ? 'Portfolio target' : 'Inflation-adj. target'}: {formatINR(goal.corpus)}</span>
             </div>
 
             {/* Link footer */}

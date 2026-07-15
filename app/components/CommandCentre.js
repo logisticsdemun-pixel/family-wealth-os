@@ -12,6 +12,7 @@ import {
 } from '../lib/wealthMetrics'
 import { formatINR, firstName } from '../lib/format'
 import { Sparkline } from './charts'
+import { linkedCurrentValue, inflatedTarget } from '../lib/goalUtils'
 
 // ── Severity palette ────────────────────────────────────────────────────────
 
@@ -23,13 +24,14 @@ const SEV = {
 }
 
 const GOAL_ICONS = {
-  retirement: 'ti-beach',
-  education:  'ti-school',
-  house:      'ti-home',
-  marriage:   'ti-heart',
-  vehicle:    'ti-car',
-  travel:     'ti-plane',
-  custom:     'ti-target',
+  retirement:       'ti-beach',
+  education:        'ti-school',
+  house:            'ti-home',
+  marriage:         'ti-heart',
+  vehicle:          'ti-car',
+  travel:           'ti-plane',
+  custom:           'ti-target',
+  portfolio_target: 'ti-chart-line',
 }
 
 // ── Small helpers ───────────────────────────────────────────────────────────
@@ -116,7 +118,7 @@ function InsightChip({ insight, onNavigate }) {
     }}>
       <i className={`ti ${s.icon}`} style={{ fontSize: 16, color: s.color, flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 2 }}>
           {insight.title}
         </div>
         <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.45 }}>
@@ -201,12 +203,11 @@ function MemberBar({ member, netWorth, maxNetWorth, total, onClick }) {
 // ── Goal row (Row 3 right) ──────────────────────────────────────────────────
 
 function GoalRow({ goal, onClick }) {
-  const pct     = goal.targetAmount > 0 ? Math.min(100, Math.round((goal.currentAmount || 0) / goal.targetAmount * 100)) : 0
-  const icon    = GOAL_ICONS[goal.type] || 'ti-target'
-  const years   = goal.targetDate
+  const { _current: current, _target: target, _pct: pct } = goal
+  const icon     = GOAL_ICONS[goal.type] || 'ti-target'
+  const years    = goal.targetDate
     ? Math.max(0, Math.round((new Date(goal.targetDate) - Date.now()) / (365.25 * 24 * 60 * 60 * 1000)))
     : null
-
   const barColor = pct >= 80 ? 'var(--color-positive)' : pct >= 40 ? 'var(--color-accent)' : 'var(--color-warning)'
 
   return (
@@ -220,14 +221,14 @@ function GoalRow({ goal, onClick }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-            {formatShort(goal.currentAmount || 0)} / {formatShort(goal.targetAmount)}
+            {formatShort(current)} / {formatShort(target)}
           </span>
           <span style={{
             fontSize: 11, fontWeight: 600,
             color: barColor,
             minWidth: 32, textAlign: 'right',
           }}>
-            {pct}%
+            {Math.round(pct)}%
           </span>
         </div>
       </div>
@@ -319,6 +320,16 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
   // ── Goals ─────────────────────────────────────────────────────────────────
 
   const goals = (data?.goals ?? []).filter(g => !g.completed && (g.targetAmount || 0) > 0)
+
+  const goalsWithValues = useMemo(() => {
+    const goldPrices = data?.goldPrices ?? { 24: 15496, 22: 14205, 18: 9386 }
+    return goals.map(g => {
+      const current = linkedCurrentValue(g, data?.investments || [], data?.gold || [], goldPrices, data?.cashAssets || [])
+      const target  = inflatedTarget(g)
+      const pct     = target > 0 ? Math.min(100, (current / target) * 100) : 0
+      return { ...g, _current: current, _target: target, _pct: pct }
+    })
+  }, [goals, data])
 
   // ── Obligation sub-line ───────────────────────────────────────────────────
 
@@ -416,7 +427,7 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
       {/* Row 3 — Member bars + Goals */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: goals.length > 0 ? '1fr 1fr' : '1fr',
+        gridTemplateColumns: goalsWithValues.length > 0 ? '1fr 1fr' : '1fr',
         gap: 16,
       }}>
         {/* Members */}
@@ -449,10 +460,10 @@ export default function CommandCentre({ activeMember, isReadOnly, onNavigate }) 
         )}
 
         {/* Goals */}
-        {goals.length > 0 && card(
+        {goalsWithValues.length > 0 && card(
           <>
             {sectionLabel('Goals')}
-            {goals.map((g, i) => <GoalRow key={g.id || i} goal={g} onClick={() => onNavigate('goals')} />)}
+            {goalsWithValues.map((g, i) => <GoalRow key={g.id || i} goal={g} onClick={() => onNavigate('goals')} />)}
           </>
         )}
       </div>
