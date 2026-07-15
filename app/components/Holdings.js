@@ -1009,8 +1009,8 @@ function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, ch
     const r = filtered.map(g => {
       const pricePerGram     = goldPrices[g.carat] || 0
       const value            = (g.grams || 0) * pricePerGram
-      const costBasisUnknown = !g.purchasePricePerGram
-      const cost             = costBasisUnknown ? null : (g.grams || 0) * g.purchasePricePerGram
+      const costBasisUnknown = g.buyPricePerGram == null
+      const cost             = costBasisUnknown ? null : (g.grams || 0) * g.buyPricePerGram
       return { ...g, price: pricePerGram, value, cost, costBasisUnknown, todayChange: null }
     })
     if (sort === 'name') r.sort((a, b) => a.name.localeCompare(b.name))
@@ -1371,8 +1371,9 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
 
     const goldAll = (data?.gold ?? []).filter(g => matchesMember(g, activeMember))
     const goldValue  = goldAll.reduce((s, g) => s + (g.grams || 0) * (goldPrices[g.carat] || 0), 0)
-    const goldCost   = goldAll.reduce((s, g) => s + (g.grams || 0) * (g.purchasePricePerGram || 0), 0)
-    const goldGain   = goldCost > 0 ? goldValue - goldCost : null
+    const goldCost      = goldAll.reduce((s, g) => s + (g.grams || 0) * (g.buyPricePerGram || 0), 0)
+    const hasKnownCost  = goldAll.some(g => g.buyPricePerGram != null)
+    const goldGain      = hasKnownCost ? goldValue - goldCost : null
 
     const g24 = goldPrices[24] || 0
     const g22 = goldPrices[22] || 0
