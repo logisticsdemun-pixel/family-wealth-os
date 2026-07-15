@@ -1203,7 +1203,12 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
         setGoldPriceError(json.error || 'Unable to fetch gold price. Enter manually.')
         return
       }
-      storeSetRef.current(KEYS.GOLD_PRICES, json.prices)
+      const normalizedPrices = {
+        24: json.prices[24] ?? json.prices['24'],
+        22: json.prices[22] ?? json.prices['22'],
+        18: json.prices[18] ?? json.prices['18'],
+      }
+      storeSetRef.current(KEYS.GOLD_PRICES, normalizedPrices)
       save(KEYS.GOLD_PRICE_UPDATED, new Date().toISOString())
       setGoldPriceMeta(json.meta || null)
     } catch (err) {
