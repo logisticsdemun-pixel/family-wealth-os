@@ -1,9 +1,10 @@
 'use client'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { load, KEYS } from './lib/storage'
 import { formatINR, computeOutstanding, firstName } from './lib/format'
 import { SEED_INVESTMENTS, SEED_GOLD, DEFAULT_GOLD_PRICES, SEED_LOANS, SEED_FIXED_INCOME, SEED_CASH_ASSETS } from './lib/seedData'
-import { STATIC_MARKET_KNOWLEDGE } from './lib/marketContext'
+import { STATIC_MARKET_KNOWLEDGE, READING_LIST } from './lib/marketContext'
+import { THRESHOLDS as T, INSIGHT_BODIES as IB } from './lib/wealthKnowledge'
 import PageScaffold from './components/PageScaffold'
 
 const DEFAULT_MONTHLY_EXPENSES = 180000
@@ -18,7 +19,7 @@ function daysUntil(dateStr) {
 }
 
 // ── Insight card ───────────────────────────────────────────
-function InsightCard({ severity, title, body, extra, onDismiss }) {
+function InsightCard({ severity, title, body, extra, source, onDismiss }) {
   const colors = {
     alert:   { border: 'var(--color-negative)', bg: 'var(--color-negative-bg)', dot: 'var(--color-negative)', badge: 'var(--color-negative-bg)', badgeText: 'var(--color-negative)' },
     warning: { border: 'var(--color-warning)',  bg: 'var(--color-warning-bg)',  dot: 'var(--color-warning)',  badge: 'var(--color-warning-bg)',  badgeText: 'var(--color-warning)' },
@@ -43,6 +44,14 @@ function InsightCard({ severity, title, body, extra, onDismiss }) {
           </div>
           <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{body}</p>
           {extra && <div style={{ marginTop: 10 }}>{extra}</div>}
+          {source && (
+            <div style={{
+              marginTop: 8, fontSize: 10, color: 'var(--text-muted)',
+              fontStyle: 'italic', borderTop: '1px solid var(--border)', paddingTop: 6,
+            }}>
+              Framework: {source}
+            </div>
+          )}
         </div>
         {onDismiss && (
           <button
@@ -129,17 +138,17 @@ function generateInsights({ investments, gold, goldPrices, loans, fixedIncome, c
 
   // ─── 3. Asset allocation ───────────────────────────────
   const investmentVal = totalEquityValue
-  const shortTermVal = investments.filter(i => i.type === 'Short Term Fund').reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
-  const goldInvVal = gold.filter(g => g.category === 'Investment').reduce((s, g) => s + g.grams * (goldPrices[g.carat] || 0), 0)
-  const fdVal = fixedIncome.reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
-  const cashVal = cashAssets.reduce((s, a) => s + (a.value || 0), 0)
+  const shortTermVal  = investments.filter(i => i.type === 'Short Term Fund').reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
+  const goldInvVal    = gold.filter(g => g.category === 'Investment').reduce((s, g) => s + g.grams * (goldPrices[g.carat] || 0), 0)
+  const fdVal         = fixedIncome.reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
+  const cashVal       = cashAssets.reduce((s, a) => s + (a.value || 0), 0)
   const totalPortfolio = investmentVal + shortTermVal + goldInvVal + fdVal + cashVal
 
   if (totalPortfolio > 0) {
-    const equityPct = ((investmentVal) / totalPortfolio) * 100
-    const debtPct = ((fdVal + shortTermVal + cashVal) / totalPortfolio) * 100
-    const goldPct = (goldInvVal / totalPortfolio) * 100
-    const suggestedEquity = 60 // simplified benchmark
+    const equityPct      = (investmentVal / totalPortfolio) * 100
+    const debtPct        = ((fdVal + shortTermVal + cashVal) / totalPortfolio) * 100
+    const goldPct        = (goldInvVal / totalPortfolio) * 100
+    const suggestedEquity = 60
 
     if (equityPct > suggestedEquity + 15) {
       insights.push({
@@ -176,7 +185,7 @@ function generateInsights({ investments, gold, goldPrices, loans, fixedIncome, c
 
   // ─── 4. Emergency fund ────────────────────────────────
   const emergencyTarget = MONTHLY_EXPENSES * EMERGENCY_MONTHS
-  const liquidFunds = cashVal + fdVal + shortTermVal
+  const liquidFunds     = cashVal + fdVal + shortTermVal
   if (liquidFunds < emergencyTarget) {
     const shortfall = emergencyTarget - liquidFunds
     insights.push({
@@ -199,11 +208,10 @@ function generateInsights({ investments, gold, goldPrices, loans, fixedIncome, c
   if (homeLoan) {
     const outstanding = computeOutstanding(homeLoan)
     if (outstanding && outstanding > 0) {
-      const prepayAmount = 500000 // ₹5 lakhs
+      const prepayAmount = 500000
       const r = homeLoan.rate / 100 / 12
       const compound = Math.pow(1 + r, homeLoan.months || 240)
       const originalEMI = homeLoan.emi || (homeLoan.principal * r * compound / (compound - 1))
-      // Months saved with prepayment
       const newOutstanding = outstanding - prepayAmount
       const monthsAfterPrepay = newOutstanding > 0
         ? Math.ceil(Math.log(originalEMI / (originalEMI - newOutstanding * r)) / Math.log(1 + r))
@@ -237,7 +245,6 @@ function generateInsights({ investments, gold, goldPrices, loans, fixedIncome, c
     })
   }
 
-  // No life insurance?
   const hasLifeCover = (insurance || []).some(p => p.type === 'Term Life' || p.type === 'Endowment' || p.type === 'ULIP')
   if (!hasLifeCover) {
     insights.push({
@@ -258,94 +265,229 @@ function generateInsights({ investments, gold, goldPrices, loans, fixedIncome, c
     })
   }
 
-  return insights
-}
+  // ══════════════════════════════════════════════════════
+  // BOOK FRAMEWORK RULES — 12 additive rules
+  // Adapted to this app's actual data schema.
+  // Fields used: i.type, i.name, i.units, i.currentPrice, i.buyPrice, i.investmentMode, i.sip
+  // No assetClass, instrumentType, or expenseRatio in schema → rules that need them won't fire.
+  // ══════════════════════════════════════════════════════
 
-// ── Compute a structured snapshot for the advisor LLM ─────
-function computeMetricsForAdvisor(data, monthlyExpenses) {
-  if (!data) return {}
-  const {
-    investments = [], gold = [], goldPrices = {}, loans = [],
-    fixedIncome = [], cashAssets = [], insurance = [],
-  } = data
+  // Pre-computed values shared across framework rules
+  const totalGoldVal    = gold.reduce((s, g) => s + (g.grams || 0) * (goldPrices[g.carat] || goldPrices[String(g.carat)] || 0), 0)
+  const totalAllAssets  = investmentVal + shortTermVal + totalGoldVal + fdVal + cashVal
+  const liabilityTotal  = loans.reduce((s, l) => s + (computeOutstanding(l) || 0), 0)
+  const liquidityMonths = MONTHLY_EXPENSES > 0 ? liquidFunds / MONTHLY_EXPENSES : Infinity
 
-  const equityVal    = investments.filter(i => i.type !== 'Short Term Fund').reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
-  const shortTermVal = investments.filter(i => i.type === 'Short Term Fund').reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
-  const goldVal      = gold.reduce((s, g) => s + (g.grams || 0) * (goldPrices[g.carat] || goldPrices[String(g.carat)] || 0), 0)
-  const fdVal        = fixedIncome.reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
-  const cashVal      = cashAssets.reduce((s, a) => s + (a.value || 0), 0)
-  const totalAssets  = equityVal + shortTermVal + goldVal + fdVal + cashVal
+  // Index funds identified by name (no instrumentType field in this schema)
+  const indexFundValue = investments
+    .filter(i => i.type !== 'Short Term Fund' && (
+      (i.name || '').toLowerCase().includes('index') ||
+      (i.name || '').toLowerCase().includes('nifty') ||
+      (i.name || '').toLowerCase().includes('sensex') ||
+      (i.name || '').toLowerCase().includes('bse 500')
+    ))
+    .reduce((s, i) => s + (i.units || 0) * (i.currentPrice ?? i.buyPrice ?? 0), 0)
 
-  const loanDetails = loans.map(l => ({
-    name:        l.name || l.type,
-    type:        l.type,
-    rate:        l.rate,
-    emi:         l.emi,
-    outstanding: Math.round(computeOutstanding(l) || 0),
-  }))
-  const totalLiabilities = loanDetails.reduce((s, l) => s + l.outstanding, 0)
-  const totalEMI         = loanDetails.reduce((s, l) => s + (l.emi || 0), 0)
-  const liquidFunds      = cashVal + fdVal + shortTermVal
-  const emergencyMonths  = monthlyExpenses > 0 ? parseFloat((liquidFunds / monthlyExpenses).toFixed(1)) : null
+  const indexPctOfEquity = totalEquityValue > 0 ? (indexFundValue / totalEquityValue) * 100 : 0
+  const equityPctOfAll   = totalAllAssets > 0 ? (totalEquityValue / totalAllAssets) * 100 : 0
+  const goldPctOfAll     = totalAllAssets > 0 ? (totalGoldVal / totalAllAssets) * 100 : 0
 
-  const p = (v) => totalAssets > 0 ? parseFloat((v / totalAssets * 100).toFixed(1)) : 0
+  // Income not stored in Advisor page — income-based rules (3, 11) won't fire
+  const monthlyIncome = 0
 
-  const allHoldings = investments.map(i => ({
-    name:    i.name,
-    member:  i.member,
-    type:    i.type,
-    value:   Math.round(i.units * (i.currentPrice ?? i.buyPrice)),
-    gainPct: i.currentPrice != null && i.buyPrice > 0
-               ? parseFloat(((i.currentPrice - i.buyPrice) / i.buyPrice * 100).toFixed(1))
-               : null,
-  })).sort((a, b) => b.value - a.value)
+  // Monthly SIP normalised to monthly frequency
+  const monthlySIP = investments
+    .filter(i => i.investmentMode === 'sip' && i.sip?.status === 'Active')
+    .reduce((s, i) => {
+      const amount = i.sip?.monthlyAmount || i.sip?.amount || 0
+      const freq   = (i.sip?.frequency || 'monthly').toLowerCase()
+      if (freq === 'weekly')      return s + amount * 4
+      if (freq === 'fortnightly') return s + amount * 2
+      if (freq === 'quarterly')   return s + amount / 3
+      if (freq === 'daily')       return s + amount * 30
+      return s + amount
+    }, 0)
 
-  return {
-    totalAssets:     Math.round(totalAssets),
-    totalLiabilities,
-    netWorth:        Math.round(totalAssets - totalLiabilities),
-    allocation: {
-      equity:         { value: Math.round(equityVal),    pct: p(equityVal) },
-      shortTermFunds: { value: Math.round(shortTermVal), pct: p(shortTermVal) },
-      gold:           { value: Math.round(goldVal),      pct: p(goldVal) },
-      fixedDeposits:  { value: Math.round(fdVal),        pct: p(fdVal) },
-      cash:           { value: Math.round(cashVal),      pct: p(cashVal) },
-    },
-    goldPrice24kPerGram: goldPrices[24] || goldPrices['24'] || null,
-    emergencyFund: {
-      liquidTotal:    Math.round(liquidFunds),
-      months:         emergencyMonths,
-      monthlyExpenses,
-      targetMonths:   6,
-      adequate:       emergencyMonths != null && emergencyMonths >= 6,
-    },
-    loans:     loanDetails,
-    totalEMI:  Math.round(totalEMI),
-    topHoldings: allHoldings.slice(0, 8),
-    insurance: insurance.map(pol => ({
-      name:        pol.name,
-      type:        pol.type,
-      member:      pol.member,
-      coverAmount: pol.coverAmount,
-      premium:     pol.premium,
-      renewalDate: pol.renewalDate,
-    })),
-    goldHoldings: gold.map(g => ({
-      name:   g.name,
-      grams:  g.grams,
-      carat:  g.carat,
-      member: g.member,
-      value:  Math.round((g.grams || 0) * (goldPrices[g.carat] || 0)),
-    })),
-    fixedDeposits: fixedIncome.map(f => ({
-      name:          f.name,
-      principal:     f.principal,
-      maturityValue: f.maturityValue,
-      rate:          f.rate,
-      maturityDate:  f.maturityDate,
-      member:        f.member,
-    })),
+  // ── RULE 1 — Halan: Emergency fund critical (<3 months) ──────────────
+  if (isFinite(liquidityMonths) && liquidityMonths < T.halan.emergencyFundMonthsAmber) {
+    const shortfall = formatINR(
+      (T.halan.emergencyFundMonthsAmber - liquidityMonths) * MONTHLY_EXPENSES
+    )
+    insights.push({
+      section: 'Financial Safety',
+      severity: 'alert',
+      title: 'Emergency fund critically low — invest nothing until fixed',
+      body: IB.emergencyFundCritical(liquidityMonths, shortfall),
+      source: "Monika Halan — Let's Talk Money",
+    })
   }
+
+  // ── RULE 2 — Halan: Emergency fund amber (3–6 months) ────────────────
+  else if (isFinite(liquidityMonths) && liquidityMonths < T.halan.emergencyFundMonthsMinimum) {
+    const shortfall = formatINR(
+      (T.halan.emergencyFundMonthsMinimum - liquidityMonths) * MONTHLY_EXPENSES
+    )
+    insights.push({
+      section: 'Financial Safety',
+      severity: 'warning',
+      title: `Emergency fund at ${liquidityMonths.toFixed(1)} months — top up before investing more`,
+      body: IB.emergencyFundAmber(liquidityMonths, shortfall),
+      source: "Monika Halan — Let's Talk Money",
+    })
+  }
+
+  // ── RULE 3 — Halan: SIP below 20% of income ──────────────────────────
+  // monthlyIncome = 0 (not stored in Advisor data), so this never fires.
+  if (monthlyIncome > 0 && monthlySIP > 0) {
+    const sipPct = (monthlySIP / monthlyIncome) * 100
+    if (sipPct < T.halan.sipMinimumPctOfIncome) {
+      const gapAmount = formatINR(
+        (T.halan.sipMinimumPctOfIncome / 100 * monthlyIncome) - monthlySIP
+      )
+      insights.push({
+        section: 'Financial Safety',
+        severity: 'info',
+        title: `SIP at ${sipPct.toFixed(1)}% of income — growth box underfunded`,
+        body: IB.sipBelowTarget(sipPct, T.halan.sipMinimumPctOfIncome, gapAmount),
+        source: "Monika Halan — Let's Talk Money",
+      })
+    }
+  }
+
+  // ── RULE 4 — Graham: Equity below defensive floor (25%) ──────────────
+  if (totalAllAssets > 500000 && equityPctOfAll < T.graham.defensiveMinEquityPct) {
+    insights.push({
+      section: 'Asset Allocation',
+      severity: 'info',
+      title: `Equity at ${equityPctOfAll.toFixed(1)}% — below Graham's 25% defensive floor`,
+      body: IB.equityTooLow(equityPctOfAll),
+      source: 'Benjamin Graham — The Intelligent Investor',
+    })
+  }
+
+  // ── RULE 5 — Graham: Equity above defensive ceiling (75%) ────────────
+  if (totalAllAssets > 500000 && equityPctOfAll > T.graham.defensiveMaxEquityPct) {
+    insights.push({
+      section: 'Asset Allocation',
+      severity: 'warning',
+      title: `Equity at ${equityPctOfAll.toFixed(1)}% — above Graham's 75% ceiling`,
+      body: IB.equityTooHigh(equityPctOfAll),
+      source: 'Benjamin Graham — The Intelligent Investor',
+    })
+  }
+
+  // ── RULE 6 — Housel: Liability-to-asset ratio (>40%) ─────────────────
+  if (totalAllAssets > 0) {
+    const liabilityRatio = liabilityTotal / totalAllAssets
+    if (liabilityRatio > T.housel.maxLiabilityToAssetRatio) {
+      insights.push({
+        section: 'Financial Safety',
+        severity: 'warning',
+        title: `Liabilities at ${(liabilityRatio * 100).toFixed(1)}% of assets — tail risk elevated`,
+        body: IB.highLiabilityRatio(liabilityRatio),
+        source: 'Morgan Housel — The Psychology of Money',
+      })
+    }
+  }
+
+  // ── RULE 7 — Bogle: Low index fund allocation (<60% of equity) ───────
+  if (totalEquityValue > 200000 && indexPctOfEquity < T.bogle.indexFundCoreAllocationPct) {
+    insights.push({
+      section: 'Portfolio Efficiency',
+      severity: 'info',
+      title: `Only ${indexPctOfEquity.toFixed(1)}% of equity in index funds`,
+      body: IB.lowIndexAllocation(indexPctOfEquity),
+      source: 'John C. Bogle — The Little Book of Common Sense Investing',
+    })
+  }
+
+  // ── RULE 8 — Bogle: High expense ratio funds (>1%) ───────────────────
+  // expenseRatio field not in this app's investment schema — won't fire.
+  const highErFunds = investments.filter(i => (i.expenseRatio || 0) > T.bogle.maxExpenseRatio)
+  highErFunds.slice(0, 2).forEach(fund => {
+    insights.push({
+      section: 'Portfolio Efficiency',
+      severity: 'info',
+      title: `${fund.name} — expense ratio above 1%`,
+      body: IB.highExpenseRatio(fund.name, fund.expenseRatio),
+      source: 'John C. Bogle — The Little Book of Common Sense Investing',
+    })
+  })
+
+  // ── RULE 9 — India benchmark: Gold under-hedged (<5%) ─────────────────
+  if (totalAllAssets > 0 && goldPctOfAll < T.india.goldMinPctOfAssets) {
+    insights.push({
+      section: 'Asset Allocation',
+      severity: 'info',
+      title: `Gold at ${goldPctOfAll.toFixed(1)}% — below 5% hedge minimum`,
+      body: IB.goldUnderHedged(goldPctOfAll),
+      source: 'Indian portfolio management benchmark',
+    })
+  }
+
+  // ── RULE 10 — Halan: Goal horizon mismatch ────────────────────────────
+  // Goals not loaded in Advisor page data — this rule fires via Command Centre.
+  ;([]).forEach(goal => {
+    if (!goal.targetDate) return
+    const yearsLeft = (new Date(goal.targetDate) - new Date()) / (365.25 * 24 * 60 * 60 * 1000)
+    if (yearsLeft < 0) return
+    let recommended
+    if (yearsLeft < 1)      recommended = T.halan.goalInstruments.under1Year
+    else if (yearsLeft < 3) recommended = T.halan.goalInstruments.oneToThreeYears
+    else if (yearsLeft < 7) recommended = T.halan.goalInstruments.threeToSevenYears
+    else                    recommended = T.halan.goalInstruments.sevenPlus
+    const hasLinkedEquity = (goal.linkedInvestmentIds || []).some(id => {
+      const holding = investments.find(h => h.id === id)
+      return holding && holding.type === 'Stock'
+    })
+    if (yearsLeft < 3 && hasLinkedEquity) {
+      insights.push({
+        section: 'Goals',
+        severity: 'warning',
+        title: `"${goal.name}" — equity linked to a ${yearsLeft.toFixed(1)}-year goal`,
+        body: IB.goalHorizonMismatch(goal.name, yearsLeft, 'equity', recommended),
+        source: "Monika Halan — Let's Talk Money",
+      })
+    }
+  })
+
+  // ── RULE 11 — Halan: Term insurance per earning member ────────────────
+  // memberIncomes not stored in Advisor data — earningMembers = [], won't fire.
+  const earningMembers = []
+  earningMembers.forEach(memberName => {
+    const hasTerm = (insurance || []).some(ins =>
+      (ins.member === memberName) &&
+      (ins.type === 'Term Life' || (ins.type || '').toLowerCase().includes('term'))
+    )
+    if (!hasTerm) {
+      insights.push({
+        section: 'Insurance',
+        severity: 'warning',
+        title: `${memberName} — no term life insurance on record`,
+        body: IB.noTermInsurance(memberName),
+        source: "Monika Halan — Let's Talk Money",
+      })
+    }
+  })
+
+  // ── RULE 12 — Lynch: Single stock concentration (>20% of equity) ─────
+  if (totalEquityValue > 0) {
+    allStocks.forEach(stock => {
+      const stockValue  = (stock.units || 0) * (stock.currentPrice ?? stock.buyPrice ?? 0)
+      const pctOfEquity = (stockValue / totalEquityValue) * 100
+      if (pctOfEquity > T.lynch.maxSingleStockPctOfEquity) {
+        insights.push({
+          section: 'Portfolio Risk',
+          severity: 'warning',
+          title: `${stock.name} is ${pctOfEquity.toFixed(1)}% of equity — concentration risk`,
+          body: IB.singleStockConcentration(stock.name, pctOfEquity),
+          source: 'Peter Lynch — One Up On Wall Street',
+        })
+      }
+    })
+  }
+
+  return insights
 }
 
 // ── Market Pulse panel ─────────────────────────────────────
@@ -354,10 +496,10 @@ function MarketPulse({ goldPrice24k }) {
   const mk = STATIC_MARKET_KNOWLEDGE
 
   const metricCards = [
-    { label: 'Repo Rate',  value: `${mk.macroIndia.repoRate}%`,                                      sub: `CPI ${mk.macroIndia.cpi}%` },
-    { label: 'Nifty 50',  value: `~${mk.equity.nifty50Level.toLocaleString('en-IN')}`,               sub: `PE ${mk.equity.niftyPE}×` },
-    { label: '10Y G-Sec', value: `${mk.macroIndia.tenYearGSec}%`,                                    sub: 'yield' },
-    { label: 'Gold 24K',  value: goldPrice24k ? `₹${Math.round(goldPrice24k / 1000)}K/g` : '—',     sub: 'live price' },
+    { label: 'Repo Rate',  value: `${mk.macroIndia.repoRate}%`,                                  sub: `CPI ${mk.macroIndia.cpi}%` },
+    { label: 'Nifty 50',  value: `~${mk.equity.nifty50Level.toLocaleString('en-IN')}`,           sub: `PE ${mk.equity.niftyPE}×` },
+    { label: '10Y G-Sec', value: `${mk.macroIndia.tenYearGSec}%`,                                sub: 'yield' },
+    { label: 'Gold 24K',  value: goldPrice24k ? `₹${Math.round(goldPrice24k / 1000)}K/g` : '—', sub: 'live price' },
   ]
 
   const pillColors = {
@@ -367,7 +509,7 @@ function MarketPulse({ goldPrice24k }) {
   }
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, marginBottom: 20, overflow: 'hidden' }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, marginBottom: 16, overflow: 'hidden' }}>
       <button
         onClick={() => setOpen(o => !o)}
         style={{
@@ -426,143 +568,49 @@ function MarketPulse({ goldPrice24k }) {
   )
 }
 
-// ── Artha Chat ─────────────────────────────────────────────
-function ArthaChat({ data, monthlyExpenses }) {
-  const [messages, setMessages] = useState([])
-  const [input, setInput]       = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState(null)
-  const bottomRef = useRef(null)
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    const text = input.trim()
-    if (!text || loading) return
-
-    const userMsg = { role: 'user', content: text }
-    setMessages(prev => [...prev, userMsg])
-    setInput('')
-    setLoading(true)
-    setError(null)
-
-    try {
-      const familySnapshot = computeMetricsForAdvisor(data, monthlyExpenses)
-      const res = await fetch('/api/advisor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history: messages, familySnapshot }),
-      })
-      const json = await res.json()
-      if (!res.ok || json.error) {
-        setError(json.error || 'Something went wrong. Please try again.')
-      } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: json.reply }])
-      }
-    } catch {
-      setError('Network error. Please check your connection and try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
+// ── Reading list panel ─────────────────────────────────────
+function ReadingListPanel() {
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 12, marginTop: 28, overflow: 'hidden' }}>
-      {/* Header */}
+    <div style={{ marginBottom: 20 }}>
       <div style={{
-        padding: '12px 18px', borderBottom: '1px solid var(--border)',
-        backgroundColor: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 8,
+        fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase',
+        letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 10,
       }}>
-        <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
-          Ask Artha
-        </span>
-        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>AI advisor · powered by your live data</span>
+        Frameworks behind these insights
       </div>
-
-      {/* Message history */}
-      {messages.length > 0 && (
-        <div style={{
-          maxHeight: 420, overflowY: 'auto', padding: '16px 18px',
-          display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: 'var(--bg)',
-        }}>
-          {messages.map((msg, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-              <div style={{
-                maxWidth: '80%', padding: '10px 14px',
-                borderRadius: msg.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
-                backgroundColor: msg.role === 'user' ? 'var(--accent)' : 'var(--surface)',
-                border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
-                color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
-                fontSize: '0.865rem', lineHeight: 1.55, whiteSpace: 'pre-wrap',
-              }}>
-                {msg.content}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {READING_LIST.map(book => (
+          <div key={book.title} style={{
+            padding: '10px 12px', backgroundColor: 'var(--surface)',
+            borderRadius: 8, border: '1px solid var(--border)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+              <div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {book.title}
+                  <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6 }}>
+                    — {book.author}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.5 }}>
+                  {book.why}
+                </div>
               </div>
+              <a
+                href={book.buy}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: '0.72rem', color: 'var(--accent)',
+                  textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0,
+                }}
+              >
+                Find →
+              </a>
             </div>
-          ))}
-          {loading && (
-            <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-              <div style={{
-                padding: '10px 14px', borderRadius: '12px 12px 12px 4px',
-                backgroundColor: 'var(--surface)', border: '1px solid var(--border)',
-                color: 'var(--text-muted)', fontSize: '0.865rem',
-              }}>
-                Artha is thinking…
-              </div>
-            </div>
-          )}
-          {error && (
-            <div style={{
-              padding: '10px 14px', borderRadius: 8,
-              backgroundColor: 'var(--color-negative-bg)', border: '1px solid var(--color-negative)',
-              color: 'var(--color-negative)', fontSize: '0.8rem',
-            }}>
-              {error}
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-      )}
-
-      {/* Input */}
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          display: 'flex', gap: 8, padding: '12px 14px',
-          borderTop: messages.length > 0 ? '1px solid var(--border)' : 'none',
-          backgroundColor: 'var(--surface)',
-        }}
-      >
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          placeholder={messages.length === 0
-            ? 'Ask about your portfolio, allocation, loans, gold…'
-            : 'Follow-up question…'}
-          disabled={loading}
-          style={{
-            flex: 1, padding: '9px 13px', borderRadius: 8,
-            border: '1px solid var(--border)', backgroundColor: 'var(--bg)',
-            color: 'var(--text-primary)', fontSize: '0.875rem', outline: 'none',
-          }}
-        />
-        <button
-          type="submit"
-          disabled={loading || !input.trim()}
-          style={{
-            padding: '9px 16px', borderRadius: 8, border: 'none',
-            backgroundColor: 'var(--accent)', color: '#fff',
-            fontSize: '0.875rem', fontWeight: 600,
-            cursor: loading || !input.trim() ? 'not-allowed' : 'pointer',
-            opacity: loading || !input.trim() ? 0.5 : 1,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Ask
-        </button>
-      </form>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -584,12 +632,12 @@ export default function Artha() {
     if (saved) setMonthlyExpenses(parseFloat(saved) || DEFAULT_MONTHLY_EXPENSES)
     setData({
       investments: load(KEYS.INVESTMENTS, SEED_INVESTMENTS),
-      gold: load(KEYS.GOLD, SEED_GOLD),
-      goldPrices: load(KEYS.GOLD_PRICES, DEFAULT_GOLD_PRICES),
-      loans: load(KEYS.LOANS, SEED_LOANS),
+      gold:        load(KEYS.GOLD,        SEED_GOLD),
+      goldPrices:  load(KEYS.GOLD_PRICES, DEFAULT_GOLD_PRICES),
+      loans:       load(KEYS.LOANS,       SEED_LOANS),
       fixedIncome: load(KEYS.FIXED_INCOME, SEED_FIXED_INCOME),
-      cashAssets: load(KEYS.CASH_ASSETS, SEED_CASH_ASSETS),
-      insurance: load(KEYS.INSURANCE, []),
+      cashAssets:  load(KEYS.CASH_ASSETS,  SEED_CASH_ASSETS),
+      insurance:   load(KEYS.INSURANCE,    []),
     })
   }, [])
 
@@ -602,20 +650,19 @@ export default function Artha() {
 
   const insights = useMemo(() => data ? generateInsights({ ...data, monthlyExpenses }) : [], [data, monthlyExpenses])
   const visibleInsights = insights.filter(i => !dismissedTitles.has(i.title))
-
   const sections = [...new Set(visibleInsights.map(i => i.section))]
 
   const severity_order = { alert: 0, warning: 1, info: 2, good: 3 }
   const counts = {
-    alert: insights.filter(i => i.severity === 'alert').length,
+    alert:   insights.filter(i => i.severity === 'alert').length,
     warning: insights.filter(i => i.severity === 'warning').length,
-    good: insights.filter(i => i.severity === 'good').length,
+    good:    insights.filter(i => i.severity === 'good').length,
   }
 
   const emergencyMonths = useMemo(() => {
     if (!data || monthlyExpenses <= 0) return null
-    const cashVal = (data.cashAssets || []).reduce((s, a) => s + (a.value || 0), 0)
-    const fdVal = (data.fixedIncome || []).reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
+    const cashVal    = (data.cashAssets  || []).reduce((s, a) => s + (a.value || 0), 0)
+    const fdVal      = (data.fixedIncome || []).reduce((s, f) => s + (f.maturityValue || f.principal || 0), 0)
     const shortTermVal = (data.investments || [])
       .filter(i => i.type === 'Short Term Fund')
       .reduce((s, i) => s + i.units * (i.currentPrice ?? i.buyPrice), 0)
@@ -660,9 +707,9 @@ export default function Artha() {
           display: 'flex', gap: 0, flexWrap: 'wrap',
         }}>
           {[
-            { label: 'Action Needed', value: counts.alert, color: 'var(--color-negative)' },
-            { label: 'Watch Out', value: counts.warning, color: 'var(--color-warning)' },
-            { label: 'On Track', value: counts.good, color: 'var(--color-positive)' },
+            { label: 'Action Needed', value: counts.alert,   color: 'var(--color-negative)' },
+            { label: 'Watch Out',     value: counts.warning, color: 'var(--color-warning)' },
+            { label: 'On Track',      value: counts.good,    color: 'var(--color-positive)' },
           ].map((s, i) => (
             <div key={s.label} style={{ textAlign: 'center', flex: 1, minWidth: 80, borderRight: i < 2 ? '1px solid var(--border)' : undefined, padding: '4px 16px' }}>
               <p style={{ margin: 0, fontSize: '1.8rem', fontWeight: 700, color: s.color, lineHeight: 1 }}>{s.value}</p>
@@ -682,6 +729,9 @@ export default function Artha() {
 
       {/* ── Market Pulse ──────────────────────────────────── */}
       <MarketPulse goldPrice24k={goldPrice24k} />
+
+      {/* ── Reading List ──────────────────────────────────── */}
+      <ReadingListPanel />
 
       {/* ── Insights ──────────────────────────────────────── */}
       {!data ? (
@@ -704,6 +754,7 @@ export default function Artha() {
                   title={insight.title}
                   body={insight.body}
                   extra={insight.extra}
+                  source={insight.source}
                   onDismiss={() => dismissInsight(insight.title)}
                 />
               ))
@@ -712,12 +763,28 @@ export default function Artha() {
         ))
       )}
 
-      {/* ── AI Chat ───────────────────────────────────────── */}
-      {data && <ArthaChat data={data} monthlyExpenses={monthlyExpenses} />}
+      {/* ── About these insights ──────────────────────────── */}
+      <div style={{
+        marginTop: 24, padding: '14px 16px',
+        backgroundColor: 'var(--surface)', borderRadius: 8,
+        border: '1px solid var(--border)',
+      }}>
+        <div style={{
+          fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.08em',
+          textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6,
+        }}>
+          About these insights
+        </div>
+        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+          Insights are generated automatically from your live financial data using frameworks from
+          Monika Halan, Benjamin Graham, Morgan Housel, and current Indian market conditions.
+          They refresh every time you open this page.
+        </div>
+      </div>
 
       {/* ── Disclaimer ────────────────────────────────────── */}
       <div style={{
-        marginTop: 32, padding: '14px 18px',
+        marginTop: 16, padding: '14px 18px',
         backgroundColor: 'var(--surface-2)', borderRadius: 10,
         fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6,
       }}>

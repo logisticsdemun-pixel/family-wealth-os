@@ -38,6 +38,45 @@ export const STATIC_MARKET_KNOWLEDGE = {
   },
 }
 
+export const READING_LIST = [
+  {
+    title: "Let's Talk Money",
+    author: 'Monika Halan',
+    why: "Best single book for Indian household finance. Covers the Three Boxes framework used in this app's insights.",
+    buy: 'https://www.amazon.in/s?k=lets+talk+money+monika+halan',
+  },
+  {
+    title: "Let's Talk Mutual Funds",
+    author: 'Monika Halan',
+    why: 'Goal-based SIP investing in the Indian context. Directly informs the SIP and goal-horizon rules here.',
+    buy: 'https://www.amazon.in/s?k=lets+talk+mutual+funds+monika+halan',
+  },
+  {
+    title: 'The Psychology of Money',
+    author: 'Morgan Housel',
+    why: 'Why behaviour matters more than knowledge in wealth-building. Informs the liability and holding-period rules here.',
+    buy: 'https://www.amazon.in/s?k=psychology+of+money+morgan+housel',
+  },
+  {
+    title: 'The Intelligent Investor',
+    author: 'Benjamin Graham',
+    why: "The equity allocation and rebalancing rules in this app come directly from Graham's defensive investor framework.",
+    buy: 'https://www.amazon.in/s?k=intelligent+investor+benjamin+graham',
+  },
+  {
+    title: 'The Little Book of Common Sense Investing',
+    author: 'John C. Bogle',
+    why: 'The index fund allocation and expense ratio rules come from Bogle\'s evidence on active vs passive investing.',
+    buy: 'https://www.amazon.in/s?k=little+book+common+sense+investing+bogle',
+  },
+  {
+    title: 'One Up On Wall Street',
+    author: 'Peter Lynch',
+    why: "The single-stock concentration rule comes from Lynch's framework on position sizing in equity portfolios.",
+    buy: 'https://www.amazon.in/s?k=one+up+on+wall+street+peter+lynch',
+  },
+]
+
 export function buildMarketContextSummary() {
   const m = STATIC_MARKET_KNOWLEDGE
   const eq = m.equity
