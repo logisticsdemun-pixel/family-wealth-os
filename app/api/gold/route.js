@@ -1,5 +1,14 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { upsertItem } from '../../lib/supabaseStore'
+import { createClient } from '@supabase/supabase-js'
+
+const FAMILY_ID = 'saxena-family'
+
+function getServiceSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
+}
 
 export async function PATCH(request) {
   const { userId } = await auth()
@@ -12,7 +21,36 @@ export async function PATCH(request) {
   }
 
   const { item } = await request.json()
-  const ok = await upsertItem('gold', item)
-  if (!ok) return Response.json({ error: 'Failed to update' }, { status: 500 })
+  const supabase = getServiceSupabase()
+
+  // Read current gold array
+  const { data: row, error: readError } = await supabase
+    .from('family_data')
+    .select('data')
+    .eq('family_id', FAMILY_ID)
+    .eq('collection', 'gold')
+    .single()
+
+  if (readError && readError.code !== 'PGRST116') {
+    return Response.json({ error: `Read failed: ${readError.message}` }, { status: 500 })
+  }
+
+  const arr = Array.isArray(row?.data) ? row.data : []
+  const idx = arr.findIndex(g => String(g.id) === String(item.id))
+  const updated = idx >= 0
+    ? arr.map((g, n) => n === idx ? item : g)
+    : [...arr, item]
+
+  const { error: writeError } = await supabase
+    .from('family_data')
+    .upsert(
+      { family_id: FAMILY_ID, collection: 'gold', data: updated },
+      { onConflict: 'family_id,collection' }
+    )
+
+  if (writeError) {
+    return Response.json({ error: `Write failed: ${writeError.message}` }, { status: 500 })
+  }
+
   return Response.json({ success: true, item })
 }

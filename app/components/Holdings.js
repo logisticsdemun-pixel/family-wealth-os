@@ -1089,8 +1089,9 @@ function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, ch
       onUpdateGold(item)
       setEditingId(null)
       setEditDraft(null)
-    } catch {
-      setSaveError('Network error — check your connection')
+    } catch (e) {
+      console.error('[gold save]', e)
+      setSaveError(`Network error — ${e?.message || 'check your connection'}`)
     } finally {
       setSaving(false)
     }
