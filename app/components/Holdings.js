@@ -7,6 +7,7 @@ import { formatShort } from '../lib/metrics'
 import { formatINR, formatINRDecimal, firstName } from '../lib/format'
 import { getMembers } from '../lib/members'
 import { load, save, KEYS } from '../lib/storage'
+import { useUser } from '@clerk/nextjs'
 import UpdateHoldingsModal from './UpdateHoldings'
 
 // ── Constants ─────────────────────────────────────────────────────────────
@@ -1002,8 +1003,14 @@ function PortfolioDonut({ data, onSegmentClick }) {
 
 // ── Gold section ──────────────────────────────────────────────────────────
 
-function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, changeBasis, goldFreshToday }) {
-  const [open, setOpen] = useState(true)
+const GOLD_CARATS = [24, 22, 18]
+
+function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, changeBasis, goldFreshToday, isAdmin, onUpdateGold, members }) {
+  const [open, setOpen]           = useState(true)
+  const [editingId, setEditingId] = useState(null)
+  const [editDraft, setEditDraft] = useState(null)
+  const [saving, setSaving]       = useState(false)
+  const [saveError, setSaveError] = useState(null)
 
   const filtered = items.filter(g =>
     matchesMember(g, activeMember) &&
@@ -1036,9 +1043,60 @@ function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, ch
   const sinceGainPct  = (changeVal != null && changeBasis === 'since' && totalInvested > 0) ? (changeVal / totalInvested) * 100 : null
 
   // Column widths — wider than investments to fit full rupee amounts
-  const W = { name: 1, wt: '0 0 72px', mbr: '0 0 80px', inv: '0 0 112px', val: '0 0 112px', chg: '0 0 140px' }
+  const W = { name: 1, wt: '0 0 72px', mbr: '0 0 80px', inv: '0 0 112px', val: '0 0 112px', chg: '0 0 140px', act: '0 0 36px' }
   const thS = { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', padding: '0 6px' }
   const tdS = (extra = {}) => ({ fontSize: 12, color: 'var(--color-text-secondary)', padding: '0 6px', ...extra })
+
+  // ── Edit helpers ─────────────────────────────────────────
+  function startEdit(g) {
+    setEditingId(g.id)
+    setEditDraft({ id: g.id, name: g.name, grams: g.grams, carat: g.carat, buyPricePerGram: g.buyPricePerGram ?? '', member: g.member, category: g.category })
+    setSaveError(null)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setEditDraft(null)
+    setSaveError(null)
+  }
+
+  async function handleSave() {
+    if (!isAdmin) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const original = items.find(g => String(g.id) === String(editDraft.id)) || {}
+      const updated = {
+        ...original,
+        name:             editDraft.name.trim(),
+        grams:            parseFloat(editDraft.grams) || 0,
+        carat:            parseInt(editDraft.carat) || 24,
+        buyPricePerGram:  editDraft.buyPricePerGram !== '' ? parseFloat(editDraft.buyPricePerGram) : null,
+        member:           editDraft.member,
+        category:         editDraft.category,
+      }
+      const res = await fetch('/api/gold', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item: updated }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setSaveError(err.error || `Error ${res.status}`)
+        return
+      }
+      const { item } = await res.json()
+      onUpdateGold(item)
+      setEditingId(null)
+      setEditDraft(null)
+    } catch {
+      setSaveError('Network error — check your connection')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const editInputS = { padding: '5px 8px', borderRadius: 6, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 12, outline: 'none' }
 
   return (
     <div>
@@ -1063,10 +1121,63 @@ function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, ch
             <div style={{ flex: W.inv,  ...thS, opacity: changeBasis === 'today' ? 0.5 : 1 }}>Invested</div>
             <div style={{ flex: W.val,  ...thS }}>Current value</div>
             <div style={{ flex: W.chg,  ...thS }}>{changeBasis === 'today' ? 'Change · today' : 'Change'}</div>
+            <div style={{ flex: W.act }} />
           </div>
 
           {/* Data rows */}
           {rows.map((g, i) => {
+            // ── Inline edit row ─────────────────────────────
+            if (editingId === g.id && editDraft) {
+              return (
+                <div key={g.id} style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-tertiary)' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8 }}>
+                    {/* Name */}
+                    <div style={{ flex: '1 0 160px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>Name</span>
+                      <input type="text" value={editDraft.name} onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))} style={{ ...editInputS, width: '100%' }} />
+                    </div>
+                    {/* Weight */}
+                    <div style={{ flex: '0 0 88px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>Weight (g)</span>
+                      <input type="number" value={editDraft.grams} step="0.001" min="0" onChange={e => setEditDraft(d => ({ ...d, grams: e.target.value }))} style={{ ...editInputS, width: '100%', textAlign: 'right' }} />
+                    </div>
+                    {/* Buy price */}
+                    <div style={{ flex: '0 0 100px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>Buy ₹/g</span>
+                      <input type="number" value={editDraft.buyPricePerGram} step="0.01" min="0" placeholder="n/a" onChange={e => setEditDraft(d => ({ ...d, buyPricePerGram: e.target.value }))} style={{ ...editInputS, width: '100%', textAlign: 'right' }} />
+                    </div>
+                    {/* Carat */}
+                    <div style={{ flex: '0 0 68px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>Carat</span>
+                      <select value={editDraft.carat} onChange={e => setEditDraft(d => ({ ...d, carat: parseInt(e.target.value) }))} style={{ ...editInputS }}>
+                        {GOLD_CARATS.map(c => <option key={c} value={c}>{c}K</option>)}
+                      </select>
+                    </div>
+                    {/* Member */}
+                    <div style={{ flex: '0 0 140px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>Member</span>
+                      <select value={editDraft.member} onChange={e => setEditDraft(d => ({ ...d, member: e.target.value }))} style={{ ...editInputS }}>
+                        {(members || []).map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                      </select>
+                    </div>
+                    {/* Save / Cancel */}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={handleSave} disabled={saving} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+                        {saving ? '…' : 'Save'}
+                      </button>
+                      <button onClick={cancelEdit} disabled={saving} style={{ padding: '5px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-primary)', background: 'transparent', color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                  {saveError && (
+                    <div style={{ fontSize: 11, color: 'var(--color-negative)', marginTop: 8 }}>⚠ {saveError}</div>
+                  )}
+                </div>
+              )
+            }
+
+            // ── Normal row ──────────────────────────────────
             const gain    = !g.costBasisUnknown && g.cost != null ? g.value - g.cost : null
             const gainPct = gain != null && g.cost > 0 ? (gain / g.cost) * 100 : null
             const gainClr = gain == null ? undefined : (gain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)')
@@ -1114,6 +1225,18 @@ function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, ch
                     </span>
                   )}
                 </div>
+                {/* Actions column — pencil for admin, empty for others */}
+                <div style={{ flex: W.act, textAlign: 'right', padding: '0 6px' }}>
+                  {isAdmin && (
+                    <button
+                      onClick={() => startEdit(g)}
+                      title="Edit this item"
+                      style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1, opacity: 0.55 }}
+                    >
+                      ✎
+                    </button>
+                  )}
+                </div>
               </div>
             )
           })}
@@ -1144,6 +1267,7 @@ function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, ch
             : '—'
           }{hasPartial && changeBasis === 'since' ? '*' : ''}
         </div>
+        <div style={{ flex: W.act }} />
       </div>
     </div>
   )
@@ -1270,6 +1394,9 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
   const { data, set } = useStore()
   const storeSetRef   = useRef(null)
   storeSetRef.current = set
+
+  const { user } = useUser()
+  const isAdmin = user?.publicMetadata?.role === 'admin'
 
   const [assetFilter, setAssetFilter] = useState(VIEW_TO_FILTER[activeView] || 'all')
   const [sort, setSort] = useState('value')
@@ -1410,6 +1537,11 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
     const inv = (data?.investments ?? []).find(i => i.id === invId)
     if (inv) setSipModal({ type: 'config', inv })
   }
+  function handleGoldUpdate(updatedItem) {
+    const gold = data?.gold ?? []
+    set(KEYS.GOLD, gold.map(g => String(g.id) === String(updatedItem.id) ? updatedItem : g))
+  }
+
   function handleSaveInvestment(updated) {
     const investments = data?.investments ?? []
     set(KEYS.INVESTMENTS, investments.map(i => i.id === updated.id ? updated : i))
@@ -1671,7 +1803,7 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
           <InvestmentsSection rows={invRows} sort={sort} members={members} onSIPConfig={handleSIPConfig} changeBasis={changeBasis} />
         )}
         {show('gold') && (
-          <GoldSection items={data?.gold ?? []} activeMember={activeMember} goldPrices={goldPrices} sort={sort} goldTypeFilter={goldTypeFilter} changeBasis={changeBasis} goldFreshToday={goldFreshToday} />
+          <GoldSection items={data?.gold ?? []} activeMember={activeMember} goldPrices={goldPrices} sort={sort} goldTypeFilter={goldTypeFilter} changeBasis={changeBasis} goldFreshToday={goldFreshToday} isAdmin={isAdmin} onUpdateGold={handleGoldUpdate} members={members} />
         )}
         {show('realty') && (
           <RealEstateSection items={data?.realEstate ?? []} activeMember={activeMember} sort={sort} />
