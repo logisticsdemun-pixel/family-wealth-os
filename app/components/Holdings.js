@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { DonutChart } from './charts'
 import { computeTodayChange, classifyFund } from '../lib/wealthMetrics'
 import { formatShort } from '../lib/metrics'
-import { formatINR, firstName } from '../lib/format'
+import { formatINR, formatINRDecimal, firstName } from '../lib/format'
 import { getMembers } from '../lib/members'
 import { load, save, KEYS } from '../lib/storage'
 import UpdateHoldingsModal from './UpdateHoldings'
@@ -1003,7 +1003,12 @@ function PortfolioDonut({ data, onSegmentClick }) {
 // ── Gold section ──────────────────────────────────────────────────────────
 
 function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, changeBasis, goldFreshToday }) {
-  const filtered = items.filter(g => matchesMember(g, activeMember) && (goldTypeFilter === 'all' || (g.category || '').toLowerCase() === goldTypeFilter))
+  const [open, setOpen] = useState(true)
+
+  const filtered = items.filter(g =>
+    matchesMember(g, activeMember) &&
+    (goldTypeFilter === 'all' || (g.category || '').toLowerCase() === goldTypeFilter)
+  )
 
   const rows = useMemo(() => {
     const r = filtered.map(g => {
@@ -1011,7 +1016,7 @@ function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, ch
       const value            = (g.grams || 0) * pricePerGram
       const costBasisUnknown = g.buyPricePerGram == null
       const cost             = costBasisUnknown ? null : (g.grams || 0) * g.buyPricePerGram
-      return { ...g, price: pricePerGram, value, cost, costBasisUnknown, todayChange: null }
+      return { ...g, price: pricePerGram, value, cost, costBasisUnknown }
     })
     if (sort === 'name') r.sort((a, b) => a.name.localeCompare(b.name))
     else r.sort((a, b) => b.value - a.value)
@@ -1020,29 +1025,127 @@ function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, ch
 
   if (rows.length === 0) return null
 
+  // Totals
+  const totalGrams    = rows.reduce((s, r) => s + (r.grams || 0), 0)
+  const totalValue    = rows.reduce((s, r) => s + (r.value ?? 0), 0)
+  const validCosts    = rows.filter(r => !r.costBasisUnknown && r.cost != null)
+  const hasPartial    = rows.some(r => r.costBasisUnknown)
+  const totalInvested = validCosts.reduce((s, r) => s + r.cost, 0)
+  const changeVal     = changeBasis === 'today' ? null : (validCosts.length > 0 ? totalValue - totalInvested : null)
+  const isPos         = changeVal != null && changeVal >= 0
+  const sinceGainPct  = (changeVal != null && changeBasis === 'since' && totalInvested > 0) ? (changeVal / totalInvested) * 100 : null
+
+  // Column widths — wider than investments to fit full rupee amounts
+  const W = { name: 1, wt: '0 0 72px', mbr: '0 0 80px', inv: '0 0 112px', val: '0 0 112px', chg: '0 0 140px' }
+  const thS = { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', padding: '0 6px' }
+  const tdS = (extra = {}) => ({ fontSize: 12, color: 'var(--color-text-secondary)', padding: '0 6px', ...extra })
+
   return (
-    <GroupBand label="Gold" rows={rows} changeBasis={changeBasis} goldFreshToday={goldFreshToday}>
-      {rows.map((g, i) => (
-        <div key={g.id || i} style={{ display: 'flex', alignItems: 'center', padding: '9px 14px' }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-            <span style={{ fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {g.name}
-            </span>
-            {g.category === 'Jewellery' && <Badge label="Jewellery" color="var(--color-gold)" bg="var(--color-gold-bg)" />}
-            <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{g.grams?.toFixed(2)}g · {g.carat}K</span>
+    <div>
+      {/* Band header — same visual style as GroupBand */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', padding: '7px 14px', gap: 6, background: 'var(--color-background-tertiary)', borderTop: '0.5px solid var(--color-border-primary)', cursor: 'pointer', userSelect: 'none' }}
+      >
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-primary)', flex: 1 }}>
+          Gold <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>({rows.length})</span>
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>{open ? '▼' : '▶'}</span>
+      </div>
+
+      {open && (
+        <>
+          {/* Column headers */}
+          <div style={{ display: 'flex', alignItems: 'center', padding: '4px 14px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+            <div style={{ flex: W.name,  ...thS, textAlign: 'left' }}>Holding</div>
+            <div style={{ flex: W.wt,   ...thS }}>Weight (g)</div>
+            <div style={{ flex: W.mbr,  ...thS, textAlign: 'center' }}>Member</div>
+            <div style={{ flex: W.inv,  ...thS, opacity: changeBasis === 'today' ? 0.5 : 1 }}>Invested</div>
+            <div style={{ flex: W.val,  ...thS }}>Current value</div>
+            <div style={{ flex: W.chg,  ...thS }}>{changeBasis === 'today' ? 'Change · today' : 'Change'}</div>
           </div>
-          <Td flex="0 0 80px" align="center">{firstName(g.member)}</Td>
-          <Td flex="0 0 90px" style={{ opacity: changeBasis === 'today' ? 0.35 : 1 }}>
-            {g.costBasisUnknown
-              ? <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 11 }}>n/a</span>
-              : (g.cost != null ? formatShort(g.cost) : '—')
-            }
-          </Td>
-          <Td flex="0 0 90px" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{formatShort(g.value)}</Td>
-          <RowChangeCell value={g.value} cost={g.cost} todayChange={null} costBasisUnknown={g.costBasisUnknown} changeBasis={changeBasis} isGold goldFreshToday={goldFreshToday} />
+
+          {/* Data rows */}
+          {rows.map((g, i) => {
+            const gain    = !g.costBasisUnknown && g.cost != null ? g.value - g.cost : null
+            const gainPct = gain != null && g.cost > 0 ? (gain / g.cost) * 100 : null
+            const gainClr = gain == null ? undefined : (gain >= 0 ? 'var(--color-positive)' : 'var(--color-negative)')
+            return (
+              <div key={g.id || i} style={{ display: 'flex', alignItems: 'center', padding: '9px 14px' }}>
+                {/* Name */}
+                <div style={{ flex: W.name, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                  <span style={{ fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {g.name}
+                  </span>
+                  {g.category === 'Jewellery' && <Badge label="Jewellery" color="var(--color-gold)" bg="var(--color-gold-bg)" />}
+                  <span style={{ fontSize: 10, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{g.carat}K</span>
+                </div>
+                {/* Weight */}
+                <div style={{ flex: W.wt, ...tdS({ textAlign: 'right' }) }}>{(g.grams || 0).toFixed(3)}</div>
+                {/* Member */}
+                <div style={{ flex: W.mbr, ...tdS({ textAlign: 'center' }) }}>{firstName(g.member)}</div>
+                {/* Invested */}
+                <div style={{ flex: W.inv, ...tdS({ textAlign: 'right', opacity: changeBasis === 'today' ? 0.35 : 1 }) }}>
+                  {g.costBasisUnknown
+                    ? <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 11 }}>n/a</span>
+                    : formatINRDecimal(g.cost)
+                  }
+                </div>
+                {/* Current value */}
+                <div style={{ flex: W.val, ...tdS({ textAlign: 'right', color: 'var(--color-text-primary)', fontWeight: 600 }) }}>
+                  {formatINRDecimal(g.value)}
+                </div>
+                {/* Change */}
+                <div style={{ flex: W.chg, ...tdS({ textAlign: 'right' }) }}>
+                  {changeBasis === 'today' ? (
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: 10 }}>
+                      {goldFreshToday ? '—' : 'Not refreshed today'}
+                    </span>
+                  ) : gain == null ? (
+                    <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 11 }}>cost unknown</span>
+                  ) : (
+                    <span style={{ color: gainClr, fontWeight: 500 }}>
+                      {gain >= 0 ? '+' : ''}{formatINRDecimal(gain)}
+                      {gainPct != null && (
+                        <span style={{ fontSize: 9, background: gain >= 0 ? 'var(--color-positive-bg)' : 'var(--color-negative-bg)', color: gainClr, borderRadius: 3, padding: '1px 4px', marginLeft: 4 }}>
+                          {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}%
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </>
+      )}
+
+      {/* Totals row — always visible */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px', borderTop: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)' }}>
+        <div style={{ flex: W.name, fontSize: 11, color: 'var(--color-text-muted)', fontStyle: open ? 'italic' : 'normal' }}>
+          {open ? 'Subtotal' : `Gold (${rows.length})`}
         </div>
-      ))}
-    </GroupBand>
+        <div style={{ flex: W.wt, ...tdS({ textAlign: 'right', fontSize: 11 }) }}>
+          {totalGrams.toFixed(3)}
+        </div>
+        <div style={{ flex: W.mbr }} />
+        <div style={{ flex: W.inv, ...tdS({ textAlign: 'right', fontSize: 11, opacity: changeBasis === 'today' ? 0.35 : 1 }) }}>
+          {validCosts.length > 0 ? formatINRDecimal(totalInvested) : '—'}{hasPartial && validCosts.length > 0 ? '*' : ''}
+        </div>
+        <div style={{ flex: W.val, ...tdS({ textAlign: 'right', fontSize: 11, color: 'var(--color-text-primary)', fontWeight: 600 }) }}>
+          {formatINRDecimal(totalValue)}
+        </div>
+        <div style={{ flex: W.chg, fontSize: 11, padding: '0 6px', textAlign: 'right',
+          color: changeVal != null ? (isPos ? 'var(--color-positive)' : 'var(--color-negative)') : 'var(--color-text-muted)',
+          fontWeight: changeVal != null ? 500 : 400,
+        }}>
+          {changeVal != null
+            ? `${changeVal >= 0 ? '+' : ''}${formatINRDecimal(changeVal)}${sinceGainPct != null ? ` (${sinceGainPct >= 0 ? '+' : ''}${sinceGainPct.toFixed(1)}%)` : ''}`
+            : '—'
+          }{hasPartial && changeBasis === 'since' ? '*' : ''}
+        </div>
+      </div>
+    </div>
   )
 }
 
