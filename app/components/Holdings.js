@@ -9,6 +9,7 @@ import { getMembers } from '../lib/members'
 import { load, save, KEYS } from '../lib/storage'
 import { useUser } from '@clerk/nextjs'
 import UpdateHoldingsModal from './UpdateHoldings'
+import Drawer from './Drawer'
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -1274,6 +1275,164 @@ function GoldSection({ items, activeMember, goldPrices, sort, goldTypeFilter, ch
   )
 }
 
+// ── Stocks P/L table (investments view only) ──────────────────────────────
+
+function StocksTable({ stocks, activeMember, members, onUpdate, isReadOnly }) {
+  const [editId,  setEditId]  = useState(null)
+  const [draft,   setDraft]   = useState(null)
+  const [saveErr, setSaveErr] = useState(null)
+
+  const filtered = useMemo(() => {
+    return stocks
+      .filter(s => matchesMember(s, activeMember))
+      .map(s => {
+        const currVal = (s.units || 0) * (s.currentPrice || 0)
+        let plPct = null
+        let plAmt = null
+        if (s.currentPrice != null && s.buyPrice != null && s.buyPrice !== 0) {
+          plPct = ((s.currentPrice - s.buyPrice) / s.buyPrice) * 100
+          plAmt = (s.currentPrice - s.buyPrice) * (s.units || 0)
+        }
+        return { ...s, currVal, plPct, plAmt }
+      })
+      .sort((a, b) => b.currVal - a.currVal)
+  }, [stocks, activeMember])
+
+  if (filtered.length === 0) return null
+
+  const totalValue  = filtered.reduce((s, r) => s + r.currVal, 0)
+
+  const W    = { name: 1, qty: '0 0 64px', buy: '0 0 95px', curr: '0 0 95px', val: '0 0 110px', pl: '0 0 110px', act: '0 0 36px' }
+  const thS  = { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)', padding: '0 6px', textAlign: 'right' }
+  const tdS  = (extra = {}) => ({ fontSize: 12, color: 'var(--color-text-secondary)', padding: '0 6px', textAlign: 'right', ...extra })
+  const inpS = { padding: '5px 8px', borderRadius: 6, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 12, outline: 'none', textAlign: 'right' }
+
+  function startEdit(s) {
+    setEditId(s.id)
+    setDraft({ id: s.id, units: s.units ?? '', buyPrice: s.buyPrice ?? '' })
+    setSaveErr(null)
+  }
+  function cancelEdit() { setEditId(null); setDraft(null); setSaveErr(null) }
+  function handleSave() {
+    const units    = parseFloat(draft.units)
+    const buyPrice = draft.buyPrice === '' ? 0 : parseFloat(draft.buyPrice)
+    if (isNaN(units) || units <= 0)     { setSaveErr('Quantity must be > 0'); return }
+    if (isNaN(buyPrice) || buyPrice < 0) { setSaveErr('Buy price must be ≥ 0'); return }
+    const original = stocks.find(s => s.id === editId)
+    if (!original) return
+    onUpdate({ ...original, units, buyPrice })
+    setEditId(null); setDraft(null); setSaveErr(null)
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '7px 14px', background: 'var(--color-background-tertiary)', borderTop: '0.5px solid var(--color-border-primary)' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-text-primary)', flex: 1 }}>
+          Stocks — P/L view <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>({filtered.length})</span>
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 14px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+        <div style={{ flex: W.name, ...thS, textAlign: 'left' }}>Stock</div>
+        <div style={{ flex: W.qty,  ...thS }}>Qty</div>
+        <div style={{ flex: W.buy,  ...thS }}>Buy ₹</div>
+        <div style={{ flex: W.curr, ...thS }}>Current ₹</div>
+        <div style={{ flex: W.val,  ...thS }}>Value</div>
+        <div style={{ flex: W.pl,   ...thS }}>P/L %</div>
+        <div style={{ flex: W.act }} />
+      </div>
+
+      {filtered.map(s => {
+        if (editId === s.id && draft) {
+          return (
+            <div key={s.id} style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-tertiary)' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' }}>
+                <div style={{ flex: '1 0 140px', fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, paddingBottom: 6 }}>{s.name}</div>
+                <div style={{ flex: '0 0 80px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>Qty</span>
+                  <input type="number" value={draft.units} min="0.0001" step="any"
+                    onChange={e => setDraft(d => ({ ...d, units: e.target.value }))}
+                    style={{ ...inpS, width: '100%' }} />
+                </div>
+                <div style={{ flex: '0 0 100px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-muted)' }}>Buy ₹/unit</span>
+                  <input type="number" value={draft.buyPrice} min="0" step="0.01" placeholder="0"
+                    onChange={e => setDraft(d => ({ ...d, buyPrice: e.target.value }))}
+                    style={{ ...inpS, width: '100%' }} />
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={handleSave} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 12, cursor: 'pointer' }}>Save</button>
+                  <button onClick={cancelEdit} style={{ padding: '5px 10px', borderRadius: 6, border: '0.5px solid var(--color-border-primary)', background: 'transparent', color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                </div>
+              </div>
+              {saveErr && <div style={{ fontSize: 11, color: 'var(--color-negative)', marginTop: 8 }}>⚠ {saveErr}</div>}
+            </div>
+          )
+        }
+
+        const noPrice = s.currentPrice == null
+        const zeroBuy = s.buyPrice === 0 || s.buyPrice == null
+        const plColor = s.plPct == null ? 'var(--color-text-muted)' : (s.plPct >= 0 ? 'var(--color-positive)' : 'var(--color-negative)')
+
+        return (
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '9px 14px' }}>
+            <div style={{ flex: W.name, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <span style={{ fontSize: 13, color: 'var(--color-text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+              {s.ticker && <span style={{ fontSize: 9, color: 'var(--color-text-muted)', flexShrink: 0 }}>{s.ticker}</span>}
+            </div>
+            <div style={{ flex: W.qty,  ...tdS() }}>{(s.units || 0).toLocaleString('en-IN')}</div>
+            <div style={{ flex: W.buy,  ...tdS() }}>
+              {!zeroBuy
+                ? formatINRDecimal(s.buyPrice)
+                : <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', fontSize: 11 }}>n/a</span>
+              }
+            </div>
+            <div style={{ flex: W.curr, ...tdS() }}>
+              {noPrice ? <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>—</span> : formatINRDecimal(s.currentPrice)}
+            </div>
+            <div style={{ flex: W.val, ...tdS({ color: 'var(--color-text-primary)', fontWeight: 600 }) }}>
+              {formatINRDecimal(s.currVal)}
+            </div>
+            <div style={{ flex: W.pl, ...tdS() }}>
+              {noPrice ? (
+                <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>No price</span>
+              ) : zeroBuy ? (
+                <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>—</span>
+              ) : s.plPct == null ? (
+                <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>—</span>
+              ) : (
+                <span style={{ color: plColor, fontWeight: 500 }}>
+                  {s.plPct >= 0 ? '+' : ''}{s.plPct.toFixed(1)}%
+                  {s.plAmt != null && (
+                    <span style={{ fontSize: 9, background: s.plPct >= 0 ? 'var(--color-positive-bg)' : 'var(--color-negative-bg)', color: plColor, borderRadius: 3, padding: '1px 4px', marginLeft: 4 }}>
+                      {s.plAmt >= 0 ? '+' : ''}{formatShort(s.plAmt)}
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+            <div style={{ flex: W.act, textAlign: 'right', padding: '0 6px' }}>
+              {!isReadOnly && (
+                <button onClick={() => startEdit(s)} title="Edit" style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1, opacity: 0.55 }}>✎</button>
+              )}
+            </div>
+          </div>
+        )
+      })}
+
+      <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px', borderTop: '0.5px solid var(--color-border-tertiary)', background: 'var(--color-background-secondary)' }}>
+        <div style={{ flex: W.name, fontSize: 11, color: 'var(--color-text-muted)', fontStyle: 'italic', padding: '0 6px' }}>
+          Subtotal ({filtered.length} stock{filtered.length !== 1 ? 's' : ''})
+        </div>
+        <div style={{ flex: W.qty }} /><div style={{ flex: W.buy }} /><div style={{ flex: W.curr }} />
+        <div style={{ flex: W.val, ...tdS({ fontSize: 11, color: 'var(--color-text-primary)', fontWeight: 600 }) }}>
+          {formatINRDecimal(totalValue)}
+        </div>
+        <div style={{ flex: W.pl }} /><div style={{ flex: W.act }} />
+      </div>
+    </div>
+  )
+}
+
 // ── Real Estate section ───────────────────────────────────────────────────
 
 function RealEstateSection({ items, activeMember, sort }) {
@@ -1423,6 +1582,13 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
   const [sipModal,        setSipModal]        = useState(null)
   const [lastPriceUpdate, setLastPriceUpdate] = useState(() => load(KEYS.PRICE_UPDATED, null))
 
+  // ── Add drawer ────────────────────────────────────────────
+  const [showAddDrawer, setShowAddDrawer] = useState(false)
+  const [addType,       setAddType]       = useState('stock')
+  const [addForm,       setAddForm]       = useState({})
+  const [addErr,        setAddErr]        = useState(null)
+  const [addSaving,     setAddSaving]     = useState(false)
+
   // ── Gold price refresh ────────────────────────────────────
   const handleRefreshGoldPrices = useCallback(async () => {
     setFetchingGold(true)
@@ -1543,6 +1709,82 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
     set(KEYS.GOLD, gold.map(g => String(g.id) === String(updatedItem.id) ? updatedItem : g))
   }
 
+  function handleUpdateStock(updated) {
+    const investments = data?.investments ?? []
+    set(KEYS.INVESTMENTS, investments.map(i => i.id === updated.id ? updated : i))
+  }
+
+  async function handleAddHolding() {
+    setAddErr(null)
+    const defaultMember = members[0]?.name ?? ''
+
+    if (addType === 'stock') {
+      const name     = (addForm.name || '').trim()
+      const ticker   = (addForm.ticker || '').trim()
+      const units    = parseFloat(addForm.units)
+      const buyPrice = addForm.buyPrice === '' ? 0 : parseFloat(addForm.buyPrice)
+      if (!name)                            { setAddErr('Name is required'); return }
+      if (isNaN(units) || units <= 0)       { setAddErr('Quantity must be > 0'); return }
+      if (isNaN(buyPrice) || buyPrice < 0)  { setAddErr('Buy price must be ≥ 0'); return }
+
+      setAddSaving(true)
+      let currentPrice = null
+      if (ticker) {
+        try {
+          const res = await fetch(`/api/price?ticker=${encodeURIComponent(ticker)}`)
+          const d   = await res.json()
+          currentPrice = d.price ?? null
+        } catch { /* price fetch failure is non-fatal */ }
+      }
+      set(KEYS.INVESTMENTS, [...(data?.investments ?? []), {
+        id: Date.now(), member: addForm.member || defaultMember,
+        type: 'Stock', name, ticker: ticker || null, mfCode: null, isMF: false,
+        units, buyPrice, currentPrice, investmentMode: 'lumpsum',
+      }])
+      setAddSaving(false)
+      setShowAddDrawer(false)
+      setAddForm({})
+      return
+    }
+
+    if (addType === 'gold') {
+      const name           = (addForm.name || '').trim()
+      const grams          = parseFloat(addForm.grams)
+      const carat          = parseInt(addForm.carat) || 24
+      const bpg            = addForm.buyPricePerGram === '' ? null : parseFloat(addForm.buyPricePerGram)
+      if (!name)                         { setAddErr('Name is required'); return }
+      if (isNaN(grams) || grams <= 0)    { setAddErr('Weight must be > 0'); return }
+      if (bpg !== null && (isNaN(bpg) || bpg < 0)) { setAddErr('Buy price must be ≥ 0'); return }
+      set(KEYS.GOLD, [...(data?.gold ?? []), {
+        id: Date.now(), member: addForm.member || defaultMember,
+        category: addForm.category || 'Investment', name, grams, carat, buyPricePerGram: bpg,
+      }])
+      setShowAddDrawer(false)
+      setAddForm({})
+      return
+    }
+
+    if (addType === 'cash') {
+      const name  = (addForm.name || '').trim()
+      const value = parseFloat(addForm.value)
+      if (!name)                         { setAddErr('Name is required'); return }
+      if (isNaN(value) || value < 0)     { setAddErr('Amount must be ≥ 0'); return }
+      set(KEYS.CASH_ASSETS, [...(data?.cashAssets ?? []), {
+        id: Date.now(), member: addForm.member || defaultMember, name, value,
+      }])
+      setShowAddDrawer(false)
+      setAddForm({})
+      return
+    }
+  }
+
+  function openAddDrawer(type = 'stock') {
+    setAddType(type)
+    setAddErr(null)
+    setAddForm({ member: members[0]?.name ?? '', carat: 24, category: 'Investment' })
+    setShowAddDrawer(true)
+  }
+
   function handleSaveInvestment(updated) {
     const investments = data?.investments ?? []
     set(KEYS.INVESTMENTS, investments.map(i => i.id === updated.id ? updated : i))
@@ -1560,6 +1802,11 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
   const invRows = useMemo(
     () => buildInvestmentRows(data?.investments ?? [], activeMember, latestSnap),
     [data?.investments, activeMember, latestSnap]
+  )
+
+  const rawStocks = useMemo(
+    () => (data?.investments ?? []).filter(i => !i.isMF),
+    [data?.investments]
   )
 
   const goldPrices = data?.goldPrices ?? { 24: 15496, 22: 14205, 18: 9386 }
@@ -1688,6 +1935,10 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
         </div>
         {!isReadOnly && (
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button onClick={() => openAddDrawer('stock')} style={actionBtn()}>
+              <i className="ti ti-plus" style={{ fontSize: 13 }} aria-hidden="true" />
+              Add
+            </button>
             <button onClick={() => setShowImport(true)} style={actionBtn('primary')}>
               <i className="ti ti-upload" style={{ fontSize: 13 }} aria-hidden="true" />
               Import
@@ -1800,8 +2051,23 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
 
       {/* ── Sections ── */}
       <div style={{ background: 'var(--color-background-secondary)', border: '0.5px solid var(--color-border-primary)', borderRadius: 10, overflow: 'hidden', paddingBottom: 8 }}>
+        {show('invest') && assetFilter === 'invest' && rawStocks.filter(s => matchesMember(s, activeMember)).length > 0 && (
+          <StocksTable
+            stocks={rawStocks}
+            activeMember={activeMember}
+            members={members}
+            onUpdate={handleUpdateStock}
+            isReadOnly={isReadOnly}
+          />
+        )}
         {show('invest') && (
-          <InvestmentsSection rows={invRows} sort={sort} members={members} onSIPConfig={handleSIPConfig} changeBasis={changeBasis} />
+          <InvestmentsSection
+            rows={assetFilter === 'invest' ? invRows.filter(r => r.isMF) : invRows}
+            sort={sort}
+            members={members}
+            onSIPConfig={handleSIPConfig}
+            changeBasis={changeBasis}
+          />
         )}
         {show('gold') && (
           <GoldSection items={data?.gold ?? []} activeMember={activeMember} goldPrices={goldPrices} sort={sort} goldTypeFilter={goldTypeFilter} changeBasis={changeBasis} goldFreshToday={goldFreshToday} isAdmin={isAdmin} onUpdateGold={handleGoldUpdate} members={members} />
@@ -1838,6 +2104,164 @@ export default function Holdings({ activeMember, isReadOnly, activeView = 'all' 
           onCancel={() => setSipModal(null)}
         />
       )}
+
+      {/* ── Add holding drawer ── */}
+      <Drawer
+        open={showAddDrawer}
+        onClose={() => { setShowAddDrawer(false); setAddErr(null); setAddForm({}) }}
+        title="Add Holding"
+      >
+        {/* Type tabs */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+          {[{ id: 'stock', label: 'Stock' }, { id: 'gold', label: 'Gold' }, { id: 'cash', label: 'Cash' }].map(t => (
+            <button
+              key={t.id}
+              onClick={() => { setAddType(t.id); setAddErr(null); setAddForm({ member: members[0]?.name ?? '', carat: 24, category: 'Investment' }) }}
+              style={{
+                flex: 1, padding: '7px 0', borderRadius: 7, border: '0.5px solid',
+                borderColor: addType === t.id ? 'var(--color-accent)' : 'var(--color-border-primary)',
+                background:  addType === t.id ? 'var(--color-accent-bg)' : 'transparent',
+                color:       addType === t.id ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                fontSize: 13, fontWeight: addType === t.id ? 600 : 400, cursor: 'pointer',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Name — all types */}
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+              {addType === 'gold' ? 'Description / Name' : 'Name'}
+            </label>
+            <input
+              autoFocus type="text"
+              placeholder={addType === 'stock' ? 'e.g. Reliance Industries' : addType === 'gold' ? 'e.g. 10g Gold Bar' : 'e.g. HDFC Savings'}
+              value={addForm.name || ''}
+              onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {/* Stock-specific */}
+          {addType === 'stock' && (
+            <>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                  Ticker (optional)
+                </label>
+                <input
+                  type="text" placeholder="e.g. RELIANCE.NS"
+                  value={addForm.ticker || ''}
+                  onChange={e => setAddForm(f => ({ ...f, ticker: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                />
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>NSE: .NS suffix · BSE: .BO suffix</p>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Quantity</label>
+                <input
+                  type="number" placeholder="0" min="0.0001" step="any"
+                  value={addForm.units || ''}
+                  onChange={e => setAddForm(f => ({ ...f, units: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Buy Price (₹/unit)</label>
+                <input
+                  type="number" placeholder="0" min="0" step="0.01"
+                  value={addForm.buyPrice || ''}
+                  onChange={e => setAddForm(f => ({ ...f, buyPrice: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Gold-specific */}
+          {addType === 'gold' && (
+            <>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Weight (g)</label>
+                <input
+                  type="number" placeholder="0" min="0.001" step="0.001"
+                  value={addForm.grams || ''}
+                  onChange={e => setAddForm(f => ({ ...f, grams: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Carat</label>
+                <select
+                  value={addForm.carat || 24}
+                  onChange={e => setAddForm(f => ({ ...f, carat: parseInt(e.target.value) }))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                >
+                  {GOLD_CARATS.map(c => <option key={c} value={c}>{c}K</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Buy Price (₹/g, optional)</label>
+                <input
+                  type="number" placeholder="leave blank if unknown" min="0" step="0.01"
+                  value={addForm.buyPricePerGram || ''}
+                  onChange={e => setAddForm(f => ({ ...f, buyPricePerGram: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Category</label>
+                <select
+                  value={addForm.category || 'Investment'}
+                  onChange={e => setAddForm(f => ({ ...f, category: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                >
+                  <option value="Investment">Investment</option>
+                  <option value="Jewellery">Jewellery</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Cash-specific */}
+          {addType === 'cash' && (
+            <div>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Amount (₹)</label>
+              <input
+                type="number" placeholder="0" min="0" step="0.01"
+                value={addForm.value || ''}
+                onChange={e => setAddForm(f => ({ ...f, value: e.target.value }))}
+                style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+          )}
+
+          {/* Owner — all types */}
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Owner</label>
+            <select
+              value={addForm.member || members[0]?.name || ''}
+              onChange={e => setAddForm(f => ({ ...f, member: e.target.value }))}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '0.5px solid var(--color-border-primary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+            >
+              {members.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+            </select>
+          </div>
+
+          {addErr && <p style={{ margin: 0, fontSize: 12, color: 'var(--color-negative)' }}>⚠ {addErr}</p>}
+
+          <button
+            onClick={handleAddHolding}
+            disabled={addSaving}
+            style={{ padding: '10px 0', borderRadius: 8, border: 'none', background: 'var(--color-accent)', color: '#fff', fontSize: 14, fontWeight: 600, cursor: addSaving ? 'not-allowed' : 'pointer', opacity: addSaving ? 0.7 : 1 }}
+          >
+            {addSaving ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+      </Drawer>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
