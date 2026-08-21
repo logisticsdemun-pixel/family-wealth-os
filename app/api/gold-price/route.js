@@ -1,5 +1,10 @@
 export const dynamic = 'force-dynamic'
 
+// Source 2 fallback multiplier — hoisted so the Source 1 drift guard can
+// compare against the live value without duplicating it.
+// Recalibrated 2026-08-21: implied ratio was 1.1274 (ibja ₹15,950 / spot ₹14,147).
+const MCX_MULTIPLIER = 1.13
+
 export async function GET() {
   const METALS_KEY = process.env.METALS_DEV_KEY
 
@@ -17,8 +22,27 @@ export async function GET() {
       )
       if (res.ok) {
         const data = await res.json()
+        const ibjaGold = data.metals?.ibja_gold
+        const spotGold = data.metals?.gold
+
+        // Drift guard — passive, never alters price output or blocks response.
+        // When both spot and ibja_gold are present, check whether Source 2's
+        // MCX_MULTIPLIER has drifted >5% from today's real ibja/spot ratio.
+        if (ibjaGold && spotGold && spotGold > 0) {
+          const impliedMultiplier = ibjaGold / spotGold
+          const driftPct = Math.abs(impliedMultiplier - MCX_MULTIPLIER) / MCX_MULTIPLIER * 100
+          if (driftPct > 5) {
+            console.warn(
+              `[gold-price] drift-warning: Source 2 MCX_MULTIPLIER (${MCX_MULTIPLIER}) is ` +
+              `${driftPct.toFixed(1)}% off implied ratio. ` +
+              `implied=${impliedMultiplier.toFixed(4)} (ibja=₹${Math.round(ibjaGold)}/g, spot=₹${Math.round(spotGold)}/g). ` +
+              `Recalibrate: set MCX_MULTIPLIER = ${impliedMultiplier.toFixed(4)}`
+            )
+          }
+        }
+
         // Prefer ibja_gold (IBJA retail, exact). Fall back to mcx_gold.
-        const price24k = data.metals?.ibja_gold || data.metals?.mcx_gold
+        const price24k = ibjaGold || data.metals?.mcx_gold
         if (price24k && price24k > 5000) {
           return Response.json({
             success: true,
@@ -30,7 +54,7 @@ export async function GET() {
             meta: {
               source: 'metals.dev (ibja_gold)',
               ibjaINR:  Math.round(price24k),
-              spotINR:  Math.round(data.metals?.gold || 0),
+              spotINR:  Math.round(spotGold || 0),
               fetchedAt: new Date().toISOString(),
               note: 'IBJA retail rate read directly from metals.dev — no multiplier applied.',
             },
@@ -64,7 +88,6 @@ export async function GET() {
       const TROY_OZ_TO_GRAM = 31.1035
 
       if (pricePerOzUSD > 0) {
-        const MCX_MULTIPLIER = 1.13
         const spotINR  = (pricePerOzUSD / TROY_OZ_TO_GRAM) * usdToINR
         const price24k = Math.round(spotINR * MCX_MULTIPLIER)
 
